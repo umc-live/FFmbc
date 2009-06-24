@@ -922,6 +922,10 @@ need_realloc:
         double idelta= delta*dec->sample_rate / enc->sample_rate;
         int byte_delta= ((int)idelta)*2*dec->channels;
 
+        if (verbose > 3)
+            fprintf(stderr, "adelta:%f ost->sync_opts:%"PRId64", ost->sync_ipts:%f, size:%d, stream:#%d.%d\n",
+                    delta, ost->sync_opts, get_sync_ipts(ost), size, ist->file_index, ist->st->index);
+
         //FIXME resample delay
         if(fabs(delta) > 50){
             if(ist->is_start || fabs(delta) > audio_drift_threshold*enc->sample_rate){
@@ -1203,7 +1207,9 @@ static void do_video_out(AVFormatContext *s,
                 ost->sync_opts= lrintf(sync_ipts);
         }else if (vdelta > 1.1)
             nb_frames = lrintf(vdelta);
-//fprintf(stderr, "vdelta:%f, ost->sync_opts:%"PRId64", ost->sync_ipts:%f nb_frames:%d\n", vdelta, ost->sync_opts, get_sync_ipts(ost), nb_frames);
+        if (verbose>3)
+            fprintf(stderr, "vdelta:%f, ost->sync_opts:%"PRId64", ost->sync_ipts:%f nb_frames:%d\n",
+                    vdelta, ost->sync_opts, get_sync_ipts(ost), nb_frames);
         if (nb_frames == 0){
             ++nb_frames_drop;
             if (verbose>2)
@@ -1776,12 +1782,16 @@ static int output_packet(InputStream *ist, int ist_index,
 
                         av_init_packet(&opkt);
 
-                        if ((!ost->frame_number && !(pkt->flags & AV_PKT_FLAG_KEY)) && !copy_initial_nonkeyframes)
+                        if ((!ost->frame_number && !(pkt->flags & AV_PKT_FLAG_KEY)) && !copy_initial_nonkeyframes) {
+                            fprintf(stderr, "Stream #%d.%d dropping frames before first keyframe pts %"PRId64" dts %"PRId64" duration %d size %d flags %x\n",
+                                    ist->file_index, ist->st->index, pkt->pts, pkt->dts, pkt->duration, pkt->size, pkt->flags);
+
 #if !CONFIG_AVFILTER
                             continue;
 #else
                             goto cont;
 #endif
+                        }
 
                         /* no reencoding needed : output the packet directly */
                         /* force the input stream PTS */
@@ -1795,6 +1805,13 @@ static int output_packet(InputStream *ist, int ist_index,
                         else if (ost->st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
                             video_size += data_size;
                             ost->sync_opts++;
+                        }
+
+                        if (verbose > 3) {
+                            fprintf(stderr, "Stream #%d.%d copy pts %"PRId64" dts %"PRId64" duration %d size %d flags %x start time %"PRId64"\n",
+                                    ost->file_index, ost->index, pkt->pts, pkt->dts, pkt->duration, pkt->size, pkt->flags, ost_tb_start_time);
+                            fprintf(stderr, "Stream #%d.%d copy ist pts %"PRId64" next pts %"PRId64"\n",
+                                    ost->file_index, ost->index, ist->pts, ist->next_pts);
                         }
 
                         opkt.stream_index= ost->index;
