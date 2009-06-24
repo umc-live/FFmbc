@@ -1618,7 +1618,10 @@ static int output_packet(InputStream *ist, int ist_index,
                 got_output  = decoded_data_size > 0;
                 /* Some bug in mpeg audio decoder gives */
                 /* decoded_data_size < 0, it seems they are overflows */
-                if (!got_output) {
+                /* let's try to catch it by failing if it still happens */
+                if (decoded_data_size < 0)
+                    return decoded_data_size;
+                if (!decoded_data_size) {
                     /* no audio frame */
                     continue;
                 }
