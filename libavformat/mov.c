@@ -1818,24 +1818,6 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                       sc->time_scale, sc->stts_data[0].duration, INT_MAX);
     }
 
-    switch (st->codec->codec_id) {
-#if CONFIG_H261_DECODER
-    case CODEC_ID_H261:
-#endif
-#if CONFIG_H263_DECODER
-    case CODEC_ID_H263:
-#endif
-#if CONFIG_H264_DECODER
-    case CODEC_ID_H264:
-#endif
-#if CONFIG_MPEG4_DECODER
-    case CODEC_ID_MPEG4:
-#endif
-        st->codec->width = 0; /* let decoder init width/height */
-        st->codec->height= 0;
-        break;
-    }
-
     /* Do not need those anymore. */
     av_freep(&sc->chunk_offsets);
     av_freep(&sc->stsc_data);
