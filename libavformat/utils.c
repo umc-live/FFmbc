@@ -1168,6 +1168,9 @@ static int read_frame_internal(AVFormatContext *s, AVPacket *pkt)
                     }else{
                     pkt->destruct = NULL;
                     }
+                    if (st->parser->flags & PARSER_FLAG_COMPLETE_FRAMES &&
+                        st->cur_pkt.duration)
+                        pkt->duration = st->cur_pkt.duration;
                     compute_pkt_fields(s, st, st->parser, pkt);
 
                     if((s->iformat->flags & AVFMT_GENERIC_INDEX) && pkt->flags & AV_PKT_FLAG_KEY){
