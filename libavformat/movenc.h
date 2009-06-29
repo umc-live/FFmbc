@@ -88,6 +88,7 @@ typedef struct MOVIndex {
     MOVIentry   *cluster;
     int         audio_vbr;
     int         height; ///< active picture (w/o VBI) height for D-10/IMX
+    AVRational  dar;    ///< display aspect ratio
     uint32_t    tref_tag;
     int         tref_id; ///< trackID of the referenced track
 

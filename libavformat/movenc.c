@@ -607,8 +607,6 @@ static int mov_write_avid_tag(AVIOContext *pb, MOVTrack *track)
     for (i = 0; i < 10; i++)
         avio_wb64(pb, 0);
 
-    /* extra padding for stsd needed */
-    avio_wb32(pb, 0);
     return 0;
 }
 
@@ -818,8 +816,8 @@ static int mov_write_subtitle_tag(AVIOContext *pb, MOVTrack *track)
 static int mov_write_pasp_tag(AVIOContext *pb, MOVTrack *track)
 {
     AVRational sar;
-    av_reduce(&sar.num, &sar.den, track->enc->sample_aspect_ratio.num,
-              track->enc->sample_aspect_ratio.den, INT_MAX);
+    av_reduce(&sar.num, &sar.den, track->height*track->dar.num,
+              track->enc->width*track->dar.den, INT_MAX);
 
     avio_wb32(pb, 16);
     avio_wtag(pb, "pasp");
@@ -828,10 +826,26 @@ static int mov_write_pasp_tag(AVIOContext *pb, MOVTrack *track)
     return 16;
 }
 
+static int mov_write_clap_tag(AVIOContext *pb, MOVTrack *track)
+{
+    avio_wb32(pb, 40);
+    avio_wtag(pb, "clap");
+    avio_wb32(pb, track->enc->width);
+    avio_wb32(pb, 1);
+    avio_wb32(pb, track->height);
+    avio_wb32(pb, 1);
+    avio_wb32(pb, 0);
+    avio_wb32(pb, 1);
+    avio_wb32(pb, 0);
+    avio_wb32(pb, 1);
+    return 40;
+}
+
 static int mov_write_video_tag(AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
     char compressor_name[32];
+    int padding = 0;
 
     avio_wb32(pb, 0); /* size */
     avio_wl32(pb, track->tag); // store it byteswapped
@@ -880,18 +894,29 @@ static int mov_write_video_tag(AVIOContext *pb, MOVTrack *track)
         mov_write_d263_tag(pb);
     else if(track->enc->codec_id == CODEC_ID_SVQ3)
         mov_write_svq3_tag(pb);
-    else if(track->enc->codec_id == CODEC_ID_DNXHD)
+    else if(track->enc->codec_id == CODEC_ID_DNXHD) {
         mov_write_avid_tag(pb, track);
-    else if(track->enc->codec_id == CODEC_ID_H264) {
+        padding = 1;
+    } else if(track->enc->codec_id == CODEC_ID_H264) {
         mov_write_avcc_tag(pb, track);
         if(track->mode == MODE_IPOD)
             mov_write_uuid_tag_ipod(pb);
     } else if(track->vosLen > 0)
         mov_write_glbl_tag(pb, track);
 
-    if (track->enc->sample_aspect_ratio.den && track->enc->sample_aspect_ratio.num &&
-        track->enc->sample_aspect_ratio.den != track->enc->sample_aspect_ratio.num) {
+    if (track->enc->sample_aspect_ratio.den > 0 &&
+        track->enc->sample_aspect_ratio.num > 0 &&
+        track->enc->sample_aspect_ratio.den !=
+        track->enc->sample_aspect_ratio.num) {
         mov_write_pasp_tag(pb, track);
+        if (track->mode == MODE_MOV)
+            mov_write_clap_tag(pb, track);
+        padding = 1;
+    }
+
+    if (track->mode == MODE_MOV) {
+        if (padding)
+            avio_wb32(pb, 0); // padding for FCP
     }
 
     return updateSize(pb, pos);
@@ -1313,20 +1338,11 @@ static int mov_write_tkhd_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
     avio_wb32(pb, 0x40000000); /* reserved */
 
     /* Track width and height, for visual only */
-    if(st && (track->enc->codec_type == AVMEDIA_TYPE_VIDEO ||
-              track->enc->codec_type == AVMEDIA_TYPE_SUBTITLE)) {
-        if(track->mode == MODE_MOV) {
-            avio_wb32(pb, track->enc->width << 16);
-            avio_wb32(pb, track->height << 16);
-        } else {
-            double sample_aspect_ratio = av_q2d(st->sample_aspect_ratio);
-            if(!sample_aspect_ratio || track->height != track->enc->height)
-                sample_aspect_ratio = 1;
-            avio_wb32(pb, sample_aspect_ratio * track->enc->width*0x10000);
-            avio_wb32(pb, track->height*0x10000);
-        }
-    }
-    else {
+    if(track->enc->codec_type == AVMEDIA_TYPE_VIDEO ||
+       track->enc->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+        avio_wb32(pb, track->enc->width << 16);
+        avio_wb32(pb, track->height << 16);
+    } else {
         avio_wb32(pb, 0);
         avio_wb32(pb, 0);
     }
@@ -1335,28 +1351,29 @@ static int mov_write_tkhd_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
 
 static int mov_write_tapt_tag(AVIOContext *pb, MOVTrack *track)
 {
-    int32_t width = av_rescale(track->enc->sample_aspect_ratio.num, track->enc->width,
-                               track->enc->sample_aspect_ratio.den);
+    int display_width;
 
-    int64_t pos = avio_tell(pb);
+    display_width = (uint64_t)track->height*track->dar.num/track->dar.den;
 
-    avio_wb32(pb, 0); /* size */
+    avio_wb32(pb, 68);
     avio_wtag(pb, "tapt");
-
     avio_wb32(pb, 20);
     avio_wtag(pb, "clef");
-    avio_wb32(pb, 0);
-    avio_wb32(pb, width << 16);
-    avio_wb32(pb, track->enc->height << 16);
-
+    avio_wb32(pb, 0); // version + flags
+    avio_wb32(pb, display_width<<16);
+    avio_wb32(pb, track->height<<16);
+    avio_wb32(pb, 20);
+    avio_wtag(pb, "prof");
+    avio_wb32(pb, 0); // version + flags
+    avio_wb32(pb, display_width<<16);
+    avio_wb32(pb, track->height<<16);
     avio_wb32(pb, 20);
     avio_wtag(pb, "enof");
-    avio_wb32(pb, 0);
-    avio_wb32(pb, track->enc->width << 16);
-    avio_wb32(pb, track->enc->height << 16);
-
-    return updateSize(pb, pos);
-};
+    avio_wb32(pb, 0); // version + flags
+    avio_wb32(pb, track->enc->width<<16);
+    avio_wb32(pb, track->height    <<16);
+    return 68;
+}
 
 // This box seems important for the psp playback ... without it the movie seems to hang
 static int mov_write_edts_tag(AVIOContext *pb, MOVTrack *track)
@@ -1460,6 +1477,12 @@ static int mov_write_trak_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, "trak");
     mov_write_tkhd_tag(pb, track, st);
+    if (track->mode == MODE_MOV &&
+        track->enc->sample_aspect_ratio.den > 0 &&
+        track->enc->sample_aspect_ratio.num > 0 &&
+        track->enc->sample_aspect_ratio.den !=
+        track->enc->sample_aspect_ratio.num)
+        mov_write_tapt_tag(pb, track);
     if (track->mode == MODE_PSP || track->flags & MOV_TRACK_CTTS || track->cluster[0].dts)
         mov_write_edts_tag(pb, track);  // PSP Movies require edts box
     if (track->tref_tag)
@@ -1469,11 +1492,6 @@ static int mov_write_trak_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
         mov_write_uuid_tag_psp(pb,track);  // PSP Movies require this uuid box
     if (track->tag == MKTAG('r','t','p',' '))
         mov_write_udta_sdp(pb, track->rtp_ctx, track->trackID);
-    if (track->enc->codec_type == AVMEDIA_TYPE_VIDEO && track->mode == MODE_MOV) {
-        double sample_aspect_ratio = av_q2d(st->sample_aspect_ratio);
-        if (0.0 != sample_aspect_ratio && 1.0 != sample_aspect_ratio)
-            mov_write_tapt_tag(pb, track);
-    };
     return updateSize(pb, pos);
 }
 
@@ -2364,6 +2382,10 @@ static int mov_write_header(AVFormatContext *s)
                 }
                 track->height = track->tag>>24 == 'n' ? 486 : 576;
             }
+
+            track->dar.num = track->enc->width *track->enc->sample_aspect_ratio.num;
+            track->dar.den = track->enc->height*track->enc->sample_aspect_ratio.den;
+
             track->timescale = st->codec->time_base.den;
             if (track->mode == MODE_MOV && track->timescale > 100000)
                 av_log(s, AV_LOG_WARNING,
