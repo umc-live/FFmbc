@@ -2543,6 +2543,7 @@ static int transcode(AVFormatContext **output_files,
                 codec->channel_layout = icodec->channel_layout;
                 codec->sample_rate = icodec->sample_rate;
                 codec->channels = icodec->channels;
+                codec->sample_fmt = icodec->sample_fmt;
                 codec->frame_size = icodec->frame_size;
                 codec->audio_service_type = icodec->audio_service_type;
                 codec->block_align= icodec->block_align;
