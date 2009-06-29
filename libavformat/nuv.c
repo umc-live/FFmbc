@@ -49,6 +49,12 @@ static int nuv_probe(AVProbeData *p) {
 //! little macro to sanitize packet size
 #define PKTSIZE(s) (s &  0xffffff)
 
+static const AVCodecTag audio_codec_tags[] = {
+    { CODEC_ID_PCM_S16LE, MKTAG('R', 'A', 'W', 'A') },
+    { CODEC_ID_MP3,       MKTAG('L', 'A', 'M', 'E') },
+    { CODEC_ID_MP3,       MKTAG('M', 'P', '3', ' ') },
+};
+
 /**
  * @brief read until we found all data needed for decoding
  * @param vst video stream of which to change parameters
@@ -101,6 +107,10 @@ static int get_codec_data(AVIOContext *pb, AVStream *vst,
                     ast->codec->codec_id =
                         ff_wav_codec_get_id(ast->codec->codec_tag,
                                          ast->codec->bits_per_coded_sample);
+                    if (!ast->codec->codec_id)
+                        ast->codec->codec_id =
+                            ff_codec_get_id(audio_codec_tags, ast->codec->codec_tag);
+
                     ast->need_parsing = AVSTREAM_PARSE_FULL;
                 } else
                     avio_skip(pb, 4 * 4);
