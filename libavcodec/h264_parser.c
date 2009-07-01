@@ -33,6 +33,12 @@
 
 typedef struct {
     H264Context h;
+    uint8_t *buf;
+    unsigned buf_size;
+    unsigned frame_size;
+    int pict_type;
+    int key_frame;
+    int first_field_structure;
 } H264ParseContext;
 
 static int ff_h264_find_frame_end(H264Context *h, const uint8_t *buf, int buf_size)
@@ -117,6 +123,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
     const uint8_t *buf_end = buf + buf_size;
     unsigned int pps_id;
     unsigned int slice_type;
+    int first_mb_in_slice;
     int state = -1;
     const uint8_t *ptr;
 
@@ -165,6 +172,14 @@ static inline int parse_nal_units(AVCodecParserContext *s,
             break;
         case NAL_PPS:
             ff_h264_decode_picture_parameter_set(h, h->s.gb.size_in_bits);
+            if(h->sps.timing_info_present_flag){
+                avctx->time_base= (AVRational){h->sps.num_units_in_tick, h->sps.time_scale};
+                if(h->x264_build > 0 && h->x264_build < 44)
+                    avctx->time_base.den *= 2;
+                av_reduce(&avctx->time_base.num, &avctx->time_base.den,
+                          avctx->time_base.num, avctx->time_base.den, 1<<30);
+                avctx->ticks_per_frame = 2;
+            }
             break;
         case NAL_SEI:
             ff_h264_decode_sei(h);
@@ -173,7 +188,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
             s->key_frame = 1;
             /* fall through */
         case NAL_SLICE:
-            get_ue_golomb(&h->s.gb);  // skip first_mb_in_slice
+            first_mb_in_slice = get_ue_golomb(&h->s.gb);
             slice_type = get_ue_golomb_31(&h->s.gb);
             s->pict_type = golomb_to_pict_type[slice_type % 5];
             if (h->sei_recovery_frame_cnt >= 0) {
@@ -210,12 +225,16 @@ static inline int parse_nal_units(AVCodecParserContext *s,
                 }
             }
 
+            if (h->s.picture_structure != PICT_FRAME &&
+                (c->first_field_structure == -1 ||
+                 (first_mb_in_slice == 0 && h->frame_num != h->prev_frame_num)))
+                c->first_field_structure = h->s.picture_structure;
+
             if(h->sps.pic_struct_present_flag) {
                 switch (h->sei_pic_struct) {
+                    /* fields are merged */
                     case SEI_PIC_STRUCT_TOP_FIELD:
                     case SEI_PIC_STRUCT_BOTTOM_FIELD:
-                        s->repeat_pict = 0;
-                        break;
                     case SEI_PIC_STRUCT_FRAME:
                     case SEI_PIC_STRUCT_TOP_BOTTOM:
                     case SEI_PIC_STRUCT_BOTTOM_TOP:
@@ -239,7 +258,13 @@ static inline int parse_nal_units(AVCodecParserContext *s,
                 s->repeat_pict = h->s.picture_structure == PICT_FRAME ? 1 : 0;
             }
 
-            return 0; /* no need to evaluate the rest */
+            h->prev_frame_num = h->frame_num;
+
+            /* no need to evaluate the rest */
+            if (h->s.picture_structure != PICT_FRAME)
+                return 1 + (h->s.picture_structure == c->first_field_structure);
+
+            return 0;
         }
         if (h->is_avc && consumed != nalsize) {
             av_log(avctx, AV_LOG_WARNING, "consumed %d nalsize %d\n", consumed, nalsize);
@@ -260,7 +285,7 @@ static int h264_parse(AVCodecParserContext *s,
     H264ParseContext *c = s->priv_data;
     H264Context *h = &c->h;
     ParseContext *pc = &h->s.parse_context;
-    int next;
+    int next, ret;
 
     if (!h->got_first) {
         h->got_first = 1;
@@ -287,7 +312,7 @@ static int h264_parse(AVCodecParserContext *s,
         }
     }
 
-    parse_nal_units(s, avctx, buf, buf_size);
+    ret = parse_nal_units(s, avctx, buf, buf_size);
 
     if (h->sei_cpb_removal_delay >= 0) {
         s->dts_sync_point    = h->sei_buffering_period_present;
@@ -301,6 +326,41 @@ static int h264_parse(AVCodecParserContext *s,
 
     if (s->flags & PARSER_FLAG_ONCE) {
         s->flags &= PARSER_FLAG_COMPLETE_FRAMES;
+    }
+
+    if (ret == 2) { // first field
+        uint8_t *nbuf;
+        nbuf = av_fast_realloc(c->buf, &c->buf_size, buf_size);
+        if (!nbuf)
+            return AVERROR(ENOMEM);
+        c->buf = nbuf;
+        memcpy(nbuf, buf, buf_size);
+
+        c->frame_size = buf_size;
+        /* keep pict information from the first field */
+        c->pict_type = s->pict_type;
+        c->key_frame = s->key_frame;
+
+        *poutbuf = NULL;
+        *poutbuf_size = 0;
+        return next;
+    } else if (ret == 1) { // second field
+        uint8_t *nbuf;
+        nbuf = av_fast_realloc(c->buf, &c->buf_size, c->frame_size +
+                               buf_size + FF_INPUT_BUFFER_PADDING_SIZE);
+        if (!nbuf) {
+            c->frame_size = 0;
+            return AVERROR(ENOMEM);
+        }
+        c->buf = nbuf;
+        memcpy(nbuf+c->frame_size, buf, buf_size);
+        memset(nbuf+c->frame_size+buf_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+        buf = nbuf;
+        buf_size += c->frame_size;
+        c->frame_size = 0;
+
+        s->pict_type = c->pict_type;
+        s->key_frame = c->key_frame;
     }
 
     *poutbuf = buf;
@@ -337,6 +397,8 @@ static void close(AVCodecParserContext *s)
     H264ParseContext *c = s->priv_data;
     ParseContext *pc = &c->h.s.parse_context;
 
+    av_freep(&c->buf);
+    c->frame_size = 0;
     av_free(pc->buffer);
     ff_h264_free_context(&c->h);
 }
@@ -345,6 +407,8 @@ static int init(AVCodecParserContext *s)
 {
     H264ParseContext *c = s->priv_data;
     c->h.thread_context[0] = &c->h;
+    c->h.prev_frame_num = -1;
+    c->first_field_structure = -1;
     return 0;
 }
 
