@@ -1363,7 +1363,7 @@ static void do_video_out(AVFormatContext *s,
 
     *frame_size = 0;
 
-    if(video_sync_method){
+    if (video_sync_method && video_sync_method != 3) {
         double vdelta = sync_ipts - ost->sync_opts;
         //FIXME set to 0.5 after we fix some dts/pts bugs like in avidec.c
         if (vdelta < -1.1)
@@ -1387,7 +1387,7 @@ static void do_video_out(AVFormatContext *s,
             if (verbose>2)
                 fprintf(stderr, "*** %d dup!\n", nb_frames-1);
         }
-    }else
+    } else if (!video_sync_method)
         ost->sync_opts= lrintf(sync_ipts);
 
     nb_frames= FFMIN(nb_frames, max_frames[AVMEDIA_TYPE_VIDEO] - ost->frame_number);
