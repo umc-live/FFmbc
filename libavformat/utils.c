@@ -1274,6 +1274,13 @@ int av_read_frame(AVFormatContext *s, AVPacket *pkt)
             AVPacket *next_pkt= &pktl->pkt;
             AVStream *st = s->streams[next_pkt->stream_index];
 
+            if (st->discard == AVDISCARD_ALL) {
+                s->packet_buffer = pktl->next;
+                av_free_packet(&pktl->pkt);
+                av_free(pktl);
+                continue;
+            }
+
             if(genpts && next_pkt->dts != AV_NOPTS_VALUE){
                 int wrap_bits = s->streams[next_pkt->stream_index]->pts_wrap_bits;
                 while(pktl && next_pkt->pts == AV_NOPTS_VALUE){
