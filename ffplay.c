@@ -2061,6 +2061,8 @@ static int audio_decode_frame(VideoState *is, double *pts_ptr)
         /* if update the audio clock with the pts */
         if (pkt->pts != AV_NOPTS_VALUE) {
             is->audio_clock = av_q2d(is->audio_st->time_base)*pkt->pts;
+        } else if (pkt->dts != AV_NOPTS_VALUE) {
+            is->audio_clock = av_q2d(is->audio_st->time_base)*pkt->dts;
         }
     }
 }
