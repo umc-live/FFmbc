@@ -128,7 +128,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
     const uint8_t *ptr;
 
     /* set some sane default values */
-    s->pict_type = AV_PICTURE_TYPE_I;
+    s->pict_type = 0;
     s->key_frame = 0;
 
     h->s.avctx= avctx;
@@ -313,6 +313,16 @@ static int h264_parse(AVCodecParserContext *s,
     }
 
     ret = parse_nal_units(s, avctx, buf, buf_size);
+    if (ret < 0 || (!s->pict_type && buf_size)) {
+        /* update parser context anyway for timestamps and pos */
+        s->frame_offset = s->next_frame_offset;
+        s->next_frame_offset = s->cur_offset + next;
+        s->fetch_timestamp = 1;
+        av_log(avctx, AV_LOG_ERROR, "error slice type, discarding\n");
+        *poutbuf = NULL;
+        *poutbuf_size = 0;
+        return next;
+    }
 
     if (h->sei_cpb_removal_delay >= 0) {
         s->dts_sync_point    = h->sei_buffering_period_present;
