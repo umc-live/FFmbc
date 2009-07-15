@@ -151,6 +151,16 @@ static int mpegvideo_parse(AVCodecParserContext *s,
        to have the full timing information. The time take by this
        function should be negligible for uncorrupted streams */
     mpegvideo_extract_headers(s, avctx, buf, buf_size);
+    if (!s->pict_type && buf_size) {
+        /* update parser context anyway for timestamps and pos */
+        s->frame_offset = s->next_frame_offset;
+        s->next_frame_offset = s->cur_offset + next;
+        s->fetch_timestamp = 1;
+        av_log(avctx, AV_LOG_ERROR, "error fetching pict type, discarding\n");
+        *poutbuf = NULL;
+        *poutbuf_size = 0;
+        return next;
+    }
 #if 0
     printf("pict_type=%d frame_rate=%0.3f repeat_pict=%d\n",
            s->pict_type, (double)avctx->time_base.den / avctx->time_base.num, s->repeat_pict);
