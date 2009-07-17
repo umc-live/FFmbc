@@ -40,7 +40,7 @@
    synchronisation is lost */
 #define MAX_RESYNC_SIZE 65536
 
-#define MAX_PES_PAYLOAD 200*1024
+#define MAX_PES_PAYLOAD 500*1024
 
 enum MpegTSFilterType {
     MPEGTS_PES,
