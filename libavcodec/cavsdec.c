@@ -643,7 +643,6 @@ static int cavs_decode_frame(AVCodecContext * avctx,void *data, int *data_size,
     const uint8_t *buf_end;
     const uint8_t *buf_ptr;
     AVFrame *picture = data;
-    uint32_t stc = -1;
 
     s->avctx = avctx;
 
@@ -658,6 +657,7 @@ static int cavs_decode_frame(AVCodecContext * avctx,void *data, int *data_size,
     buf_ptr = buf;
     buf_end = buf + buf_size;
     for(;;) {
+        uint32_t stc = -1;
         buf_ptr = ff_find_start_code(buf_ptr,buf_end, &stc);
         if(stc & 0xFFFFFE00)
             return FFMAX(0, buf_ptr - buf - s->parse_context.last_index);
