@@ -2753,13 +2753,13 @@ static int transcode(AVFormatContext **output_files,
                 snprintf(error, sizeof(error), "Encoder (codec id %d) not found for output stream #%d.%d",
                          ost->st->codec->codec_id, ost->file_index, ost->index);
                 ret = AVERROR(EINVAL);
-                goto dump_format;
+                goto fail;
             }
             if (dec->subtitle_header) {
                 ost->st->codec->subtitle_header = av_malloc(dec->subtitle_header_size);
                 if (!ost->st->codec->subtitle_header) {
                     ret = AVERROR(ENOMEM);
-                    goto dump_format;
+                    goto fail;
                 }
                 memcpy(ost->st->codec->subtitle_header, dec->subtitle_header, dec->subtitle_header_size);
                 ost->st->codec->subtitle_header_size = dec->subtitle_header_size;
@@ -2768,7 +2768,7 @@ static int transcode(AVFormatContext **output_files,
                 snprintf(error, sizeof(error), "Error while opening encoder for output stream #%d.%d - maybe incorrect parameters such as bit_rate, rate, width or height",
                         ost->file_index, ost->index);
                 ret = AVERROR(EINVAL);
-                goto dump_format;
+                goto fail;
             }
             assert_codec_experimental(ost->st->codec, 1);
             assert_avoptions(ost->opts);
@@ -2790,13 +2790,13 @@ static int transcode(AVFormatContext **output_files,
                 snprintf(error, sizeof(error), "Decoder (codec id %d) not found for input stream #%d.%d",
                         ist->st->codec->codec_id, ist->file_index, ist->st->index);
                 ret = AVERROR(EINVAL);
-                goto dump_format;
+                goto fail;
             }
             if (avcodec_open2(ist->st->codec, codec, &ist->opts) < 0) {
                 snprintf(error, sizeof(error), "Error while opening decoder for input stream #%d.%d",
                         ist->file_index, ist->st->index);
                 ret = AVERROR(EINVAL);
-                goto dump_format;
+                goto fail;
             }
             assert_codec_experimental(ist->st->codec, 0);
             assert_avoptions(ost->opts);
@@ -2826,7 +2826,7 @@ static int transcode(AVFormatContext **output_files,
             snprintf(error, sizeof(error), "Invalid %s index %d while processing metadata maps\n",\
                      (desc), (index));\
             ret = AVERROR(EINVAL);\
-            goto dump_format;\
+            goto fail;\
         }
 
         int out_file_index = meta_data_maps[i][0].file;
@@ -2882,12 +2882,12 @@ static int transcode(AVFormatContext **output_files,
         if (infile >= nb_input_files) {
             snprintf(error, sizeof(error), "Invalid input file index %d in chapter mapping.\n", infile);
             ret = AVERROR(EINVAL);
-            goto dump_format;
+            goto fail;
         }
         if (outfile >= nb_output_files) {
             snprintf(error, sizeof(error), "Invalid output file index %d in chapter mapping.\n",outfile);
             ret = AVERROR(EINVAL);
-            goto dump_format;
+            goto fail;
         }
         copy_chapters(infile, outfile);
     }
@@ -2900,7 +2900,7 @@ static int transcode(AVFormatContext **output_files,
 
             for (j = 0; j < nb_output_files; j++)
                 if ((ret = copy_chapters(i, j)) < 0)
-                    goto dump_format;
+                    goto fail;
             break;
         }
 
@@ -2910,7 +2910,7 @@ static int transcode(AVFormatContext **output_files,
         if (avformat_write_header(os, &output_opts[i]) < 0) {
             snprintf(error, sizeof(error), "Could not write header for output file #%d (incorrect codec parameters ?)", i);
             ret = AVERROR(EINVAL);
-            goto dump_format;
+            goto fail;
         }
 //        assert_avoptions(output_opts[i]);
         if (strcmp(output_files[i]->oformat->name, "rtp")) {
@@ -2918,7 +2918,6 @@ static int transcode(AVFormatContext **output_files,
         }
     }
 
- dump_format:
     /* dump the file output parameters - cannot be done before in case
        of stream copy */
     for(i=0;i<nb_output_files;i++) {
