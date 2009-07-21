@@ -1797,11 +1797,11 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
                     size = sc->bytes_per_frame;
                 } else {
                     if (sc->samples_per_frame > 1) {
-                        samples = FFMIN((1024 / sc->samples_per_frame)*
+                        samples = FFMIN((1920 / sc->samples_per_frame)*
                                         sc->samples_per_frame, chunk_samples);
                         size = (samples / sc->samples_per_frame) * sc->bytes_per_frame;
                     } else {
-                        samples = FFMIN(1024, chunk_samples);
+                        samples = FFMIN(1920, chunk_samples);
                         size = samples * sc->sample_size;
                     }
                 }
