@@ -980,12 +980,33 @@ static int mov_write_stsd_tag(AVIOContext *pb, MOVTrack *track)
     return updateSize(pb, pos);
 }
 
+static int mov_write_cslg_tag(AVIOContext *pb, MOVTrack *track)
+{
+    // version 1 does not seem to work
+    // and I don't know the difference
+    if (track->pts_duration >= INT32_MAX)
+        return 0;
+
+    avio_wb32(pb, 32);
+    avio_wtag(pb, "cslg");
+    avio_wb32(pb, 0); // version+flags
+    avio_wb32(pb, track->delay); // dts shift
+    avio_wb32(pb, track->min_cts - track->delay); // least dts to pts delta
+    avio_wb32(pb, track->max_cts - track->delay); // greatest dts to pts delta
+    avio_wb32(pb, 0); // pts start
+    avio_wb32(pb, track->pts_duration); // pts end
+    return 32;
+}
+
 static int mov_write_ctts_tag(AVIOContext *pb, MOVTrack *track)
 {
     MOVStts *ctts_entries;
     uint32_t entries = 0;
-    uint32_t atom_size;
-    int i;
+    uint32_t atom_size = 0;
+    int i, offset = 0;
+
+    if (track->mode == MODE_MOV)
+        offset = track->delay;
 
     ctts_entries = av_malloc((track->entry + 1) * sizeof(*ctts_entries)); /* worst case */
     ctts_entries[0].count = 1;
@@ -999,6 +1020,8 @@ static int mov_write_ctts_tag(AVIOContext *pb, MOVTrack *track)
             ctts_entries[entries].count = 1;
         }
     }
+    if (!entries) // all cts are the same, constant delay
+        goto out;
     entries++; /* last one */
     atom_size = 16 + (entries * 8);
     avio_wb32(pb, atom_size); /* size */
@@ -1007,8 +1030,9 @@ static int mov_write_ctts_tag(AVIOContext *pb, MOVTrack *track)
     avio_wb32(pb, entries); /* entry count */
     for (i=0; i<entries; i++) {
         avio_wb32(pb, ctts_entries[i].count);
-        avio_wb32(pb, ctts_entries[i].duration);
+        avio_wb32(pb, ctts_entries[i].duration - offset);
     }
+ out:
     av_free(ctts_entries);
     return atom_size;
 }
@@ -1086,8 +1110,11 @@ static int mov_write_stbl_tag(AVIOContext *pb, MOVTrack *track)
     if (track->mode == MODE_MOV && track->flags & MOV_TRACK_STPS)
         mov_write_stss_tag(pb, track, MOV_PARTIAL_SYNC_SAMPLE);
     if (track->enc->codec_type == AVMEDIA_TYPE_VIDEO &&
-        track->flags & MOV_TRACK_CTTS)
-        mov_write_ctts_tag(pb, track);
+        track->flags & MOV_TRACK_CTTS) {
+        int ret = mov_write_ctts_tag(pb, track);
+        if (ret && track->mode == MODE_MOV)
+            mov_write_cslg_tag(pb, track);
+    }
     mov_write_stsc_tag(pb, track);
     mov_write_stsz_tag(pb, track);
     mov_write_stco_tag(pb, track);
@@ -1916,6 +1943,7 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
         }
         if (first_pts > 0) {
             track->pts_offset = first_pts;
+            track->pts_duration -= first_pts;
         }
 
         // search for first keyframe
@@ -1954,7 +1982,8 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
             track->first_edit_pts = -first_pts;
             track->edit_duration -= -first_pts;
         }
-        track->first_edit_pts += track->delay;
+        if (mov->mode != MODE_MOV)
+            track->first_edit_pts += track->delay;
     }
 
     if (mov->chapter_track)
@@ -2230,6 +2259,13 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     if (pkt->dts != pkt->pts)
         trk->flags |= MOV_TRACK_CTTS;
     trk->cluster[trk->entry].cts = pkt->pts - pkt->dts;
+
+    if ((trk->flags & MOV_TRACK_CTTS) && trk->mode == MODE_MOV) {
+        trk->min_cts = FFMIN(trk->cluster[trk->entry].cts, trk->min_cts);
+        trk->max_cts = FFMAX(trk->cluster[trk->entry].cts, trk->max_cts);
+        trk->pts_duration = FFMAX(pkt->pts+pkt->duration, trk->pts_duration);
+    }
+
     trk->cluster[trk->entry].flags = 0;
     if (pkt->flags & AV_PKT_FLAG_KEY) {
         if (enc->codec_id == CODEC_ID_MPEG2VIDEO)

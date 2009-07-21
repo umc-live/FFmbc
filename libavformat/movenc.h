@@ -81,6 +81,9 @@ typedef struct MOVIndex {
     int         trackID;
     int         tag; ///< stsd fourcc
     AVCodecContext *enc;
+    int         min_cts;
+    int         max_cts;
+    int64_t     pts_duration;
     int         delay;
     int64_t     first_edit_pts;
     int64_t     pts_offset;
