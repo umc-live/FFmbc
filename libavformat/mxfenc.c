@@ -45,7 +45,9 @@
 #include "mxf.h"
 
 static const int NTSC_samples_per_frame[] = { 1602, 1601, 1602, 1601, 1602, 0 };
+static const int P60_samples_per_frame[]  = {  801,  801,  800,  801,  801, 0 };
 static const int PAL_samples_per_frame[]  = { 1920, 0 };
+static const int P50_samples_per_frame[]  = {  960, 0 };
 
 extern AVOutputFormat ff_mxf_d10_muxer;
 
@@ -189,7 +191,7 @@ typedef struct MXFContext {
     uint64_t duration;
     const char *timecode;
     AVStream *timecode_track;
-    int timecode_base;       ///< rounded time code base (25 or 30)
+    int timecode_base;       ///< rounded time code base (25,30,50,60)
     int timecode_start;      ///< frame number computed from mpeg-2 gop header timecode
     int timecode_drop_frame; ///< time code use drop frame method frop mpeg-2 essence gop header
     int edit_unit_byte_count; ///< fixed edit unit byte count
@@ -834,7 +836,7 @@ static void mxf_write_cdci_common(AVFormatContext *s, AVStream *st, const UID ke
     default:   f1 =  0; f2 =   0; break;
     }
 
-    if (!sc->interlaced) {
+    if (!sc->interlaced && f2) {
         f2  = 0;
         f1 *= 2;
     }
@@ -1422,6 +1424,14 @@ static int mxf_write_header(AVFormatContext *s)
                 samples_per_frame = NTSC_samples_per_frame;
                 mxf->time_base = (AVRational){ 1001, 30000 };
                 mxf->timecode_base = 30;
+            } else if (fabs(av_q2d(st->codec->time_base) - 1/50.0) < 0.0001) {
+                samples_per_frame = P50_samples_per_frame;
+                mxf->time_base = (AVRational){ 1, 50 };
+                mxf->timecode_base = 50;
+            } else if (fabs(av_q2d(st->codec->time_base) - 1001/60000.0) < 0.0001) {
+                samples_per_frame = P60_samples_per_frame;
+                mxf->time_base = (AVRational){ 1001, 60000 };
+                mxf->timecode_base = 60;
             } else {
                 av_log(s, AV_LOG_ERROR, "unsupported video frame rate\n");
                 return -1;
