@@ -2408,7 +2408,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
         if (st->codec_info_nb_frames>1) {
             int64_t t;
             if (st->time_base.den > 0 && (t=av_rescale_q(st->info->codec_info_duration, st->time_base, AV_TIME_BASE_Q)) >= ic->max_analyze_duration) {
-                av_log(ic, AV_LOG_WARNING, "max_analyze_duration %d reached at %"PRId64"\n", ic->max_analyze_duration, t);
+                av_log(ic, AV_LOG_DEBUG, "max_analyze_duration %d reached at %"PRId64"\n", ic->max_analyze_duration, t);
                 break;
             }
             st->info->codec_info_duration += pkt->duration;
