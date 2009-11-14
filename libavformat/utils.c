@@ -1272,6 +1272,7 @@ int av_read_frame(AVFormatContext *s, AVPacket *pkt)
         pktl = s->packet_buffer;
         if (pktl) {
             AVPacket *next_pkt= &pktl->pkt;
+            AVStream *st = s->streams[next_pkt->stream_index];
 
             if(genpts && next_pkt->dts != AV_NOPTS_VALUE){
                 int wrap_bits = s->streams[next_pkt->stream_index]->pts_wrap_bits;
@@ -1281,6 +1282,8 @@ int av_read_frame(AVFormatContext *s, AVPacket *pkt)
                        && av_compare_mod(pktl->pkt.pts, pktl->pkt.dts, 2LL << (wrap_bits - 1))) { //not b frame
                         next_pkt->pts= pktl->pkt.dts;
                     }
+                    if (pktl->pkt.pts != AV_NOPTS_VALUE)
+                        st->pts.val = FFMAX(pktl->pkt.pts, st->pts.val);
                     pktl= pktl->next;
                 }
                 pktl = s->packet_buffer;
@@ -1291,6 +1294,10 @@ int av_read_frame(AVFormatContext *s, AVPacket *pkt)
                || !genpts || eof){
                 /* read packet from packet buffer, if there is data */
                 *pkt = *next_pkt;
+                if (genpts && eof && pkt->pts == AV_NOPTS_VALUE && pkt->duration > 0) {
+                    pkt->pts = st->pts.val + pkt->duration;
+                    st->pts.val += pkt->duration;
+                }
                 s->packet_buffer = pktl->next;
                 av_free(pktl);
                 return 0;
