@@ -186,11 +186,7 @@ static int flv_write_header(AVFormatContext *s)
     for(i=0; i<s->nb_streams; i++){
         AVCodecContext *enc = s->streams[i]->codec;
         if (enc->codec_type == AVMEDIA_TYPE_VIDEO) {
-            if (s->streams[i]->r_frame_rate.den && s->streams[i]->r_frame_rate.num) {
-                framerate = av_q2d(s->streams[i]->r_frame_rate);
-            } else {
-                framerate = 1/av_q2d(s->streams[i]->codec->time_base);
-            }
+            framerate = 1/av_q2d(s->streams[i]->codec->time_base);
             video_enc = enc;
             if(enc->codec_tag == 0) {
                 av_log(enc, AV_LOG_ERROR, "video codec not compatible with flv\n");
