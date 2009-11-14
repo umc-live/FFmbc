@@ -125,7 +125,7 @@ OBJS-$(CONFIG_DVBSUB_ENCODER)          += dvbsub.o
 OBJS-$(CONFIG_DVDSUB_DECODER)          += dvdsubdec.o
 OBJS-$(CONFIG_DVDSUB_ENCODER)          += dvdsubenc.o
 OBJS-$(CONFIG_DVVIDEO_DECODER)         += dv.o dvdata.o
-OBJS-$(CONFIG_DVVIDEO_ENCODER)         += dv.o dvdata.o
+OBJS-$(CONFIG_DVVIDEO_ENCODER)         += dv.o dvdata.o timecode.o
 OBJS-$(CONFIG_DXA_DECODER)             += dxa.o
 OBJS-$(CONFIG_EAC3_DECODER)            += eac3dec.o eac3_data.o
 OBJS-$(CONFIG_EAC3_ENCODER)            += eac3enc.o ac3enc.o ac3enc_float.o \
@@ -260,6 +260,7 @@ OBJS-$(CONFIG_MPEG_XVMC_DECODER)       += mpegvideo_xvmc.o
 OBJS-$(CONFIG_MPEG1VIDEO_DECODER)      += mpeg12.o mpeg12data.o \
                                           mpegvideo.o error_resilience.o
 OBJS-$(CONFIG_MPEG1VIDEO_ENCODER)      += mpeg12enc.o mpegvideo_enc.o \
+                                          timecode.o \
                                           motion_est.o ratecontrol.o  \
                                           mpeg12.o mpeg12data.o       \
                                           mpegvideo.o error_resilience.o
@@ -268,6 +269,7 @@ OBJS-$(CONFIG_MPEG2_VAAPI_HWACCEL)     += vaapi_mpeg2.o
 OBJS-$(CONFIG_MPEG2VIDEO_DECODER)      += mpeg12.o mpeg12data.o \
                                           mpegvideo.o error_resilience.o
 OBJS-$(CONFIG_MPEG2VIDEO_ENCODER)      += mpeg12enc.o mpegvideo_enc.o \
+                                          timecode.o \
                                           motion_est.o ratecontrol.o  \
                                           mpeg12.o mpeg12data.o       \
                                           mpegvideo.o error_resilience.o

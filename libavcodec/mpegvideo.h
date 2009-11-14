@@ -199,6 +199,7 @@ typedef struct MotionEstContext{
  * MpegEncContext.
  */
 typedef struct MpegEncContext {
+    AVClass *av_class;
     struct AVCodecContext *avctx;
     /* the following parameters must be initialized before encoding */
     int width, height;///< picture size. must be a multiple of 16
@@ -612,6 +613,10 @@ typedef struct MpegEncContext {
     int last_mv_dir;         ///< last mv_dir, used for b frame encoding
     int broken_link;         ///< no_output_of_prior_pics_flag
     uint8_t *vbv_delay_ptr;  ///< pointer to vbv_delay in the bitstream
+
+    const char *timecode;
+    int timecode_start;
+    int timecode_drop_frame;
 
     /* MPEG-2-specific - I wished not to have to support this mess. */
     int progressive_sequence;

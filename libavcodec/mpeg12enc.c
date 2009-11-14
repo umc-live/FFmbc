@@ -25,6 +25,7 @@
  * MPEG1/2 encoder
  */
 
+#include "libavutil/opt.h"
 #include "avcodec.h"
 #include "dsputil.h"
 #include "mpegvideo.h"
@@ -32,6 +33,7 @@
 #include "mpeg12.h"
 #include "mpeg12data.h"
 #include "bytestream.h"
+#include "timecode.h"
 
 
 static const uint8_t inv_non_linear_qscale[13] = {
@@ -172,9 +174,22 @@ static av_cold int encode_init(AVCodecContext *avctx)
         }
     }
 
-    if((avctx->flags2 & CODEC_FLAG2_DROP_FRAME_TIMECODE) && s->frame_rate_index != 4){
-        av_log(avctx, AV_LOG_ERROR, "Drop frame time code only allowed with 1001/30000 fps\n");
-        return -1;
+    if (s->timecode) {
+        int drop, framenum;
+        AVRational fps = ff_frame_rate_tab[s->frame_rate_index];
+        framenum = ff_timecode_to_framenum(s->timecode, (AVRational){fps.den, fps.num}, &drop);
+        if (framenum < 0) {
+            if (framenum == -1)
+                av_log(s, AV_LOG_ERROR, "error parsing timecode, syntax: 00:00:00[;:]00\n");
+            else if (framenum == -2)
+                av_log(s, AV_LOG_ERROR, "error, unsupported fps for timecode\n");
+            else if (framenum == -3)
+                av_log(s, AV_LOG_ERROR, "error, drop frame is only allowed with "
+                       "30000/1001 or 60000/1001 fps\n");
+            return -1;
+        }
+        s->timecode_start = framenum;
+        s->timecode_drop_frame = drop;
     }
 
     return 0;
@@ -283,20 +298,16 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
             }
 
             put_header(s, GOP_START_CODE);
-            put_bits(&s->pb, 1, !!(s->avctx->flags2 & CODEC_FLAG2_DROP_FRAME_TIMECODE)); /* drop frame flag */
+            put_bits(&s->pb, 1, s->timecode_drop_frame); /* drop frame flag */
             /* time code : we must convert from the real frame rate to a
                fake mpeg frame rate in case of low frame rate */
             fps = (framerate.num + framerate.den/2)/ framerate.den;
-            time_code = s->current_picture_ptr->f.coded_picture_number + s->avctx->timecode_frame_start;
+            time_code = s->current_picture_ptr->f.coded_picture_number + s->timecode_start;
 
             s->gop_picture_number = s->current_picture_ptr->f.coded_picture_number;
-            if (s->avctx->flags2 & CODEC_FLAG2_DROP_FRAME_TIMECODE) {
-                /* only works for NTSC 29.97 */
-                int d = time_code / 17982;
-                int m = time_code % 17982;
-                //if (m < 2) m += 2; /* not needed since -2,-1 / 1798 in C returns 0 */
-                time_code += 18 * d + 2 * ((m - 2) / 1798);
-            }
+            if (s->timecode_drop_frame)
+                time_code = ff_framenum_to_drop_timecode(time_code, fps);
+
             put_bits(&s->pb, 5, (uint32_t)((time_code / (fps * 3600)) % 24));
             put_bits(&s->pb, 6, (uint32_t)((time_code / (fps * 60)) % 60));
             put_bits(&s->pb, 1, 1);
@@ -925,6 +936,14 @@ static void mpeg1_encode_block(MpegEncContext *s,
     put_bits(&s->pb, table_vlc[112][1], table_vlc[112][0]);
 }
 
+static const AVOption options[] = {
+    { "timecode", "Set timecode value: 00:00:00[:;]00, use ';' before frame number for drop frame",
+      offsetof(MpegEncContext, timecode), FF_OPT_TYPE_STRING, {.str = 0}, 0, 0, AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM},
+    { NULL },
+};
+
+static const AVClass class = { "mpegvideo", av_default_item_name, options, LIBAVUTIL_VERSION_INT };
+
 AVCodec ff_mpeg1video_encoder = {
     "mpeg1video",
     AVMEDIA_TYPE_VIDEO,
@@ -937,6 +956,7 @@ AVCodec ff_mpeg1video_encoder = {
     .pix_fmts= (const enum PixelFormat[]){PIX_FMT_YUV420P, PIX_FMT_NONE},
     .capabilities= CODEC_CAP_DELAY | CODEC_CAP_SLICE_THREADS,
     .long_name= NULL_IF_CONFIG_SMALL("MPEG-1 video"),
+    .priv_class = &class,
 };
 
 AVCodec ff_mpeg2video_encoder = {
@@ -951,4 +971,5 @@ AVCodec ff_mpeg2video_encoder = {
     .pix_fmts= (const enum PixelFormat[]){PIX_FMT_YUV420P, PIX_FMT_YUV422P, PIX_FMT_NONE},
     .capabilities= CODEC_CAP_DELAY | CODEC_CAP_SLICE_THREADS,
     .long_name= NULL_IF_CONFIG_SMALL("MPEG-2 video"),
+    .priv_class = &class,
 };

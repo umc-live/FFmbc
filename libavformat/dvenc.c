@@ -33,11 +33,14 @@
 #include "avformat.h"
 #include "internal.h"
 #include "libavcodec/dvdata.h"
+#include "libavcodec/timecode.h"
 #include "dv.h"
 #include "libavutil/fifo.h"
 #include "libavutil/mathematics.h"
+#include "libavutil/opt.h"
 
 struct DVMuxContext {
+    AVClass *av_class;
     const DVprofile*  sys;           /* current DV profile, e.g.: 525/60, 625/50 */
     int               n_ast;         /* number of stereo audio streams (up to 2) */
     AVStream         *ast[2];        /* stereo audio streams */
@@ -47,6 +50,10 @@ struct DVMuxContext {
     int               has_audio;     /* frame under contruction has audio */
     int               has_video;     /* frame under contruction has video */
     uint8_t           frame_buf[DV_MAX_FRAME_SIZE]; /* frame under contruction */
+    AVStream         *vst;           /* video stream */
+    const char       *timecode;
+    int               timecode_start;
+    int               timecode_drop_frame;
 };
 
 static const int dv_aaux_packs_dist[12][9] = {
@@ -74,34 +81,34 @@ static int dv_write_pack(enum dv_pack_type pack_id, DVMuxContext *c, uint8_t* bu
 {
     struct tm tc;
     time_t ct;
-    int ltc_frame;
     va_list ap;
+    int time_code;
 
     buf[0] = (uint8_t)pack_id;
     switch (pack_id) {
     case dv_timecode:
-        ct = (time_t)av_rescale_rnd(c->frames, c->sys->time_base.num,
-                                    c->sys->time_base.den, AV_ROUND_DOWN);
-        brktimegm(ct, &tc);
+        time_code = c->frames + c->timecode_start;
         /*
          * LTC drop-frame frame counter drops two frames (0 and 1) every
          * minute, unless it is exactly divisible by 10
          */
-        ltc_frame = (c->frames + 2 * ct / 60 - 2 * ct / 600) % c->sys->ltc_divisor;
-        buf[1] = (0                 << 7) | /* color frame: 0 - unsync; 1 - sync mode */
-                 (1                 << 6) | /* drop frame timecode: 0 - nondrop; 1 - drop */
-                 ((ltc_frame / 10)  << 4) | /* tens of frames */
-                 (ltc_frame % 10);          /* units of frames */
-        buf[2] = (1                 << 7) | /* biphase mark polarity correction: 0 - even; 1 - odd */
-                 ((tc.tm_sec / 10)  << 4) | /* tens of seconds */
-                 (tc.tm_sec % 10);          /* units of seconds */
-        buf[3] = (1                 << 7) | /* binary group flag BGF0 */
-                 ((tc.tm_min / 10)  << 4) | /* tens of minutes */
-                 (tc.tm_min % 10);          /* units of minutes */
-        buf[4] = (1                 << 7) | /* binary group flag BGF2 */
-                 (1                 << 6) | /* binary group flag BGF1 */
-                 ((tc.tm_hour / 10) << 4) | /* tens of hours */
-                 (tc.tm_hour % 10);         /* units of hours */
+        if (c->timecode_drop_frame)
+            time_code = ff_framenum_to_drop_timecode(time_code, c->sys->ltc_divisor);
+        buf[1] = (0 << 7) | /* Color fame: 0 - unsync; 1 - sync mode */
+            /* Drop frame timecode: 0 - nondrop; 1 - drop */
+            (c->timecode_drop_frame << 6) |
+            (((time_code % c->sys->ltc_divisor) / 10) << 4) |                 /* Tens of frames */
+            ((time_code % c->sys->ltc_divisor) % 10);                        /* Units of frames */
+        buf[2] = (1 << 7) | /* Biphase mark polarity correction: 0 - even; 1 - odd */
+            ((((time_code / c->sys->ltc_divisor) % 60) / 10) << 4) |          /* Tens of seconds */
+            (((time_code / c->sys->ltc_divisor) % 60) % 10);                 /* Units of seconds */
+        buf[3] = (1 << 7) | /* Binary group flag BGF0 */
+            ((((time_code / (c->sys->ltc_divisor * 60)) % 60) / 10) << 4) |   /* Tens of minutes */
+            (((time_code / (c->sys->ltc_divisor * 60)) % 60) % 10);          /* Units of minutes */
+        buf[4] = (1 << 7) | /* Binary group flag BGF2 */
+            (1 << 6) | /* Binary group flag BGF1 */
+            ((((time_code / (c->sys->ltc_divisor * 3600) % 24)) / 10) << 4) | /* Tens of hours */
+            (((time_code / (c->sys->ltc_divisor * 3600) % 24)) % 10);        /* Units of hours */
         break;
     case dv_audio_source:  /* AAUX source pack */
         va_start(ap, buf);
@@ -304,8 +311,8 @@ static DVMuxContext* dv_init_mux(AVFormatContext* s)
     for (i=0; i<s->nb_streams; i++) {
         switch (s->streams[i]->codec->codec_type) {
         case AVMEDIA_TYPE_VIDEO:
-            if (vst) return NULL;
-            vst = s->streams[i];
+            if (c->vst) return NULL;
+            c->vst = s->streams[i];
             break;
         case AVMEDIA_TYPE_AUDIO:
             if (c->n_ast > 1) return NULL;
@@ -317,7 +324,7 @@ static DVMuxContext* dv_init_mux(AVFormatContext* s)
     }
 
     /* Some checks -- DV format is very picky about its incoming streams */
-    if (!vst || vst->codec->codec_id != CODEC_ID_DVVIDEO)
+    if (!c->vst || c->vst->codec->codec_id != CODEC_ID_DVVIDEO)
         goto bail_out;
     for (i=0; i<c->n_ast; i++) {
         if (c->ast[i] && (c->ast[i]->codec->codec_id    != CODEC_ID_PCM_S16LE ||
@@ -325,7 +332,7 @@ static DVMuxContext* dv_init_mux(AVFormatContext* s)
                           c->ast[i]->codec->channels    != 2))
             goto bail_out;
     }
-    c->sys = ff_dv_codec_profile(vst->codec);
+    c->sys = ff_dv_codec_profile(c->vst->codec);
     if (!c->sys)
         goto bail_out;
 
@@ -371,6 +378,8 @@ static void dv_delete_mux(DVMuxContext *c)
 
 static int dv_write_header(AVFormatContext *s)
 {
+    DVMuxContext *c = s->priv_data;
+
     if (!dv_init_mux(s)) {
         av_log(s, AV_LOG_ERROR, "Can't initialize DV format!\n"
                     "Make sure that you supply exactly two streams:\n"
@@ -378,6 +387,24 @@ static int dv_write_header(AVFormatContext *s)
                     "     (50Mbps allows an optional second audio stream)\n");
         return -1;
     }
+
+    if (c->timecode) {
+        int drop, framenum;
+        framenum = ff_timecode_to_framenum(c->timecode, c->sys->time_base, &drop);
+        if (framenum < 0) {
+            if (framenum == -1)
+                av_log(s, AV_LOG_ERROR, "error parsing timecode, syntax: 00:00:00[;:]00\n");
+            else if (framenum == -2)
+                av_log(s, AV_LOG_ERROR, "error, unsupported fps for timecode\n");
+            else if (framenum == -3)
+                av_log(s, AV_LOG_ERROR, "error, drop frame is only allowed with "
+                       "30000/1001 or 60000/1001 fps\n");
+            return -1;
+        }
+        c->timecode_start = framenum;
+        c->timecode_drop_frame = drop;
+    }
+
     return 0;
 }
 
@@ -407,6 +434,14 @@ static int dv_write_trailer(struct AVFormatContext *s)
     return 0;
 }
 
+static const AVOption options[] = {
+    { "timecode", "set timecode value: 00:00:00[:;]00, use ';' before frame number for drop frame",
+      offsetof(DVMuxContext, timecode), FF_OPT_TYPE_STRING, {.str = 0}, 0, 0, AV_OPT_FLAG_ENCODING_PARAM},
+    { NULL },
+};
+
+static const AVClass class = { "dv", av_default_item_name, options, LIBAVUTIL_VERSION_INT };
+
 AVOutputFormat ff_dv_muxer = {
     .name              = "dv",
     .long_name         = NULL_IF_CONFIG_SMALL("DV video format"),
@@ -417,4 +452,5 @@ AVOutputFormat ff_dv_muxer = {
     .write_header      = dv_write_header,
     .write_packet      = dv_write_packet,
     .write_trailer     = dv_write_trailer,
+    .priv_class = &class,
 };

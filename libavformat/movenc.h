@@ -76,6 +76,7 @@ typedef struct MOVIndex {
     int         hasKeyframes;
 #define MOV_TRACK_CTTS         0x0001
 #define MOV_TRACK_STPS         0x0002
+#define MOV_TRACK_DROP_TC      0x0004
     uint32_t    flags;
     int         language;
     int         trackID;
@@ -106,6 +107,8 @@ typedef struct MOVMuxContext {
     int64_t time;
     int     nb_streams;
     int     chapter_track; ///< qt chapter track number
+    int     timecode_track; ///< timecode track number
+    const char *timecode;
     int64_t mdat_pos;
     uint64_t mdat_size;
     MOVTrack *tracks;

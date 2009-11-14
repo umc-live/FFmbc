@@ -70,6 +70,7 @@ $(FATE_VSYNTH2): CMD = codectest vsynth2
 $(FATE_LAVF):    CMD = lavftest
 $(FATE_LAVFI):   CMD = lavfitest
 $(FATE_SEEK):    CMD = seektest
+$(FATE_FULL):    CMD = codectest vsynth1
 
 fate-codec:  fate-acodec fate-vcodec
 fate-acodec: $(FATE_ACODEC)

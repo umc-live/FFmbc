@@ -14,6 +14,8 @@ eval do_$test=y
 do_lavf()
 {
     file=${outfile}lavf.$1
+    file=${outfile}$4
+    [ -z $4 ] && file=${outfile}lavf.$1
     do_ffmpeg $file $DEC_OPTS -f image2 -vcodec pgmyuv -i $raw_src $DEC_OPTS -ar 44100 -f s16le -i $pcm_src $ENC_OPTS -t 1 -qscale 10 $2
     do_ffmpeg_crc $file $DEC_OPTS -i $target_path/$file $3
 }
@@ -63,7 +65,8 @@ do_lavf mpg
 fi
 
 if [ -n "$do_mxf" ] ; then
-do_lavf mxf "-ar 48000 -bf 2 -timecode_frame_start 264363"
+do_lavf mxf '-ar 48000 -bf 2 -timecode 02:56:14:13'
+do_lavf mxf '-ar 48000 -r 30000/1001 -timecode 02:56:14;13' '' 'lavf_ntsc_tc.mxf'
 fi
 
 if [ -n "$do_mxf_d10" ]; then
@@ -88,6 +91,7 @@ fi
 
 if [ -n "$do_mov" ] ; then
 do_lavf mov "-acodec pcm_alaw"
+do_lavf mov "-acodec pcm_s24le -timecode 11:02:53:20" "" "lavf_tc.mov"
 fi
 
 if [ -n "$do_dv_fmt" ] ; then
