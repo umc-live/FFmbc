@@ -1218,7 +1218,7 @@ static int read_frame_internal(AVFormatContext *s, AVPacket *pkt)
             }
 
             if(s->debug & FF_FDEBUG_TS)
-                av_log(s, AV_LOG_DEBUG, "av_read_packet stream=%d, pts=%"PRId64", dts=%"PRId64", size=%d, duration=%d, flags=%d\n",
+                av_log(s, AV_LOG_DEBUG, "av_read_packet         stream=%d, pts=%"PRId64", dts=%"PRId64", size=%d, duration=%d, flags=%d\n",
                     st->cur_pkt.stream_index,
                     st->cur_pkt.pts,
                     st->cur_pkt.dts,
@@ -1243,7 +1243,7 @@ static int read_frame_internal(AVFormatContext *s, AVPacket *pkt)
         }
     }
     if(s->debug & FF_FDEBUG_TS)
-        av_log(s, AV_LOG_DEBUG, "read_frame_internal stream=%d, pts=%"PRId64", dts=%"PRId64", size=%d, duration=%d, flags=%d\n",
+        av_log(s, AV_LOG_DEBUG, "read_frame_internal    stream=%d, pts=%"PRId64", dts=%"PRId64", size=%d, duration=%d, flags=%d\n",
             pkt->stream_index,
             pkt->pts,
             pkt->dts,
@@ -1297,6 +1297,14 @@ int av_read_frame(AVFormatContext *s, AVPacket *pkt)
                     pkt->pts = st->pts.val + pkt->duration;
                     st->pts.val += pkt->duration;
                 }
+                if(s->debug & FF_FDEBUG_TS)
+                    av_log(s, AV_LOG_DEBUG, "av_read_frame buffered stream=%d, pts=%"PRId64", dts=%"PRId64", size=%d, duration=%d, flags=%d\n",
+                           pkt->stream_index,
+                           pkt->pts,
+                           pkt->dts,
+                           pkt->size,
+                           pkt->duration,
+                           pkt->flags);
                 s->packet_buffer = pktl->next;
                 av_free(pktl);
                 return 0;
