@@ -88,6 +88,7 @@ static void mpegvideo_extract_headers(AVCodecParserContext *s,
                             avcodec_set_dimensions(avctx, pc->width, pc->height);
                         avctx->time_base.den = pc->frame_rate.den * (frame_rate_ext_n + 1) * 2;
                         avctx->time_base.num = pc->frame_rate.num * (frame_rate_ext_d + 1);
+                        avctx->ticks_per_frame = 2;
                         avctx->codec_id = CODEC_ID_MPEG2VIDEO;
                         avctx->sub_id = 2; /* forces MPEG2 */
                     }

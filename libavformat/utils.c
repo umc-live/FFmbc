@@ -839,16 +839,8 @@ static void compute_frame_duration(int *pnum, int *pden, AVStream *st,
             *pnum = st->time_base.num;
             *pden = st->time_base.den;
         }else if(st->codec->time_base.num*1000LL > st->codec->time_base.den){
-            *pnum = st->codec->time_base.num;
+            *pnum = st->codec->time_base.num*st->codec->ticks_per_frame;
             *pden = st->codec->time_base.den;
-            if (pc && pc->repeat_pict) {
-                *pnum = (*pnum) * (1 + pc->repeat_pict);
-            }
-            //If this codec can be interlaced or progressive then we need a parser to compute duration of a packet
-            //Thus if we have no parser in such case leave duration undefined.
-            if(st->codec->ticks_per_frame>1 && !pc){
-                *pnum = *pden = 0;
-            }
         }
         break;
     case AVMEDIA_TYPE_AUDIO:
@@ -3094,7 +3086,8 @@ static int compute_pkt_fields2(AVFormatContext *s, AVStream *st, AVPacket *pkt){
     if (pkt->duration == 0) {
         compute_frame_duration(&num, &den, st, NULL, pkt);
         if (den && num) {
-            pkt->duration = av_rescale(1, num * (int64_t)st->time_base.den * st->codec->ticks_per_frame, den * (int64_t)st->time_base.num);
+            pkt->duration = av_rescale(1, num * (int64_t)st->time_base.den,
+                                       den * (int64_t)st->time_base.num);
         }
     }
 
