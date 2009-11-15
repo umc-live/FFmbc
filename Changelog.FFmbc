@@ -1,0 +1,12 @@
+FFmbc-0.2:
+- Sync on FFmpeg svn r19958.
+- Advanced Metadata support.
+- S302M decoder.
+- XDCAM HD 422 muxer.
+- MXF 720p muxing.
+- New RM demuxer.
+
+FFmbc-0.1:
+- D10/IMX bitstream filter to remove klv header from D10/IMX elementary stream to be copied in MXF.
+- "-map_audio_channel" commandline option to split and merge audio channels.
+- "-timecode" commandline option to set timecode start when encoding.
