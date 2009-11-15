@@ -1433,7 +1433,8 @@ static int mxf_write_header(AVFormatContext *s)
                 mxf->time_base = (AVRational){ 1001, 60000 };
                 mxf->timecode_base = 60;
             } else {
-                av_log(s, AV_LOG_ERROR, "unsupported video frame rate\n");
+                av_log(s, AV_LOG_ERROR, "unsupported video frame rate %d/%d\n",
+                       st->codec->time_base.den, st->codec->time_base.num);
                 return -1;
             }
             av_set_pts_info(st, 64, mxf->time_base.num, mxf->time_base.den);
