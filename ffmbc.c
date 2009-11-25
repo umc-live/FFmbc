@@ -2243,7 +2243,6 @@ static int transcode(AVFormatContext **output_files,
     AVCodecContext *codec, *icodec;
     OutputStream *ost, **ost_table = NULL;
     InputStream *ist;
-    char error[1024];
     int key;
     int want_sdp = 1;
     uint8_t no_packet[MAX_FILES]={0};
@@ -2753,7 +2752,7 @@ static int transcode(AVFormatContext **output_files,
             AVCodec *codec = ost->enc;
             AVCodecContext *dec = input_streams[ost->source_index[0]].st->codec;
             if (!codec) {
-                snprintf(error, sizeof(error), "Encoder (codec id %d) not found for output stream #%d.%d",
+                fprintf(stderr, "Encoder (codec id %d) not found for output stream #%d.%d\n",
                          ost->st->codec->codec_id, ost->file_index, ost->index);
                 ret = AVERROR(EINVAL);
                 goto fail;
@@ -2768,7 +2767,7 @@ static int transcode(AVFormatContext **output_files,
                 ost->st->codec->subtitle_header_size = dec->subtitle_header_size;
             }
             if (avcodec_open2(ost->st->codec, codec, &ost->opts) < 0) {
-                snprintf(error, sizeof(error), "Error while opening encoder for output stream #%d.%d - maybe incorrect parameters such as bit_rate, rate, width or height",
+                fprintf(stderr, "Error while opening encoder for output stream #%d.%d - maybe incorrect parameters such as bit_rate, rate, width or height\n",
                         ost->file_index, ost->index);
                 ret = AVERROR(EINVAL);
                 goto fail;
@@ -2790,13 +2789,13 @@ static int transcode(AVFormatContext **output_files,
             if (!codec)
                 codec = avcodec_find_decoder(ist->st->codec->codec_id);
             if (!codec) {
-                snprintf(error, sizeof(error), "Decoder (codec id %d) not found for input stream #%d.%d",
+                fprintf(stderr, "Decoder (codec id %d) not found for input stream #%d.%d\n",
                         ist->st->codec->codec_id, ist->file_index, ist->st->index);
                 ret = AVERROR(EINVAL);
                 goto fail;
             }
             if (avcodec_open2(ist->st->codec, codec, &ist->opts) < 0) {
-                snprintf(error, sizeof(error), "Error while opening decoder for input stream #%d.%d",
+                fprintf(stderr, "Error while opening decoder for input stream #%d.%d\n",
                         ist->file_index, ist->st->index);
                 ret = AVERROR(EINVAL);
                 goto fail;
@@ -2826,7 +2825,7 @@ static int transcode(AVFormatContext **output_files,
 
 #define METADATA_CHECK_INDEX(index, nb_elems, desc)\
         if ((index) < 0 || (index) >= (nb_elems)) {\
-            snprintf(error, sizeof(error), "Invalid %s index %d while processing metadata maps\n",\
+            fprintf(stderr, "Invalid %s index %d while processing metadata maps\n",\
                      (desc), (index));\
             ret = AVERROR(EINVAL);\
             goto fail;\
@@ -2883,12 +2882,12 @@ static int transcode(AVFormatContext **output_files,
         if (infile < 0 || outfile < 0)
             continue;
         if (infile >= nb_input_files) {
-            snprintf(error, sizeof(error), "Invalid input file index %d in chapter mapping.\n", infile);
+            fprintf(stderr, "Invalid input file index %d in chapter mapping.\n", infile);
             ret = AVERROR(EINVAL);
             goto fail;
         }
         if (outfile >= nb_output_files) {
-            snprintf(error, sizeof(error), "Invalid output file index %d in chapter mapping.\n",outfile);
+            fprintf(stderr, "Invalid output file index %d in chapter mapping.\n",outfile);
             ret = AVERROR(EINVAL);
             goto fail;
         }
@@ -2911,7 +2910,7 @@ static int transcode(AVFormatContext **output_files,
     for(i=0;i<nb_output_files;i++) {
         os = output_files[i];
         if (avformat_write_header(os, &output_opts[i]) < 0) {
-            snprintf(error, sizeof(error), "Could not write header for output file #%d (incorrect codec parameters ?)", i);
+            fprintf(stderr, "Could not write header for output file #%d\n", i);
             ret = AVERROR(EINVAL);
             goto fail;
         }
@@ -2950,11 +2949,6 @@ static int transcode(AVFormatContext **output_files,
             fprintf(stderr, "\n");
             }
         }
-    }
-
-    if (ret) {
-        fprintf(stderr, "%s\n", error);
-        goto fail;
     }
 
     if (want_sdp) {
