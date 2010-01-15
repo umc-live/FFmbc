@@ -568,8 +568,7 @@ int attribute_align_arg avcodec_open2(AVCodecContext *avctx, AVCodec *codec, AVD
         avctx->codec_type = codec->type;
         avctx->codec_id   = codec->id;
     }
-    if (avctx->codec_id != codec->id || (avctx->codec_type != codec->type
-                           && avctx->codec_type != AVMEDIA_TYPE_ATTACHMENT)) {
+    if (avctx->codec_id != codec->id || avctx->codec_type != codec->type) {
         av_log(avctx, AV_LOG_ERROR, "codec type or id mismatches\n");
         ret = AVERROR(EINVAL);
         goto free_and_end;
@@ -970,7 +969,6 @@ static int get_bit_rate(AVCodecContext *ctx)
     case AVMEDIA_TYPE_VIDEO:
     case AVMEDIA_TYPE_DATA:
     case AVMEDIA_TYPE_SUBTITLE:
-    case AVMEDIA_TYPE_ATTACHMENT:
         bit_rate = ctx->bit_rate;
         break;
     case AVMEDIA_TYPE_AUDIO:
@@ -1092,9 +1090,6 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
         break;
     case AVMEDIA_TYPE_SUBTITLE:
         snprintf(buf, buf_size, "Subtitle: %s", codec_name);
-        break;
-    case AVMEDIA_TYPE_ATTACHMENT:
-        snprintf(buf, buf_size, "Attachment: %s", codec_name);
         break;
     default:
         snprintf(buf, buf_size, "Invalid Codec type %d", enc->codec_type);

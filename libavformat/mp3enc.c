@@ -37,47 +37,6 @@
 #include "libavformat/avio_internal.h"
 #include "libavutil/dict.h"
 
-static int id3v1_set_string(AVFormatContext *s, const char *key,
-                            uint8_t *buf, int buf_size)
-{
-    AVDictionaryEntry *tag;
-    if ((tag = av_dict_get(s->metadata, key, NULL, 0)))
-        av_strlcpy(buf, tag->value, buf_size);
-    return !!tag;
-}
-
-static int id3v1_create_tag(AVFormatContext *s, uint8_t *buf)
-{
-    AVDictionaryEntry *tag;
-    int i, count = 0;
-
-    memset(buf, 0, ID3v1_TAG_SIZE); /* fail safe */
-    buf[0] = 'T';
-    buf[1] = 'A';
-    buf[2] = 'G';
-    count += id3v1_set_string(s, "TIT2",    buf +  3, 30);       //title
-    count += id3v1_set_string(s, "TPE1",    buf + 33, 30);       //author|artist
-    count += id3v1_set_string(s, "TALB",    buf + 63, 30);       //album
-    count += id3v1_set_string(s, "TDRL",    buf + 93,  4);       //date
-    count += id3v1_set_string(s, "comment", buf + 97, 30);
-    if ((tag = av_dict_get(s->metadata, "TRCK", NULL, 0))) { //track
-        buf[125] = 0;
-        buf[126] = atoi(tag->value);
-        count++;
-    }
-    buf[127] = 0xFF; /* default to unknown genre */
-    if ((tag = av_dict_get(s->metadata, "TCON", NULL, 0))) { //genre
-        for(i = 0; i <= ID3v1_GENRE_MAX; i++) {
-            if (!strcasecmp(tag->value, ff_id3v1_genre_str[i])) {
-                buf[127] = i;
-                count++;
-                break;
-            }
-        }
-    }
-    return count;
-}
-
 /* simple formats */
 
 static void id3v2_put_size(AVFormatContext *s, int size)
@@ -150,28 +109,6 @@ typedef struct MP3Context {
     uint64_t bag[VBR_NUM_BAGS];
 } MP3Context;
 
-static int mp2_write_trailer(struct AVFormatContext *s)
-{
-    uint8_t buf[ID3v1_TAG_SIZE];
-    MP3Context *mp3 = s->priv_data;
-
-    /* write the id3v1 tag */
-    if (id3v1_create_tag(s, buf) > 0) {
-        avio_write(s->pb, buf, ID3v1_TAG_SIZE);
-    }
-
-    /* write number of frames */
-    if (mp3 && mp3->frames_offset) {
-        avio_seek(s->pb, mp3->frames_offset, SEEK_SET);
-        avio_wb32(s->pb, s->streams[0]->nb_frames);
-        avio_seek(s->pb, 0, SEEK_END);
-    }
-
-    avio_flush(s->pb);
-
-    return 0;
-}
-
 #if CONFIG_MP2_MUXER
 AVOutputFormat ff_mp2_muxer = {
     .name              = "mp2",
@@ -181,7 +118,6 @@ AVOutputFormat ff_mp2_muxer = {
     .audio_codec       = CODEC_ID_MP2,
     .video_codec       = CODEC_ID_NONE,
     .write_packet      = ff_raw_write_packet,
-    .write_trailer     = mp2_write_trailer,
 };
 #endif
 
@@ -445,10 +381,6 @@ static int mp3_write_packet(AVFormatContext *s, AVPacket *pkt)
 static int mp3_write_trailer(AVFormatContext *s)
 {
     MP3Context  *mp3 = s->priv_data;
-    int ret=mp2_write_trailer(s);
-
-    if (ret < 0)
-        return ret;
 
     if (mp3->frames_offset)
         mp3_fix_xing(s);

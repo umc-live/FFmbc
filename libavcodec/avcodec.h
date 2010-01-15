@@ -353,9 +353,6 @@ enum CodecID {
     CODEC_ID_SRT,
     CODEC_ID_MICRODVD,
 
-    /* other specific kind of codecs (generally used for attachments) */
-    CODEC_ID_TTF= 0x18000,
-
     CODEC_ID_PROBE= 0x19000, ///< codec_id is not known (like CODEC_ID_NONE) but lavf should attempt to identify it
 
     CODEC_ID_MPEG2TS= 0x20000, /**< _FAKE_ codec to indicate a raw MPEG-2 TS

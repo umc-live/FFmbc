@@ -3382,19 +3382,46 @@ static void print_fps(double d, const char *postfix){
     else                  av_log(NULL, AV_LOG_INFO, ", %1.0fk %s", d/1000, postfix);
 }
 
+static void dump_bytearray(void *ctx, uint8_t *buf, int size)
+{
+    int i;
+
+    for(i=0;i<size;i++) {
+        int c = buf[i];
+        if (c < ' ' || c > '~')
+            c = '.';
+        av_log(ctx, AV_LOG_INFO, "%c", c);
+    }
+    av_log(ctx, AV_LOG_INFO, "\n");
+}
+
 static void dump_metadata(void *ctx, AVDictionary *m, const char *indent)
 {
     if(m && !(m->count == 1 && av_dict_get(m, "language", NULL, 0))){
         AVDictionaryEntry *tag=NULL;
 
         av_log(ctx, AV_LOG_INFO, "%sMetadata:\n", indent);
-        while((tag=av_dict_get(m, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-            if(strcmp("language", tag->key)){
-                char tmp[256];
-                int i;
-                av_strlcpy(tmp, tag->value, sizeof(tmp));
-                for(i=0; i<strlen(tmp); i++) if(tmp[i]==0xd) tmp[i]=' ';
-                av_log(ctx, AV_LOG_INFO, "%s  %-16s: %s\n", indent, tag->key, tmp);
+        while((tag=av_dict_get(m, "", tag, AV_METADATA_IGNORE_SUFFIX))) {
+            const char *lang = av_metadata_get_attribute(tag, "language");
+            int i;
+            if (!strcmp(tag->key, "language"))
+                continue;
+            av_log(ctx, AV_LOG_INFO, "%s", indent);
+            av_log(ctx, AV_LOG_INFO, "  %4s", tag->key);
+            if (lang)
+                av_log(ctx, AV_LOG_INFO, "(%s)", lang);
+            av_log(ctx, AV_LOG_INFO, ": ");
+            if (tag->type == METADATA_BYTEARRAY)
+                dump_bytearray(ctx, tag->value, FFMIN(tag->len, 64));
+            else
+                av_log(ctx, AV_LOG_INFO, "%s\n", tag->value);
+            for (i = 0; tag->attributes && i < tag->attributes->count; i++) {
+                if (!strcmp(tag->attributes->elems[i].key, "language"))
+                    continue;
+                av_log(ctx, AV_LOG_INFO, "%s", indent);
+                av_log(ctx, AV_LOG_INFO, "    %s: %s\n",
+                       tag->attributes->elems[i].key,
+                       tag->attributes->elems[i].value);
             }
         }
     }

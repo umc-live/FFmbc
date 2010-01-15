@@ -413,32 +413,26 @@ static void get_attachment(AVFormatContext *s, AVIOContext *pb, int length)
     char mime[1024];
     char description[1024];
     unsigned int filesize;
-    AVStream *st;
-    int64_t pos = avio_tell(pb);
+    uint8_t *data = NULL;
+    AVMetadataTag *tag;
 
     avio_get_str16le(pb, INT_MAX, mime, sizeof(mime));
-    if (strcmp(mime, "image/jpeg"))
-        goto done;
-
     avio_r8(pb);
     avio_get_str16le(pb, INT_MAX, description, sizeof(description));
     filesize = avio_rl32(pb);
     if (!filesize)
-        goto done;
-
-    st = av_new_stream(s, 0);
-    if (!st)
-        goto done;
-    av_dict_set(&st->metadata, "title", description, 0);
-    st->codec->codec_id   = CODEC_ID_MJPEG;
-    st->codec->codec_type = AVMEDIA_TYPE_ATTACHMENT;
-    st->codec->extradata  = av_mallocz(filesize);
-    if (!st->codec->extradata)
-        goto done;
-    st->codec->extradata_size = filesize;
-    avio_read(pb, st->codec->extradata, filesize);
-done:
-    avio_seek(pb, pos + length, SEEK_SET);
+        return;
+    data = av_malloc(filesize);
+    if (!data)
+        return;
+    avio_read(pb, data, filesize);
+    if (av_dict_set_custom(&s->metadata, &tag, METADATA_BYTEARRAY,
+                           "cover", data, filesize,
+                           AV_DICT_DONT_STRDUP_VAL) < 0) {
+        av_free(data);
+        return;
+    }
+    av_metadata_set_attribute(tag, "mime", mime);
 }
 
 static void get_tag(AVFormatContext *s, AVIOContext *pb, const char *key, int type, int length)
@@ -482,8 +476,10 @@ static void get_tag(AVFormatContext *s, AVIOContext *pb, const char *key, int ty
         avio_read(pb, guid, 16);
         snprintf(buf, buf_size, PRI_PRETTY_GUID, ARG_PRETTY_GUID(guid));
     } else if (type == 2 && !strcmp(key, "WM/Picture")) {
+        int64_t next = avio_tell(pb) + length;
         get_attachment(s, pb, length);
         av_freep(&buf);
+        avio_seek(pb, next, SEEK_SET);
         return;
     } else {
         av_freep(&buf);

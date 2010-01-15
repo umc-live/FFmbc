@@ -3838,11 +3838,9 @@ static int opt_input_file(const char *opt, const char *filename)
             if(subtitle_disable)
                 st->discard = AVDISCARD_ALL;
             break;
-        case AVMEDIA_TYPE_ATTACHMENT:
+        default:
         case AVMEDIA_TYPE_UNKNOWN:
             break;
-        default:
-            abort();
         }
     }
 
@@ -3905,7 +3903,6 @@ static void check_inputs(int *has_video_ptr,
                 has_subtitle = 1;
                 break;
             case AVMEDIA_TYPE_DATA:
-            case AVMEDIA_TYPE_ATTACHMENT:
             case AVMEDIA_TYPE_UNKNOWN:
                 has_data = 1;
                 break;

@@ -120,7 +120,6 @@ static const char *media_type_string(enum AVMediaType media_type)
     case AVMEDIA_TYPE_AUDIO:      return "audio";
     case AVMEDIA_TYPE_DATA:       return "data";
     case AVMEDIA_TYPE_SUBTITLE:   return "subtitle";
-    case AVMEDIA_TYPE_ATTACHMENT: return "attachment";
     default:                      return "unknown";
     }
 }

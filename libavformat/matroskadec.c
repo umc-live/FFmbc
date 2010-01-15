@@ -170,7 +170,7 @@ typedef struct {
     char *mime;
     EbmlBin bin;
 
-    AVStream *stream;
+    AVDictionaryEntry *tag;
 } MatroskaAttachement;
 
 typedef struct {
@@ -1082,30 +1082,22 @@ static void matroska_convert_tag(AVFormatContext *s, EbmlList *list,
                                  AVDictionary **metadata, char *prefix)
 {
     MatroskaTag *tags = list->elem;
-    char key[1024];
     int i;
 
     for (i=0; i < list->nb_elem; i++) {
-        const char *lang = strcmp(tags[i].lang, "und") ? tags[i].lang : NULL;
-
-        if (!tags[i].name) {
-            av_log(s, AV_LOG_WARNING, "Skipping invalid tag with no TagName.\n");
-            continue;
-        }
-        if (prefix)  snprintf(key, sizeof(key), "%s/%s", prefix, tags[i].name);
-        else         av_strlcpy(key, tags[i].name, sizeof(key));
-        if (tags[i].def || !lang) {
-        av_dict_set(metadata, key, tags[i].string, 0);
+        AVDictionaryEntry *tag;
+        if (av_dict_set_custom(metadata, &tag, METADATA_STRING,
+                               tags[i].name, tags[i].string,
+                               strlen(tags[i].string),
+                               AV_DICT_DONT_STRDUP_VAL |
+                               AV_DICT_DONT_STRDUP_KEY) < 0)
+            return;
+        tags[i].name = NULL;
+        tags[i].string = NULL;
+        if (strcmp(tags[i].lang, "und"))
+            av_metadata_set_attribute(tag, "language", tags[i].lang);
         if (tags[i].sub.nb_elem)
-            matroska_convert_tag(s, &tags[i].sub, metadata, key);
-        }
-        if (lang) {
-            av_strlcat(key, "-", sizeof(key));
-            av_strlcat(key, lang, sizeof(key));
-            av_dict_set(metadata, key, tags[i].string, 0);
-            if (tags[i].sub.nb_elem)
-                matroska_convert_tag(s, &tags[i].sub, metadata, key);
-        }
+            av_log(s, AV_LOG_WARNING, "sub elements in tag\n");
     }
     ff_metadata_conv(metadata, NULL, ff_mkv_metadata_conv);
 }
@@ -1118,12 +1110,8 @@ static void matroska_convert_tags(AVFormatContext *s)
 
     for (i=0; i < matroska->tags.nb_elem; i++) {
         if (tags[i].target.attachuid) {
-            MatroskaAttachement *attachment = matroska->attachments.elem;
-            for (j=0; j<matroska->attachments.nb_elem; j++)
-                if (attachment[j].uid == tags[i].target.attachuid
-                    && attachment[j].stream)
-                    matroska_convert_tag(s, &tags[i].tag,
-                                         &attachment[j].stream->metadata, NULL);
+            if (matroska->attachments.nb_elem > 0)
+                av_log(s, AV_LOG_WARNING, "attachment has tags\n");
         } else if (tags[i].target.chapteruid) {
             MatroskaChapter *chapter = matroska->chapters.elem;
             for (j=0; j<matroska->chapters.nb_elem; j++)
@@ -1608,26 +1596,13 @@ static int matroska_read_header(AVFormatContext *s, AVFormatParameters *ap)
               attachements[j].bin.data && attachements[j].bin.size > 0)) {
             av_log(matroska->ctx, AV_LOG_ERROR, "incomplete attachment\n");
         } else {
-            AVStream *st = av_new_stream(s, 0);
-            if (st == NULL)
+            if (av_dict_set_custom(&s->metadata, &attachements[j].tag, METADATA_BYTEARRAY,
+                                   attachements[j].filename,
+                                   attachements[j].bin.data, attachements[j].bin.size,
+                                   AV_DICT_DONT_STRDUP_VAL) < 0)
                 break;
-            av_dict_set(&st->metadata, "filename",attachements[j].filename, 0);
-            st->codec->codec_id = CODEC_ID_NONE;
-            st->codec->codec_type = AVMEDIA_TYPE_ATTACHMENT;
-            st->codec->extradata  = av_malloc(attachements[j].bin.size);
-            if(st->codec->extradata == NULL)
-                break;
-            st->codec->extradata_size = attachements[j].bin.size;
-            memcpy(st->codec->extradata, attachements[j].bin.data, attachements[j].bin.size);
-
-            for (i=0; ff_mkv_mime_tags[i].id != CODEC_ID_NONE; i++) {
-                if (!strncmp(ff_mkv_mime_tags[i].str, attachements[j].mime,
-                             strlen(ff_mkv_mime_tags[i].str))) {
-                    st->codec->codec_id = ff_mkv_mime_tags[i].id;
-                    break;
-                }
-            }
-            attachements[j].stream = st;
+            attachements[j].bin.data = NULL;
+            av_metadata_set_attribute(attachements[j].tag, "mime", attachements[j].mime);
         }
     }
 

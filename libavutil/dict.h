@@ -71,9 +71,32 @@
 #define AV_DICT_APPEND         32   /**< If the entry already exists, append to it.  Note that no
                                       delimiter is added, the strings are simply concatenated. */
 
+/**
+ * Used attributes: "language", "mime"
+ */
 typedef struct {
     char *key;
     char *value;
+} AVMetadataAttribute;
+
+typedef struct {
+    unsigned count;
+    AVMetadataAttribute *elems;
+} AVMetadataAttributes;
+
+enum AVMetadataType {
+    METADATA_STRING, ///< UTF-8
+    METADATA_INT,
+    METADATA_FLOAT,
+    METADATA_BYTEARRAY,
+};
+
+typedef struct {
+    char *key;
+    char *value;
+    enum AVMetadataType type;
+    unsigned len;
+    AVMetadataAttributes *attributes;
 } AVDictionaryEntry;
 
 typedef struct AVDictionary AVDictionary;
@@ -100,6 +123,39 @@ av_dict_get(AVDictionary *m, const char *key, const AVDictionaryEntry *prev, int
  * @return >= 0 on success otherwise an error code <0
  */
 int av_dict_set(AVDictionary **pm, const char *key, const char *value, int flags);
+
+/**
+ * Sets the given tag in m
+ * @param pm pointer to a pointer to a metadata struct. If *pm is NULL
+ * @param e point to the newly created entry
+ * @param type tag type
+ * @param key tag key to add to m (will be av_strduped depending on flags)
+ * @param value tag value to add to m (will be av_strduped depending on flags)
+ * @param value tag value len
+ * @param flags flags regarding key and value parameters
+ * @return >= 0 on success otherwise an error code <0
+ */
+int av_dict_set_custom(AVDictionary **pm, AVDictionaryEntry **e,
+                       enum AVMetadataType type, const char *key,
+                       const char *value, unsigned len, int flags);
+
+int av_dict_set_int(AVDictionary **pm, const char *key, int value);
+int av_dict_set_float(AVDictionary **pm, const char *key, double value);
+
+/**
+ * Get attribute of the given metadata with matching key.
+ * @return Found tag or NULL, changing key or value leads to undefined behavior.
+ */
+const char *av_metadata_get_attribute(AVDictionaryEntry *tag, const char *key);
+
+/**
+ * Sets attribute to the given tag
+ * @param key attribute key to add to tag (will be av_strduped)
+ * @param value attribute value to add to tag (will be av_strduped)
+ * @return >= 0 on success otherwise an error code <0
+ */
+int av_metadata_set_attribute(AVDictionaryEntry *tag, const char *key, const char *value);
+int av_metadata_copy_attributes(AVDictionaryEntry *otag, AVDictionaryEntry *itag);
 
 /**
  * Copy entries from one AVDictionary struct into another.

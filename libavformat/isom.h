@@ -141,6 +141,9 @@ typedef struct MOVContext {
     unsigned trex_count;
     int itunes_metadata;  ///< metadata are itunes style
     int chapter_track;
+    AVDictionary **metadata; ///< current metadata context (track or global)
+    char **keys_data;        ///< metadata keys
+    unsigned keys_count;     ///< metadata keys
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);

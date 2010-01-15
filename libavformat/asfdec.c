@@ -153,29 +153,34 @@ static int get_value(AVIOContext *pb, int type){
 
 static void get_tag(AVFormatContext *s, const char *key, int type, int len)
 {
-    char *value;
     int64_t off = avio_tell(s->pb);
 
     if ((unsigned)len >= (UINT_MAX - 1)/2)
         return;
 
-    value = av_malloc(2*len+1);
-    if (!value)
-        goto finish;
-
     if (type == 0) {         // UTF16-LE
+        char *value;
+        value = av_malloc(2*len+1);
+        if (!value)
+            goto finish;
         avio_get_str16le(s->pb, len, value, 2*len + 1);
-    } else if (type > 1 && type <= 5) {  // boolean or DWORD or QWORD or WORD
+        av_dict_set(&s->metadata, key, value, AV_DICT_DONT_STRDUP_VAL);
+    } else if (type == 1) {
+        uint8_t *value = av_malloc(len);
+        if (!value)
+            goto finish;
+        avio_read(s->pb, value, len);
+        if (av_dict_set_custom(&s->metadata, NULL, METADATA_BYTEARRAY,
+                               key, value, len, AV_DICT_DONT_STRDUP_VAL) < 0)
+            av_free(value);
+    } else if (type <= 5) {  // boolean or DWORD or QWORD or WORD
         uint64_t num = get_value(s->pb, type);
-        snprintf(value, len, "%"PRIu64, num);
+        av_dict_set_int(&s->metadata, key, num);
     } else {
         av_log(s, AV_LOG_DEBUG, "Unsupported value type %d in tag %s.\n", type, key);
         goto finish;
     }
-    if (*value)
-        av_dict_set(&s->metadata, key, value, 0);
 finish:
-    av_freep(&value);
     avio_seek(s->pb, off + len, SEEK_SET);
 }
 

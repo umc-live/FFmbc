@@ -1624,24 +1624,17 @@ static int mov_write_string_metadata(AVFormatContext *s, AVIOContext *pb,
                                      const char *name, const char *tag,
                                      int long_style)
 {
-    int l, lang = 0, len, len2;
-    AVDictionaryEntry *t, *t2 = NULL;
-    char tag2[16];
+    AVDictionaryEntry *t;
+    const char *lang;
+    int langcode;
 
     if (!(t = av_dict_get(s->metadata, tag, NULL, 0)))
         return 0;
 
-    len = strlen(t->key);
-    snprintf(tag2, sizeof(tag2), "%s-", tag);
-    while ((t2 = av_dict_get(s->metadata, tag2, t2, AV_DICT_IGNORE_SUFFIX))) {
-        len2 = strlen(t2->key);
-        if (len2 == len+4 && !strcmp(t->value, t2->value)
-            && (l=ff_mov_iso639_to_lang(&t2->key[len2-3], 1)) >= 0) {
-            lang = l;
-            break;
-        }
-    }
-    return mov_write_string_tag(pb, name, t->value, lang, long_style);
+    lang = av_metadata_get_attribute(t, "language");
+    langcode = lang ? ff_mov_iso639_to_lang(lang, 1) : 0;
+
+    return mov_write_string_tag(pb, name, t->value, langcode, long_style);
 }
 
 /* iTunes track number */
@@ -1649,21 +1642,23 @@ static int mov_write_trkn_tag(AVIOContext *pb, MOVMuxContext *mov,
                               AVFormatContext *s)
 {
     AVDictionaryEntry *t = av_dict_get(s->metadata, "track", NULL, 0);
-    int size = 0, track = t ? atoi(t->value) : 0;
-    if (track) {
-        avio_wb32(pb, 32); /* size */
-        avio_wtag(pb, "trkn");
-            avio_wb32(pb, 24); /* size */
-            avio_wtag(pb, "data");
-            avio_wb32(pb, 0);        // 8 bytes empty
-            avio_wb32(pb, 0);
-            avio_wb16(pb, 0);        // empty
-            avio_wb16(pb, track);    // track number
-            avio_wb16(pb, 0);        // total track number
-            avio_wb16(pb, 0);        // empty
-        size = 32;
-    }
-    return size;
+    int64_t pos = avio_tell(pb);
+    char *slash;
+
+    if (!t)
+        return 0;
+    slash = strchr(t->value, '/');
+    avio_wb32(pb, 0); /* size */
+    avio_wtag(pb, "trkn");
+    avio_wb32(pb, 24); /* size */
+    avio_wtag(pb, "data");
+    avio_wb32(pb, 0);        // 8 bytes empty
+    avio_wb32(pb, 0);
+    avio_wb16(pb, 0);        // empty
+    avio_wb16(pb, atoi(t->value));            // track number
+    avio_wb16(pb, slash ? atoi(slash+1) : 0); // total track number
+    avio_wb16(pb, 0);        // empty
+    return updateSize(pb, pos);
 }
 
 /* iTunes meta data list */
@@ -1679,7 +1674,7 @@ static int mov_write_ilst_tag(AVIOContext *pb, MOVMuxContext *mov,
     mov_write_string_metadata(s, pb, "\251wrt", "composer" , 1);
     mov_write_string_metadata(s, pb, "\251alb", "album"    , 1);
     mov_write_string_metadata(s, pb, "\251day", "date"     , 1);
-    mov_write_string_tag(pb, "\251too", LIBAVFORMAT_IDENT, 0, 1);
+    mov_write_string_metadata(s, pb, "\251too", "encoder"  , 1);
     mov_write_string_metadata(s, pb, "\251cmt", "comment"  , 1);
     mov_write_string_metadata(s, pb, "\251gen", "genre"    , 1);
     mov_write_string_metadata(s, pb, "\251cpy", "copyright", 1);

@@ -58,7 +58,7 @@ void ff_metadata_conv(AVDictionary **pm, const AVMetadataConv *d_conv,
     /* TODO: use binary search to look up the two conversion tables
        if the tables are getting big enough that it would matter speed wise */
     const AVMetadataConv *sc, *dc;
-    AVDictionaryEntry *mtag = NULL;
+    AVDictionaryEntry *mtag = NULL, *tag;
     AVDictionary *dst = NULL;
     const char *key;
 
@@ -79,7 +79,8 @@ void ff_metadata_conv(AVDictionary **pm, const AVMetadataConv *d_conv,
                     key = dc->native;
                     break;
                 }
-        av_dict_set(&dst, key, mtag->value, 0);
+        av_dict_set_custom(&dst, &tag, mtag->type, key, mtag->value, mtag->len, 0);
+        av_metadata_copy_attributes(tag, mtag);
     }
     av_dict_free(pm);
     *pm = dst;

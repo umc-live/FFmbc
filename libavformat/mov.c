@@ -34,6 +34,7 @@
 #include "avio_internal.h"
 #include "riff.h"
 #include "isom.h"
+#include "id3v1.h"
 #include "libavcodec/get_bits.h"
 
 #if CONFIG_ZLIB
@@ -84,12 +85,59 @@ static const MOVParseTableEntry mov_default_parse_table[];
 static int mov_metadata_track_or_disc_number(MOVContext *c, AVIOContext *pb, unsigned len, const char *type)
 {
     char buf[16];
+    int num, count;
 
     avio_rb16(pb); // unknown
-    snprintf(buf, sizeof(buf), "%d", avio_rb16(pb));
-    av_dict_set(&c->fc->metadata, type, buf, 0);
+    num = avio_rb16(pb);
+    count = avio_rb16(pb);
+    if (count)
+        snprintf(buf, sizeof(buf), "%d/%d", num, count);
+    else
+        snprintf(buf, sizeof(buf), "%d", num);
+    av_dict_set(c->metadata, type, buf, 0);
 
-    avio_rb16(pb); // total tracks/discs
+    return 0;
+}
+
+static int mov_metadata_genre(MOVContext *c, AVIOContext *pb, unsigned len, const char *type)
+{
+    uint16_t genre = avio_rb16(pb);
+    if (genre-1 < ID3v1_GENRE_MAX)
+        av_dict_set(c->metadata, "genre", ff_id3v1_genre_str[genre-1], 0);
+    return 0;
+}
+
+static int mov_read_keys(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    unsigned int i, entries;
+
+    avio_rb32(pb); // version+flags
+
+    entries = avio_rb32(pb);
+    if (entries >= UINT_MAX/sizeof(*c->keys_data))
+        return -1;
+
+    for (i = 0; i < c->keys_count; i++)
+        av_freep(&c->keys_data[i]);
+    av_freep(&c->keys_data);
+
+    c->keys_data = av_mallocz(entries*sizeof(*c->keys_data));
+    if (!c->keys_data)
+        return AVERROR(ENOMEM);
+    c->keys_count = entries;
+
+    for (i = 0; i < entries; i++) {
+        uint32_t size = avio_rb32(pb);
+        avio_skip(pb, 4); // 'mdta'
+        if (size > atom.size || size < 8)
+            return 0;
+        size -= 8;
+        c->keys_data[i] = av_malloc(size+1);
+        if (!c->keys_data[i])
+            return AVERROR(ENOMEM);
+        avio_read(pb, c->keys_data[i], size);
+        c->keys_data[i][size] = 0;
+    }
 
     return 0;
 }
@@ -131,44 +179,59 @@ static int mov_read_mac_string(MOVContext *c, AVIOContext *pb, int len,
     return p - dst;
 }
 
-static int mov_read_udta_string(MOVContext *c, AVIOContext *pb, MOVAtom atom)
-{
-#ifdef MOV_EXPORT_ALL_METADATA
-    char tmp_key[5];
-#endif
-    char str[1024], key2[16], language[4] = {0};
-    const char *key = NULL;
-    uint16_t str_size, langcode = 0;
-    uint32_t data_type = 0;
-    int (*parse)(MOVContext*, AVIOContext*, unsigned, const char *) = NULL;
+static const struct {
+    uint32_t tag;
+    const char *key;
+    int (*parse)(MOVContext*, AVIOContext*, unsigned, const char *);
+} udta_parse_table[] = {
+    { MKTAG( 'a','A','R','T'), "album_artist" },
+    { MKTAG( 'c','a','t','g'), "category" },
+    { MKTAG( 'c','p','r','t'), "copyright" },
+    { MKTAG( 'd','e','s','c'), "description" },
+    { MKTAG( 'l','d','e','s'), "synopsis" },
+    { MKTAG( 't','v','s','h'), "show" },
+    { MKTAG( 't','v','e','n'), "episode_id" },
+    { MKTAG( 't','v','n','n'), "network" },
+    { MKTAG( 'g','n','r','e'), "genre", mov_metadata_genre },
+    { MKTAG( 't','r','k','n'), "track", mov_metadata_track_or_disc_number },
+    { MKTAG( 'd','i','s','k'), "disc", mov_metadata_track_or_disc_number },
+    { MKTAG(0xa9,'A','R','T'), "artist" },
+    { MKTAG(0xa9,'P','R','D'), "product" },
+    { MKTAG(0xa9,'a','l','b'), "album" },
+    { MKTAG(0xa9,'a','u','t'), "author" },
+    { MKTAG(0xa9,'c','m','t'), "comment" },
+    { MKTAG(0xa9,'c','p','y'), "copyright" },
+    { MKTAG(0xa9,'d','a','y'), "year" },
+    { MKTAG(0xa9,'e','n','c'), "encoder" },
+    { MKTAG(0xa9,'s','w','r'), "encoder" },
+    { MKTAG(0xa9,'f','m','t'), "original_format" },
+    { MKTAG(0xa9,'g','e','n'), "genre" },
+    { MKTAG(0xa9,'i','n','f'), "comment" },
+    { MKTAG(0xa9,'n','a','m'), "title" },
+    { MKTAG(0xa9,'t','o','o'), "encoder" },
+    { MKTAG(0xa9,'w','r','t'), "composer" },
+    { 0 },
+};
 
-    switch (atom.type) {
-    case MKTAG(0xa9,'n','a','m'): key = "title";     break;
-    case MKTAG(0xa9,'a','u','t'):
-    case MKTAG(0xa9,'A','R','T'): key = "artist";    break;
-    case MKTAG( 'a','A','R','T'): key = "album_artist";break;
-    case MKTAG(0xa9,'w','r','t'): key = "composer";  break;
-    case MKTAG( 'c','p','r','t'):
-    case MKTAG(0xa9,'c','p','y'): key = "copyright"; break;
-    case MKTAG(0xa9,'g','r','p'): key = "grouping"; break;
-    case MKTAG(0xa9,'l','y','r'): key = "lyrics"; break;
-    case MKTAG(0xa9,'c','m','t'):
-    case MKTAG(0xa9,'i','n','f'): key = "comment";   break;
-    case MKTAG(0xa9,'a','l','b'): key = "album";     break;
-    case MKTAG(0xa9,'d','a','y'): key = "date";      break;
-    case MKTAG(0xa9,'g','e','n'): key = "genre";     break;
-    case MKTAG(0xa9,'t','o','o'):
-    case MKTAG(0xa9,'s','w','r'): key = "encoder";   break;
-    case MKTAG(0xa9,'e','n','c'): key = "encoder";   break;
-    case MKTAG( 'd','e','s','c'): key = "description";break;
-    case MKTAG( 'l','d','e','s'): key = "synopsis";  break;
-    case MKTAG( 't','v','s','h'): key = "show";      break;
-    case MKTAG( 't','v','e','n'): key = "episode_id";break;
-    case MKTAG( 't','v','n','n'): key = "network";   break;
-    case MKTAG( 't','r','k','n'): key = "track";
-        parse = mov_metadata_track_or_disc_number; break;
-    case MKTAG( 'd','i','s','k'): key = "disc";
-        parse = mov_metadata_track_or_disc_number; break;
+static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    enum AVMetadataType type;
+    char language[4] = {0};
+    const char *key = NULL;
+    uint16_t langcode = 0;
+    uint32_t data_type = 0;
+    unsigned i, size;
+    int (*parse)(MOVContext*, AVIOContext*, unsigned, const char*) = NULL;
+
+    av_dlog(c->fc, "type: %08x  %.4s  sz: %"PRIx64"\n",
+           atom.type, (char*)&atom.type, atom.size);
+
+    for (i = 0; i < FF_ARRAY_ELEMS(udta_parse_table); i++) {
+        if (udta_parse_table[i].tag == atom.type) {
+            key = udta_parse_table[i].key;
+            parse = udta_parse_table[i].parse;
+            break;
+        }
     }
 
     if (c->itunes_metadata && atom.size > 8) {
@@ -176,50 +239,93 @@ static int mov_read_udta_string(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         int tag = avio_rl32(pb);
         if (tag == MKTAG('d','a','t','a')) {
             data_type = avio_rb32(pb); // type
+            switch (data_type) {
+            case 0:  type = METADATA_INT; break;
+            case 1:  type = METADATA_STRING; break;
+            default:
+                av_log(c->fc, AV_LOG_DEBUG,
+                       "unsupported data type: %d\n", data_type);
+                type = METADATA_BYTEARRAY;
+                break;
+            }
             avio_rb32(pb); // unknown
-            str_size = data_size - 16;
+            size = data_size - 16;
             atom.size -= 16;
         } else return 0;
-    } else if (atom.size > 4 && key && !c->itunes_metadata) {
-        str_size = avio_rb16(pb); // string length
+    } else if (!c->itunes_metadata && atom.size > 4) {
+        size = avio_rb16(pb); // string length
         langcode = avio_rb16(pb);
-        ff_mov_lang_to_iso639(langcode, language);
+        if (!ff_mov_lang_to_iso639(langcode, language) ||
+            size > atom.size) {
+            language[0] = 0;
+            avio_seek(pb, -4, SEEK_CUR);
+            goto unrecognized;
+        }
         atom.size -= 4;
-    } else
-        str_size = atom.size;
-
-#ifdef MOV_EXPORT_ALL_METADATA
-    if (!key) {
-        snprintf(tmp_key, 5, "%.4s", (char*)&atom.type);
-        key = tmp_key;
+        type = METADATA_STRING;
+    } else {
+    unrecognized:
+        size = atom.size;
+        type = METADATA_BYTEARRAY;
     }
+
+    if (!key) {
+        unsigned tagbe = AV_RB32(&atom.type)-1;
+        if (tagbe < c->keys_count) {
+            key = c->keys_data[tagbe];
+        } else {
+#ifdef MOV_EXPORT_ALL_METADATA
+            char keybuf[5];
+            AV_WL32(keybuf, atom.type);
+            keybuf[4] = 0;
+            key = keybuf;
 #endif
+        }
+    }
 
     if (!key)
         return 0;
     if (atom.size < 0)
         return -1;
 
-    str_size = FFMIN3(sizeof(str)-1, str_size, atom.size);
+    size = FFMIN(size, atom.size);
 
     if (parse)
-        parse(c, pb, str_size, key);
-    else {
-        if (data_type == 3 || (data_type == 0 && langcode < 0x800)) { // MAC Encoded
-            mov_read_mac_string(c, pb, str_size, str, sizeof(str));
-        } else {
-            avio_read(pb, str, str_size);
-            str[str_size] = 0;
+        parse(c, pb, size, key);
+    else if (type == METADATA_INT) {
+        int value;
+        switch (size) {
+        case 4: value = avio_rb32(pb); break;
+        case 3: value = avio_rb24(pb); break;
+        case 2: value = avio_rb16(pb); break;
+        case 1: value = avio_r8(pb); break;
+        default:
+            av_log(c->fc, AV_LOG_DEBUG, "unsupported int size: %d\n", size);
+            avio_skip(pb, size);
+            value = 0;
+            break;
         }
-        av_dict_set(&c->fc->metadata, key, str, 0);
-        if (*language && strcmp(language, "und")) {
-            snprintf(key2, sizeof(key2), "%s-%s", key, language);
-            av_dict_set(&c->fc->metadata, key2, str, 0);
+        av_dict_set_int(c->metadata, key, value);
+    } else {
+        AVDictionaryEntry *tag = NULL;
+        uint8_t *buf;
+        if (type == METADATA_STRING)
+            buf = av_malloc(size+1);
+        else
+            buf = av_malloc(size);
+        if (!buf)
+            return AVERROR(ENOMEM);
+        avio_read(pb, buf, size);
+        if (type == METADATA_STRING)
+            buf[size] = 0;
+        if (av_dict_set_custom(c->metadata, &tag, type, key, buf, size,
+                               AV_DICT_DONT_STRDUP_VAL) < 0) {
+            av_free(buf);
+            return 0;
         }
+        if (*language && strcmp(language, "und"))
+            av_metadata_set_attribute(tag, "language", language);
     }
-    av_dlog(c->fc, "lang \"%3s\" ", language);
-    av_dlog(c->fc, "tag \"%s\" value \"%s\" atom \"%.4s\" %d %"PRId64"\n",
-            key, str, (char*)&atom.type, str_size, atom.size);
 
     return 0;
 }
@@ -298,7 +404,7 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         // container is user data
         if (!parse && (atom.type == MKTAG('u','d','t','a') ||
                        atom.type == MKTAG('i','l','s','t')))
-            parse = mov_read_udta_string;
+            parse = mov_read_udta;
 
         if (!parse) { /* skip leaf atoms data */
             avio_skip(pb, a.size);
@@ -1769,8 +1875,10 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     st->codec->codec_type = AVMEDIA_TYPE_DATA;
     sc->ffindex = st->index;
 
+    c->metadata = &st->metadata;
     if ((ret = mov_read_default(c, pb, atom)) < 0)
         return ret;
+    c->metadata = &c->fc->metadata;
 
     /* sanity checks */
     if (sc->chunk_count && (!sc->stts_count || !sc->stsc_count ||
@@ -2233,6 +2341,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('h','d','l','r'), mov_read_hdlr },
 { MKTAG('i','l','s','t'), mov_read_ilst },
 { MKTAG('j','p','2','h'), mov_read_extradata },
+{ MKTAG('k','e','y','s'), mov_read_keys },
 { MKTAG('m','d','a','t'), mov_read_mdat },
 { MKTAG('m','d','h','d'), mov_read_mdhd },
 { MKTAG('m','d','i','a'), mov_read_default },
@@ -2386,7 +2495,7 @@ static int mov_read_header(AVFormatContext *s, AVFormatParameters *ap)
 {
     MOVContext *mov = s->priv_data;
     AVIOContext *pb = s->pb;
-    int err;
+    int i, err;
     MOVAtom atom = { AV_RL32("root") };
 
     mov->fc = s;
@@ -2396,6 +2505,7 @@ static int mov_read_header(AVFormatContext *s, AVFormatParameters *ap)
     else
         atom.size = INT64_MAX;
 
+    mov->metadata = &s->metadata;
     /* check MOV header */
     if ((err = mov_read_default(mov, pb, atom)) < 0) {
         av_log(s, AV_LOG_ERROR, "error reading header: %d\n", err);
@@ -2409,6 +2519,11 @@ static int mov_read_header(AVFormatContext *s, AVFormatParameters *ap)
 
     if (pb->seekable && mov->chapter_track > 0)
         mov_read_chapters(s);
+
+    for (i = 0; i < mov->keys_count; i++)
+        av_freep(&mov->keys_data[i]);
+    av_freep(&mov->keys_data);
+    mov->keys_count = 0;
 
     return 0;
 }
