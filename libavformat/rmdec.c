@@ -650,7 +650,7 @@ static int rm_assemble_video_frame(AVFormatContext *s, AVIOContext *pb,
             memmove(pkt->data + 1 + 8*vst->cur_slice, pkt->data + 1 + 8*vst->slices,
                 vst->videobufpos - 1 - 8*vst->slices);
         pkt->size = vst->videobufpos + 8*(vst->cur_slice - vst->slices);
-        pkt->pts = AV_NOPTS_VALUE;
+        pkt->dts = AV_NOPTS_VALUE;
         pkt->pos = vst->pktpos;
         vst->slices = 0;
         return 0;
@@ -784,7 +784,7 @@ ff_rm_parse_packet (AVFormatContext *s, AVIOContext *pb,
     }
 #endif
 
-    pkt->pts= timestamp;
+    pkt->dts= timestamp;
     if (flags & 2)
         pkt->flags |= AV_PKT_FLAG_KEY;
 
@@ -808,7 +808,7 @@ ff_rm_retrieve_cache (AVFormatContext *s, AVIOContext *pb,
                st->codec->block_align);
     }
     rm->audio_pkt_cnt--;
-    if ((pkt->pts = ast->audiotimestamp) != AV_NOPTS_VALUE) {
+    if ((pkt->dts = ast->audiotimestamp) != AV_NOPTS_VALUE) {
         ast->audiotimestamp = AV_NOPTS_VALUE;
         pkt->flags = AV_PKT_FLAG_KEY;
     } else
