@@ -1618,37 +1618,32 @@ static int mov_write_itunes_hdlr_tag(AVIOContext *pb, MOVMuxContext *mov,
     return 33;
 }
 
-/* helper function to write a data tag with the specified string as data */
-static int mov_write_string_data_tag(AVIOContext *pb, const char *data, int lang, int long_style)
+static int mov_write_data_tag(AVIOContext *pb, const char *data,
+                              unsigned len, unsigned type)
 {
-    if(long_style){
-        int size = 16 + strlen(data);
-        avio_wb32(pb, size); /* size */
-        avio_wtag(pb, "data");
-        avio_wb32(pb, 1);
-        avio_wb32(pb, 0);
-        avio_write(pb, data, strlen(data));
-        return size;
-    }else{
-        if (!lang)
-            lang = ff_mov_iso639_to_lang("und", 1);
-        avio_wb16(pb, strlen(data)); /* string length */
-        avio_wb16(pb, lang);
-        avio_write(pb, data, strlen(data));
-        return strlen(data) + 4;
-    }
+    avio_wb32(pb, 8+8+len);
+    avio_wtag(pb, "data");
+    avio_wb32(pb, type);
+    avio_wb32(pb, 0);
+    avio_write(pb, data, len);
+    return 8+8+len;
 }
 
-static int mov_write_string_tag(AVIOContext *pb, const char *name, const char *value, int lang, int long_style){
-    int size = 0;
-    if (value && value[0]) {
-        int64_t pos = avio_tell(pb);
-        avio_wb32(pb, 0); /* size */
-        avio_wtag(pb, name);
-        mov_write_string_data_tag(pb, value, lang, long_style);
-        size= updateSize(pb, pos);
+static int mov_write_string_tag(AVIOContext *pb, const char *name, const char *value, int lang, int long_style)
+{
+    int64_t pos = avio_tell(pb);
+    unsigned len = strlen(value);
+
+    avio_wb32(pb, 0); /* size */
+    avio_wtag(pb, name);
+    if (long_style) {
+        mov_write_data_tag(pb, value, len, 1);
+    } else {
+        avio_wb16(pb, len); /* string length */
+        avio_wb16(pb, lang);
+        avio_write(pb, value, len);
     }
-    return size;
+    return updateSize(pb, pos);
 }
 
 static int mov_write_string_metadata(AVFormatContext *s, AVIOContext *pb,
@@ -1668,27 +1663,52 @@ static int mov_write_string_metadata(AVFormatContext *s, AVIOContext *pb,
     return mov_write_string_tag(pb, name, t->value, langcode, long_style);
 }
 
+static int mov_write_covr_tag(AVIOContext *pb, MOVMuxContext *mov,
+                              AVFormatContext *s)
+{
+    AVDictionaryEntry *t = av_dict_get(s->metadata, "cover", NULL, 0);
+    int64_t pos = avio_tell(pb);
+    const char *mime;
+    unsigned type;
+
+    if (!t)
+        return 0;
+
+    mime = av_metadata_get_attribute(t, "mime");
+    av_log(NULL, AV_LOG_INFO, "mime %s\n", mime);
+    if (!strcmp(mime, "image/jpeg"))
+        type = 13;
+    else if (!strcmp(mime, "image/png"))
+        type = 14;
+    else if (!strcmp(mime, "image/bmp"))
+        type = 27;
+    else
+        type = 0;
+
+    avio_wb32(pb, 0); /* size */
+    avio_wtag(pb, "covr");
+    mov_write_data_tag(pb, t->value, t->len, type);
+    return updateSize(pb, pos);
+}
+
 /* iTunes track number */
 static int mov_write_trkn_tag(AVIOContext *pb, MOVMuxContext *mov,
                               AVFormatContext *s)
 {
     AVDictionaryEntry *t = av_dict_get(s->metadata, "track", NULL, 0);
     int64_t pos = avio_tell(pb);
+    uint8_t data[8] = {0};
     char *slash;
 
     if (!t)
         return 0;
-    slash = strchr(t->value, '/');
+
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, "trkn");
-    avio_wb32(pb, 24); /* size */
-    avio_wtag(pb, "data");
-    avio_wb32(pb, 0);        // 8 bytes empty
-    avio_wb32(pb, 0);
-    avio_wb16(pb, 0);        // empty
-    avio_wb16(pb, atoi(t->value));            // track number
-    avio_wb16(pb, slash ? atoi(slash+1) : 0); // total track number
-    avio_wb16(pb, 0);        // empty
+    AV_WB16(data+2, atoi(t->value));
+    if ((slash = strrchr(t->value, '/')))
+        AV_WB16(data+4, atoi(slash+1));
+    mov_write_data_tag(pb, data, 8, 0);
     return updateSize(pb, pos);
 }
 
@@ -1716,6 +1736,7 @@ static int mov_write_ilst_tag(AVIOContext *pb, MOVMuxContext *mov,
     mov_write_string_metadata(s, pb, "tvsh",    "show"     , 1);
     mov_write_string_metadata(s, pb, "tven",    "episode_id",1);
     mov_write_string_metadata(s, pb, "tvnn",    "network"  , 1);
+    mov_write_covr_tag(pb, mov, s);
     mov_write_trkn_tag(pb, mov, s);
     return updateSize(pb, pos);
 }

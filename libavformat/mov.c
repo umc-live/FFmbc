@@ -82,7 +82,9 @@ typedef struct MOVParseTableEntry {
 
 static const MOVParseTableEntry mov_default_parse_table[];
 
-static int mov_metadata_track_or_disc_number(MOVContext *c, AVIOContext *pb, unsigned len, const char *type)
+static int mov_metadata_track_or_disc_number(MOVContext *c, AVIOContext *pb,
+                                             unsigned len, unsigned data_type,
+                                             const char *type)
 {
     char buf[16];
     int num, count;
@@ -99,7 +101,28 @@ static int mov_metadata_track_or_disc_number(MOVContext *c, AVIOContext *pb, uns
     return 0;
 }
 
-static int mov_metadata_genre(MOVContext *c, AVIOContext *pb, unsigned len, const char *type)
+static int mov_metadata_cover(MOVContext *c, AVIOContext *pb, unsigned len,
+                              unsigned data_type, const char *type)
+{
+    AVDictionaryEntry *tag;
+    uint8_t *data = av_malloc(len);
+    if (!data)
+        return AVERROR(ENOMEM);
+    avio_read(pb, data, len);
+    av_dict_set_custom(c->metadata, &tag, METADATA_BYTEARRAY, "cover",
+                       data, len, AV_DICT_DONT_STRDUP_VAL);
+    if (data_type == 14 || data_type == AV_RB32("PNGf"))
+        av_metadata_set_attribute(tag, "mime", "image/png");
+    else if (data_type == 13)
+        av_metadata_set_attribute(tag, "mime", "image/jpeg");
+    else if (data_type == 27)
+        av_metadata_set_attribute(tag, "mime", "image/bmp");
+
+    return 0;
+}
+
+static int mov_metadata_genre(MOVContext *c, AVIOContext *pb, unsigned len,
+                              unsigned data_type, const char *type)
 {
     uint16_t genre = avio_rb16(pb);
     if (genre-1 < ID3v1_GENRE_MAX)
@@ -182,7 +205,7 @@ static int mov_read_mac_string(MOVContext *c, AVIOContext *pb, int len,
 static const struct {
     uint32_t tag;
     const char *key;
-    int (*parse)(MOVContext*, AVIOContext*, unsigned, const char *);
+    int (*parse)(MOVContext*, AVIOContext*, unsigned, unsigned, const char *);
 } udta_parse_table[] = {
     { MKTAG( 'a','A','R','T'), "album_artist" },
     { MKTAG( 'c','a','t','g'), "category" },
@@ -195,6 +218,7 @@ static const struct {
     { MKTAG( 'g','n','r','e'), "genre", mov_metadata_genre },
     { MKTAG( 't','r','k','n'), "track", mov_metadata_track_or_disc_number },
     { MKTAG( 'd','i','s','k'), "disc", mov_metadata_track_or_disc_number },
+    { MKTAG( 'c','o','v','r'), "cover", mov_metadata_cover },
     { MKTAG(0xa9,'A','R','T'), "artist" },
     { MKTAG(0xa9,'P','R','D'), "product" },
     { MKTAG(0xa9,'a','l','b'), "album" },
@@ -221,7 +245,7 @@ static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     uint16_t langcode = 0;
     uint32_t data_type = 0;
     unsigned i, size;
-    int (*parse)(MOVContext*, AVIOContext*, unsigned, const char*) = NULL;
+    int (*parse)(MOVContext*, AVIOContext*, unsigned, unsigned, const char*) = NULL;
 
     av_dlog(c->fc, "type: %08x  %.4s  sz: %"PRIx64"\n",
            atom.type, (char*)&atom.type, atom.size);
@@ -291,7 +315,7 @@ static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     size = FFMIN(size, atom.size);
 
     if (parse)
-        parse(c, pb, size, key);
+        parse(c, pb, size, data_type, key);
     else if (type == METADATA_INT) {
         int value;
         switch (size) {
