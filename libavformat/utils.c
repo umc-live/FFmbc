@@ -3375,13 +3375,6 @@ void ff_program_add_stream_index(AVFormatContext *ac, int progid, unsigned int i
     }
 }
 
-static void print_fps(double d, const char *postfix){
-    uint64_t v= lrintf(d*100);
-    if     (v% 100      ) av_log(NULL, AV_LOG_INFO, ", %3.2f %s", d, postfix);
-    else if(v%(100*1000)) av_log(NULL, AV_LOG_INFO, ", %1.0f %s", d, postfix);
-    else                  av_log(NULL, AV_LOG_INFO, ", %1.0fk %s", d/1000, postfix);
-}
-
 static void dump_bytearray(void *ctx, uint8_t *buf, int size)
 {
     int i;
@@ -3440,10 +3433,13 @@ static void dump_stream_format(AVFormatContext *ic, int i, int index, int is_out
     /* the pid is an important information, so we display it */
     /* XXX: add a generic system */
     if (flags & AVFMT_SHOW_IDS)
-        av_log(NULL, AV_LOG_INFO, "[0x%x]", st->id);
+        av_log(NULL, AV_LOG_INFO, "[%#05x]", st->id);
     if (lang)
-        av_log(NULL, AV_LOG_INFO, "(%s)", lang->value);
-    av_log(NULL, AV_LOG_DEBUG, ", %d, %d/%d", st->codec_info_nb_frames, st->time_base.num/g, st->time_base.den/g);
+        av_log(NULL, AV_LOG_INFO, "(%.3s)", lang->value);
+    else
+        av_log(NULL, AV_LOG_INFO, "(und)");
+    av_log(NULL, AV_LOG_DEBUG, ", %d, %d/%d", st->codec_info_nb_frames,
+           st->time_base.num/g, st->time_base.den/g);
     av_log(NULL, AV_LOG_INFO, ": %s", buf);
     if (st->sample_aspect_ratio.num && // default
         av_cmp_q(st->sample_aspect_ratio, st->codec->sample_aspect_ratio)) {
@@ -3457,14 +3453,18 @@ static void dump_stream_format(AVFormatContext *ic, int i, int index, int is_out
                  display_aspect_ratio.num, display_aspect_ratio.den);
     }
     if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO){
-        if(st->avg_frame_rate.den && st->avg_frame_rate.num)
-            print_fps(av_q2d(st->avg_frame_rate), "fps");
-        if(st->r_frame_rate.den && st->r_frame_rate.num)
-            print_fps(av_q2d(st->r_frame_rate), "tbr");
-        if(st->time_base.den && st->time_base.num)
-            print_fps(1/av_q2d(st->time_base), "tbn");
-        if(st->codec->time_base.den && st->codec->time_base.num)
-            print_fps(1/av_q2d(st->codec->time_base), "tbc");
+        if (is_output) {
+            double fps = 1/av_q2d(st->codec->time_base);
+            if (fps <= 60)
+                av_log(NULL, AV_LOG_INFO, ", %.2f fps", fps);
+        } else {
+            av_log(NULL, AV_LOG_DEBUG, ", tbr %d/%d",
+                   st->r_frame_rate.num, st->r_frame_rate.den);
+            av_log(NULL, AV_LOG_DEBUG, ", tba %d/%d",
+                   st->avg_frame_rate.num, st->avg_frame_rate.den);
+            av_log(NULL, AV_LOG_INFO, ", %.2f fps", av_q2d(st->r_frame_rate) <= 60 ?
+                   av_q2d(st->r_frame_rate) : av_q2d(st->avg_frame_rate));
+        }
     }
     if (st->disposition & AV_DISPOSITION_DEFAULT)
         av_log(NULL, AV_LOG_INFO, " (default)");
