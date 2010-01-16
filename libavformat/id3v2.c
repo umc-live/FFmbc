@@ -135,8 +135,14 @@ static void read_ttag(AVFormatContext *s, AVIOContext *pb, int taglen, const cha
         len = strlen(dst);
         key = dst;
         val = dst + FFMIN(len + 1, dstlen);
-    }
-    else if (*dst)
+    } else if (!strcmp(key, "TDAT")) {
+        /* date in the form DDMM, change to DD/MM */
+        dst[5] = 0;
+        dst[4] = dst[3];
+        dst[3] = dst[2];
+        dst[2] = '/';
+        val = dst;
+    } else if (*dst)
         val = dst;
 
     if (val)
@@ -187,6 +193,35 @@ static void merge_date(AVDictionary **m)
 finish:
     if (date[0])
         av_dict_set(m, "date", date, 0);
+}
+
+static int read_apic(AVFormatContext *s, int taglen, const char *key)
+{
+    AVDictionaryEntry *tag;
+    char mime[64];
+    int64_t pos = avio_tell(s->pb);
+    int len;
+    uint8_t *data;
+
+    avio_r8(s->pb); // encoding
+    avio_get_str(s->pb, sizeof(mime), mime, sizeof(mime));
+    avio_r8(s->pb); // type
+    while (avio_r8(s->pb)); // description
+
+    len = taglen - (avio_tell(s->pb) - pos);
+    if (len <= 0)
+        return -1;
+    data = av_malloc(len);
+    if (!data)
+        return AVERROR(ENOMEM);
+    avio_read(s->pb, data, len);
+
+    if (av_dict_set_custom(&s->metadata, &tag, METADATA_BYTEARRAY, "APIC",
+                           data, len, AV_DICT_DONT_STRDUP_VAL) < 0)
+        return -1;
+    av_metadata_set_attribute(tag, "mime", mime);
+
+    return 0;
 }
 
 static void ff_id3v2_parse(AVFormatContext *s, int len, uint8_t version, uint8_t flags)
@@ -284,8 +319,9 @@ static void ff_id3v2_parse(AVFormatContext *s, int len, uint8_t version, uint8_t
             } else {
                 read_ttag(s, s->pb, tlen, tag);
             }
-        }
-        else if (!tag[0]) {
+        } else if (!strcmp(tag, "APIC")) {
+            read_apic(s, tlen, tag);
+        } else if (!tag[0]) {
             if (tag[1])
                 av_log(s, AV_LOG_WARNING, "invalid frame id, assuming padding");
             avio_skip(s->pb, tlen);
@@ -339,6 +375,7 @@ void ff_id3v2_read(AVFormatContext *s, const char *magic)
 }
 
 const AVMetadataConv ff_id3v2_34_metadata_conv[] = {
+    { "APIC", "cover"},
     { "TALB", "album"},
     { "TCOM", "composer"},
     { "TCON", "genre"},
@@ -353,6 +390,7 @@ const AVMetadataConv ff_id3v2_34_metadata_conv[] = {
     { "TPUB", "publisher"},
     { "TRCK", "track"},
     { "TSSE", "encoder"},
+    { "TYER", "year"},
     { 0 }
 };
 
@@ -384,6 +422,7 @@ const char ff_id3v2_tags[][4] = {
    "TFLT", "TIT1", "TIT2", "TIT3", "TKEY", "TLAN", "TLEN", "TMED",
    "TOAL", "TOFN", "TOLY", "TOPE", "TOWN", "TPE1", "TPE2", "TPE3",
    "TPE4", "TPOS", "TPUB", "TRCK", "TRSN", "TRSO", "TSRC", "TSSE",
+   "APIC",
    { 0 },
 };
 
