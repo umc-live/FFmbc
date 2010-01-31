@@ -476,9 +476,8 @@ static int gxf_packet(AVFormatContext *s, AVPacket *pkt) {
         pkt->stream_index = stream_index;
         pkt->dts = field_nr;
 
-        //set duration manually for DV or else lavf misdetects the frame rate
-        if (st->codec->codec_id == CODEC_ID_DVVIDEO)
-            pkt->duration = si->fields_per_frame;
+        if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+            pkt->duration = 2;
 
         return ret;
     }

@@ -113,6 +113,8 @@ static int swf_read_packet(AVFormatContext *s, AVPacket *pkt)
             vst->codec->codec_id = ff_codec_get_id(swf_codec_tags, avio_r8(pb));
             av_set_pts_info(vst, 16, 256, swf->frame_rate);
             vst->codec->time_base = (AVRational){ 256, swf->frame_rate };
+            vst->r_frame_rate.num = swf->frame_rate;
+            vst->r_frame_rate.den = 256;
             len -= 8;
         } else if (tag == TAG_STREAMHEAD || tag == TAG_STREAMHEAD2) {
             /* streaming found */

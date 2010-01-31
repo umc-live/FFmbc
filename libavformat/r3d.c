@@ -83,8 +83,8 @@ static int r3d_read_red1(AVFormatContext *s)
     tmp = avio_rb16(s->pb); // unknown
     av_dlog(s, "unknown2 %d\n", tmp);
 
-    st->codec->time_base.den = avio_rb16(s->pb);
-    st->codec->time_base.num = avio_rb16(s->pb);
+    st->r_frame_rate.num = st->codec->time_base.den = avio_rb16(s->pb);
+    st->r_frame_rate.den = st->codec->time_base.num = avio_rb16(s->pb);
 
     tmp = avio_r8(s->pb); // audio channels
     av_dlog(s, "audio channels %d\n", tmp);

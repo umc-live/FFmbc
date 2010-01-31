@@ -1571,7 +1571,7 @@ static int matroska_read_header(AVFormatContext *s, AVFormatParameters *ap)
                       255);
             st->need_parsing = AVSTREAM_PARSE_HEADERS;
             if (track->default_duration)
-                st->avg_frame_rate = av_d2q(1000000000.0/track->default_duration, INT_MAX);
+                st->r_frame_rate = av_d2q(1000000000.0/track->default_duration, INT_MAX);
 
             /* export stereo mode flag as metadata tag */
             if (track->video.stereo_mode && track->video.stereo_mode < MATROSKA_VIDEO_STEREO_MODE_COUNT)

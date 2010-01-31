@@ -272,6 +272,9 @@ static int read_header(AVFormatContext *s1, AVFormatParameters *ap)
         st->codec->height = height;
     }
 
+    st->r_frame_rate.num = st->time_base.den;
+    st->r_frame_rate.den = st->time_base.num;
+
     if (!s->is_pipe) {
         if (find_image_range(&first_index, &last_index, s->path) < 0)
             return AVERROR(ENOENT);

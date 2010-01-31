@@ -2014,6 +2014,18 @@ static void parse_forced_key_frames(char *kf, OutputStream *ost,
     }
 }
 
+static const AVRational frame_rate_tab[] = {
+    {24000, 1001},
+    {   24,    1},
+    {   25,    1},
+    {30000, 1001},
+    {   30,    1},
+    {   50,    1},
+    {60000, 1001},
+    {   60,    1},
+    {    0,    0},
+};
+
 /*
  * The following code is the main loop of the file converter
  */
@@ -2354,11 +2366,33 @@ static int transcode(AVFormatContext **output_files,
                 ost->encoding_needed = 1;
                 ist->decoding_needed = 1;
 
-                if (!ost->frame_rate.num)
-                    ost->frame_rate = ist->st->r_frame_rate.num ? ist->st->r_frame_rate : (AVRational){25,1};
-                if (ost->enc && ost->enc->supported_framerates && !force_fps) {
-                    int idx = av_find_nearest_q_idx(ost->frame_rate, ost->enc->supported_framerates);
-                    ost->frame_rate = ost->enc->supported_framerates[idx];
+                if (!ost->frame_rate.num) {
+                    if (av_q2d(ist->st->r_frame_rate) <= 60) {
+                        /* update the current frame rate to match the stream frame rate */
+                        ost->frame_rate = ist->st->r_frame_rate;
+                    } else {
+                        ost->frame_rate = ist->st->avg_frame_rate;
+                        if (!ost->frame_rate.num) {
+                            ost->frame_rate.num = ist->st->codec->time_base.den;
+                            ost->frame_rate.den = ist->st->codec->time_base.num;
+                        }
+                    }
+                }
+                if (!ost->frame_rate.num) {
+                    av_log(NULL, AV_LOG_ERROR, "Error: no frame rate specified\n");
+                    exit(1);
+                }
+                if (!force_fps) {
+                    AVRational near_fps =
+                        frame_rate_tab[av_find_nearest_q_idx(ost->frame_rate, frame_rate_tab)];
+                    if (fabs(av_q2d(near_fps) - av_q2d(ost->frame_rate)) >= 0.01)
+                        av_log(NULL, AV_LOG_WARNING, "Adjusting fps from %d/%d to %d/%d\n",
+                                ost->frame_rate.num, ost->frame_rate.den, near_fps.num, near_fps.den);
+                    ost->frame_rate = near_fps;
+                    if (ost->enc && ost->enc->supported_framerates) {
+                        int idx = av_find_nearest_q_idx(ost->frame_rate, ost->enc->supported_framerates);
+                        ost->frame_rate = ost->enc->supported_framerates[idx];
+                    }
                 }
                 codec->time_base = (AVRational){ost->frame_rate.den, ost->frame_rate.num};
                 if(   av_q2d(codec->time_base) < 0.001 && video_sync_method
@@ -3299,7 +3333,7 @@ static int opt_input_file(const char *opt, const char *filename)
 {
     AVFormatContext *ic;
     AVInputFormat *file_iformat = NULL;
-    int err, i, ret, rfps, rfps_base;
+    int err, i, ret;
     int64_t timestamp;
     uint8_t buf[128];
     AVDictionary **opts;
@@ -3448,22 +3482,11 @@ static int opt_input_file(const char *opt, const char *filename)
             ist->dec= avcodec_find_decoder_by_name(video_codec_name);
             if(!ist->dec)
                 ist->dec = avcodec_find_decoder(dec->codec_id);
-            rfps      = ic->streams[i]->r_frame_rate.num;
-            rfps_base = ic->streams[i]->r_frame_rate.den;
             if (dec->lowres) {
                 dec->flags |= CODEC_FLAG_EMU_EDGE;
             }
             if(me_threshold)
                 dec->debug |= FF_DEBUG_MV;
-
-            if (dec->time_base.den != rfps*dec->ticks_per_frame || dec->time_base.num != rfps_base) {
-
-                if (verbose >= 0)
-                    fprintf(stderr,"\nSeems stream %d codec frame rate differs from container frame rate: %2.2f (%d/%d) -> %2.2f (%d/%d)\n",
-                            i, (float)dec->time_base.den / dec->time_base.num, dec->time_base.den, dec->time_base.num,
-
-                    (float)rfps / rfps_base, rfps, rfps_base);
-            }
 
             if(video_disable)
                 st->discard= AVDISCARD_ALL;
@@ -3613,8 +3636,7 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
         const char *p;
         int i;
 
-        if (frame_rate.num)
-            ost->frame_rate = frame_rate;
+        ost->frame_rate = frame_rate;
         video_enc->codec_id = codec_id;
 
         video_enc->width = frame_width;

@@ -1153,7 +1153,8 @@ static int read_frame_internal(AVFormatContext *s, AVPacket *pkt)
                 /* return packet if any */
                 if (pkt->size) {
                 got_packet:
-                    pkt->duration = 0;
+                    pkt->duration = st->need_parsing == AVSTREAM_PARSE_HEADERS ?
+                        st->cur_pkt.duration : 0;
                     pkt->stream_index = st->index;
                     pkt->pts = st->parser->pts;
                     pkt->dts = st->parser->dts;
@@ -2474,6 +2475,8 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
                st->time_base.num*duration_sum[i]/st->info->duration_count*101LL > st->time_base.den*/){
                 int num = 0;
                 double best_error= 2*av_q2d(st->time_base);
+
+                av_log(ic, AV_LOG_DEBUG, "trying to guess frame rate\n");
                 best_error = best_error*best_error*st->info->duration_count*1000*12*30;
 
                 for (j=1; j<FF_ARRAY_ELEMS(st->info->duration_error); j++) {
@@ -2500,6 +2503,8 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
                     st->r_frame_rate.den = st->time_base.num;
                 }
             }
+            if (!st->avg_frame_rate.den)
+                st->avg_frame_rate = st->r_frame_rate;
         }else if(st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
             if(!st->codec->bits_per_coded_sample)
                 st->codec->bits_per_coded_sample= av_get_bits_per_sample(st->codec->codec_id);

@@ -812,6 +812,8 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
             if (st->codec->codec_id == CODEC_ID_RAWVIDEO)
                 st->codec->pix_fmt = descriptor->pix_fmt;
             st->need_parsing = AVSTREAM_PARSE_HEADERS;
+            st->r_frame_rate = (AVRational){ material_track->edit_rate.den,
+                                             material_track->edit_rate.num };
         } else if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
             container_ul = mxf_get_codec_ul(mxf_essence_container_uls, essence_container_ul);
             if (st->codec->codec_id == CODEC_ID_NONE)

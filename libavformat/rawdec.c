@@ -98,6 +98,8 @@ int ff_raw_read_header(AVFormatContext *s, AVFormatParameters *ap)
                 framerate = (AVRational){ap->time_base.den, ap->time_base.num};
 #endif
             av_set_pts_info(st, 64, framerate.den, framerate.num);
+            st->r_frame_rate.num = st->time_base.den;
+            st->r_frame_rate.den = st->time_base.num;
             st->codec->width  = width;
             st->codec->height = height;
             st->codec->pix_fmt = pix_fmt;
@@ -176,7 +178,12 @@ int ff_raw_video_read_header(AVFormatContext *s,
         framerate = (AVRational){ap->time_base.den, ap->time_base.num};
 #endif
 
-    st->codec->time_base = (AVRational){framerate.den, framerate.num};
+    if (st->codec->codec_id == CODEC_ID_MPEG2VIDEO ||
+        st->codec->codec_id == CODEC_ID_H264) { // ticks per frame is 2
+        st->codec->time_base = (AVRational){framerate.den, framerate.num*2};
+    } else {
+        st->codec->time_base = (AVRational){framerate.den, framerate.num};
+    }
     av_set_pts_info(st, 64, 1, 1200000);
 
 fail:

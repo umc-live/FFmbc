@@ -528,6 +528,10 @@ static int avi_read_header(AVFormatContext *s, AVFormatParameters *ap)
                 }
             }
             av_set_pts_info(st, 64, ast->scale, ast->rate);
+            if (ast->rate/(double)ast->scale <= 60) {
+                st->r_frame_rate.num = st->time_base.den;
+                st->r_frame_rate.den = st->time_base.num;
+            }
 
             ast->cum_len=avio_rl32(pb); /* start */
             st->nb_frames = avio_rl32(pb);
