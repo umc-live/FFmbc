@@ -1062,12 +1062,12 @@ av_cold int ff_h264_decode_init(AVCodecContext *avctx){
     h->x264_build = -1;
     ff_h264_reset_sei(h);
     if(avctx->codec_id == CODEC_ID_H264){
+        if(avctx->extradata_size > 0 && avctx->extradata) {
+            if (ff_h264_decode_extradata(h) < 0)
+                return -1;
+        }
         avctx->ticks_per_frame = 2;
     }
-
-    if(avctx->extradata_size > 0 && avctx->extradata &&
-        ff_h264_decode_extradata(h))
-        return -1;
 
     if(h->sps.bitstream_restriction_flag && s->avctx->has_b_frames < h->sps.num_reorder_frames){
         s->avctx->has_b_frames = h->sps.num_reorder_frames;
