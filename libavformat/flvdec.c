@@ -265,12 +265,12 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream, AVStream *vst
         } else if(amf_type == AMF_DATA_TYPE_NUMBER) {
             av_dict_set_float(&s->metadata, key, num_val);
             if(!strcmp(key, "duration")) s->duration = num_val * AV_TIME_BASE;
-            else if(!strcmp(key, "videodatarate") && vcodec && 0 <= (int)(num_val * 1024.0))
-                vcodec->bit_rate = num_val * 1024.0;
-            else if(!strcmp(key, "audiodatarate") && acodec && 0 <= (int)(num_val * 1024.0))
-                acodec->bit_rate = num_val * 1024.0;
-            else if(!strcmp(key, "totaldatarate") && 0 <= (int)(num_val * 1024.0))
-                s->bit_rate = num_val * 1024.0;
+            else if(!strcmp(key, "videodatarate") && vcodec && 0 <= (int)(num_val * 1000.0))
+                vcodec->bit_rate = num_val * 1000.0;
+            else if(!strcmp(key, "audiodatarate") && acodec && 0 <= (int)(num_val * 1000.0))
+                acodec->bit_rate = num_val * 1000.0;
+            else if(!strcmp(key, "totaldatarate") && 0 <= (int)(num_val * 1000.0))
+                s->bit_rate = num_val * 1000.0;
         } else if (amf_type == AMF_DATA_TYPE_STRING)
             av_dict_set(&s->metadata, key, str_val, 0);
     }
