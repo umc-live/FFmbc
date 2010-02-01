@@ -1858,7 +1858,7 @@ static int has_duration(AVFormatContext *ic)
         if (st->duration != AV_NOPTS_VALUE)
             return 1;
     }
-    return 0;
+    return ic->duration && ic->duration != AV_NOPTS_VALUE;
 }
 
 /**
