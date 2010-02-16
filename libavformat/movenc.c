@@ -2506,7 +2506,7 @@ static int mov_write_header(AVFormatContext *s)
                        "or choose different container.\n");
         }else if(st->codec->codec_type == AVMEDIA_TYPE_AUDIO){
             track->timescale = st->codec->sample_rate;
-            if(!st->codec->frame_size && !av_get_bits_per_sample(st->codec->codec_id)) {
+            if(!st->codec->frame_size && !mov_get_lpcm_flags(st->codec->codec_id)) {
                 av_log(s, AV_LOG_ERROR, "track %d: codec frame size is not set\n", i);
                 goto error;
             }else if(st->codec->codec_id == CODEC_ID_ADPCM_MS ||
