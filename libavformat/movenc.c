@@ -1603,8 +1603,7 @@ static int mov_write_mvhd_tag(AVIOContext *pb, MOVMuxContext *mov)
     return 0x6c;
 }
 
-static int mov_write_itunes_hdlr_tag(AVIOContext *pb, MOVMuxContext *mov,
-                                     AVFormatContext *s)
+static int mov_write_mdir_hdlr_tag(AVIOContext *pb)
 {
     avio_wb32(pb, 33); /* size */
     avio_wtag(pb, "hdlr");
@@ -1629,49 +1628,80 @@ static int mov_write_data_tag(AVIOContext *pb, const char *data,
     return 8+8+len;
 }
 
-static int mov_write_string_tag(AVIOContext *pb, const char *name, const char *value, int lang, int long_style)
+static int mov_write_3gp_metadata(AVFormatContext *s, AVIOContext *pb,
+                                  const char *name, const char *tag)
 {
+    AVDictionaryEntry *t = av_dict_get(s->metadata, tag, NULL, 0);
     int64_t pos = avio_tell(pb);
-    unsigned len = strlen(value);
+    unsigned len;
+    if (!t || !t->value)
+        return 0;
 
-    avio_wb32(pb, 0); /* size */
-    avio_wtag(pb, name);
-    if (long_style) {
-        mov_write_data_tag(pb, value, len, 1);
-    } else {
-        avio_wb16(pb, len); /* string length */
-        avio_wb16(pb, lang);
-        avio_write(pb, value, len);
+    if (!(len = strlen(t->value)))
+        return 0;
+
+    avio_wb32(pb, 0);   /* size */
+    avio_wtag(pb, name); /* type */
+    avio_wb32(pb, 0);   /* version + flags */
+    if (!strcmp(tag, "yrrc"))
+        avio_wb16(pb, atoi(t->value));
+    else {
+        avio_wb16(pb, ff_mov_iso639_to_lang(av_metadata_get_attribute(t, "language"), 1));
+        avio_write(pb, t->value, len+1); /* UTF8 string value */
+        if (!strcmp(tag, "albm") &&
+            (t = av_dict_get(s->metadata, "track", NULL, 0)))
+            avio_w8(pb, atoi(t->value));
     }
     return updateSize(pb, pos);
 }
 
-static int mov_write_string_metadata(AVFormatContext *s, AVIOContext *pb,
-                                     const char *name, const char *tag,
-                                     int long_style)
+static int mov_write_itunes_string(AVIOContext *pb, const char *name,
+                                   const char *value)
 {
-    AVDictionaryEntry *t;
-    const char *lang;
-    int langcode;
-
-    if (!(t = av_dict_get(s->metadata, tag, NULL, 0)))
-        return 0;
-
-    lang = av_metadata_get_attribute(t, "language");
-    langcode = ff_mov_iso639_to_lang(lang, 1);
-
-    return mov_write_string_tag(pb, name, t->value, langcode, long_style);
+    int64_t pos = avio_tell(pb);
+    unsigned len = strlen(value);
+    avio_wb32(pb, 0); /* size */
+    avio_wtag(pb, name);
+    mov_write_data_tag(pb, value, len, 1);
+    return updateSize(pb, pos);
 }
 
-static int mov_write_covr_tag(AVIOContext *pb, MOVMuxContext *mov,
-                              AVFormatContext *s)
+static int mov_write_mac_string(AVIOContext *pb, const char *name,
+                                const char *value, const char *lang)
+{
+    int64_t pos = avio_tell(pb);
+    unsigned len = strlen(value);
+    avio_wb32(pb, 0); /* size */
+    avio_wtag(pb, name);
+    avio_wb16(pb, len); /* string length */
+    avio_wb16(pb, ff_mov_iso639_to_lang(lang, 1));
+    avio_write(pb, value, len);
+    return updateSize(pb, pos);
+}
+
+static int mov_write_metadata(AVFormatContext *s, AVIOContext *pb,
+                              const char *name, const char *tag)
+{
+    MOVMuxContext *mov = s->priv_data;
+    AVDictionaryEntry *t = av_dict_get(s->metadata, tag, NULL, 0);
+    if (!t || !t->value || !strlen(t->value))
+        return 0;
+
+    if (mov->mode & MODE_MOV)
+        return mov_write_mac_string(pb, name, t->value,
+                                    av_metadata_get_attribute(t, "language"));
+    else
+        return mov_write_itunes_string(pb, name, t->value);
+}
+
+static int mov_write_covr_tag(AVFormatContext *s, AVIOContext *pb)
 {
     AVDictionaryEntry *t = av_dict_get(s->metadata, "cover", NULL, 0);
     int64_t pos = avio_tell(pb);
     const char *mime;
     unsigned type;
 
-    if (!t)
+    if (!t || !t->value || !t->len)
         return 0;
 
     mime = av_metadata_get_attribute(t, "mime");
@@ -1695,15 +1725,14 @@ static int mov_write_covr_tag(AVIOContext *pb, MOVMuxContext *mov,
 }
 
 /* iTunes track number */
-static int mov_write_trkn_tag(AVIOContext *pb, MOVMuxContext *mov,
-                              AVFormatContext *s)
+static int mov_write_trkn_tag(AVFormatContext *s, AVIOContext *pb)
 {
     AVDictionaryEntry *t = av_dict_get(s->metadata, "track", NULL, 0);
     int64_t pos = avio_tell(pb);
     uint8_t data[8] = {0};
     char *slash;
 
-    if (!t)
+    if (!t || !t->value || !t->value[0])
         return 0;
 
     avio_wb32(pb, 0); /* size */
@@ -1716,96 +1745,45 @@ static int mov_write_trkn_tag(AVIOContext *pb, MOVMuxContext *mov,
 }
 
 /* iTunes meta data list */
-static int mov_write_ilst_tag(AVIOContext *pb, MOVMuxContext *mov,
-                              AVFormatContext *s)
+static int mov_write_ilst_tag(AVFormatContext *s, AVIOContext *pb)
 {
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, "ilst");
-    mov_write_string_metadata(s, pb, "\251nam", "title"    , 1);
-    mov_write_string_metadata(s, pb, "\251ART", "artist"   , 1);
-    mov_write_string_metadata(s, pb, "aART", "album_artist", 1);
-    mov_write_string_metadata(s, pb, "\251wrt", "composer" , 1);
-    mov_write_string_metadata(s, pb, "\251alb", "album"    , 1);
-    mov_write_string_metadata(s, pb, "\251day", "date"     , 1);
-    mov_write_string_metadata(s, pb, "\251too", "encoder"  , 1);
-    mov_write_string_metadata(s, pb, "\251cmt", "comment"  , 1);
-    mov_write_string_metadata(s, pb, "\251gen", "genre"    , 1);
-    mov_write_string_metadata(s, pb, "\251cpy", "copyright", 1);
-    mov_write_string_metadata(s, pb, "\251grp", "grouping" , 1);
-    mov_write_string_metadata(s, pb, "\251lyr", "lyrics"   , 1);
-    mov_write_string_metadata(s, pb, "desc",    "description",1);
-    mov_write_string_metadata(s, pb, "ldes",    "synopsis" , 1);
-    mov_write_string_metadata(s, pb, "tvsh",    "show"     , 1);
-    mov_write_string_metadata(s, pb, "tven",    "episode_id",1);
-    mov_write_string_metadata(s, pb, "tvnn",    "network"  , 1);
-    mov_write_covr_tag(pb, mov, s);
-    mov_write_trkn_tag(pb, mov, s);
+    mov_write_metadata(s, pb, "\251nam", "title");
+    mov_write_metadata(s, pb, "\251ART", "artist");
+    mov_write_metadata(s, pb, "\251wrt", "composer");
+    mov_write_metadata(s, pb, "\251alb", "album");
+    mov_write_metadata(s, pb, "\251day", "date");
+    mov_write_metadata(s, pb, "\251too", "encoder");
+    mov_write_metadata(s, pb, "\251cmt", "comment");
+    mov_write_metadata(s, pb, "\251gen", "genre");
+    mov_write_metadata(s, pb, "\251cpy", "copyright");
+    mov_write_metadata(s, pb, "\251grp", "grouping");
+    mov_write_metadata(s, pb, "\251lyr", "lyrics");
+    mov_write_metadata(s, pb, "aART",    "album_artist");
+    mov_write_metadata(s, pb, "desc",    "description");
+    mov_write_metadata(s, pb, "ldes",    "synopsis");
+    mov_write_metadata(s, pb, "tvsh",    "show");
+    mov_write_metadata(s, pb, "tven",    "episode_id");
+    mov_write_metadata(s, pb, "tvnn",    "network");
+    mov_write_covr_tag(s, pb);
+    mov_write_trkn_tag(s, pb);
     return updateSize(pb, pos);
 }
 
 /* iTunes meta data tag */
-static int mov_write_meta_tag(AVIOContext *pb, MOVMuxContext *mov,
-                              AVFormatContext *s)
+static int mov_write_meta_tag(AVFormatContext *s, AVIOContext *pb)
 {
     int size = 0;
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, "meta");
     avio_wb32(pb, 0);
-    mov_write_itunes_hdlr_tag(pb, mov, s);
-    mov_write_ilst_tag(pb, mov, s);
+    mov_write_mdir_hdlr_tag(pb);
+    mov_write_ilst_tag(s, pb);
     size = updateSize(pb, pos);
     return size;
-}
-
-static int utf8len(const uint8_t *b)
-{
-    int len=0;
-    int val;
-    while(*b){
-        GET_UTF8(val, *b++, return -1;)
-        len++;
-    }
-    return len;
-}
-
-static int ascii_to_wc(AVIOContext *pb, const uint8_t *b)
-{
-    int val;
-    while(*b){
-        GET_UTF8(val, *b++, return -1;)
-        avio_wb16(pb, val);
-    }
-    avio_wb16(pb, 0x00);
-    return 0;
-}
-
-static uint16_t language_code(const char *str)
-{
-    return (((str[0]-0x60) & 0x1F) << 10) + (((str[1]-0x60) & 0x1F) << 5) + ((str[2]-0x60) & 0x1F);
-}
-
-static int mov_write_3gp_udta_tag(AVIOContext *pb, AVFormatContext *s,
-                                  const char *tag, const char *str)
-{
-    int64_t pos = avio_tell(pb);
-    AVDictionaryEntry *t = av_dict_get(s->metadata, str, NULL, 0);
-    if (!t || !utf8len(t->value))
-        return 0;
-    avio_wb32(pb, 0);   /* size */
-    avio_wtag(pb, tag); /* type */
-    avio_wb32(pb, 0);   /* version + flags */
-    if (!strcmp(tag, "yrrc"))
-        avio_wb16(pb, atoi(t->value));
-    else {
-        avio_wb16(pb, language_code("eng")); /* language */
-        avio_write(pb, t->value, strlen(t->value)+1); /* UTF8 string value */
-        if (!strcmp(tag, "albm") &&
-            (t = av_dict_get(s->metadata, "track", NULL, 0)))
-            avio_w8(pb, atoi(t->value));
-    }
-    return updateSize(pb, pos);
 }
 
 static int mov_write_chpl_tag(AVIOContext *pb, AVFormatContext *s)
@@ -1834,44 +1812,41 @@ static int mov_write_chpl_tag(AVIOContext *pb, AVFormatContext *s)
     return updateSize(pb, pos);
 }
 
-static int mov_write_udta_tag(AVIOContext *pb, MOVMuxContext *mov,
-                              AVFormatContext *s)
+static int mov_write_udta_tag(AVIOContext *pb, AVFormatContext *s)
 {
+    MOVMuxContext *mov = s->priv_data;
     AVIOContext *pb_buf;
     int i, ret, size;
     uint8_t *buf;
 
     for (i = 0; i < s->nb_streams; i++)
-        if (mov->tracks[i].enc->flags & CODEC_FLAG_BITEXACT) {
+        if (mov->tracks[i].enc->flags & CODEC_FLAG_BITEXACT)
             return 0;
-        }
 
     ret = avio_open_dyn_buf(&pb_buf);
     if(ret < 0)
         return ret;
 
         if (mov->mode & MODE_3GP) {
-            mov_write_3gp_udta_tag(pb_buf, s, "perf", "artist");
-            mov_write_3gp_udta_tag(pb_buf, s, "titl", "title");
-            mov_write_3gp_udta_tag(pb_buf, s, "auth", "author");
-            mov_write_3gp_udta_tag(pb_buf, s, "gnre", "genre");
-            mov_write_3gp_udta_tag(pb_buf, s, "dscp", "comment");
-            mov_write_3gp_udta_tag(pb_buf, s, "albm", "album");
-            mov_write_3gp_udta_tag(pb_buf, s, "cprt", "copyright");
-            mov_write_3gp_udta_tag(pb_buf, s, "yrrc", "date");
+            mov_write_3gp_metadata(s, pb_buf, "titl", "title");
+            mov_write_3gp_metadata(s, pb_buf, "auth", "author");
+            mov_write_3gp_metadata(s, pb_buf, "gnre", "genre");
+            mov_write_3gp_metadata(s, pb_buf, "dscp", "comment");
+            mov_write_3gp_metadata(s, pb_buf, "albm", "album");
+            mov_write_3gp_metadata(s, pb_buf, "cprt", "copyright");
+            mov_write_3gp_metadata(s, pb_buf, "yrrc", "year");
         } else if (mov->mode == MODE_MOV) { // the title field breaks gtkpod with mp4 and my suspicion is that stuff is not valid in mp4
-            mov_write_string_metadata(s, pb_buf, "\251ART", "artist"     , 0);
-            mov_write_string_metadata(s, pb_buf, "\251nam", "title"      , 0);
-            mov_write_string_metadata(s, pb_buf, "\251aut", "author"     , 0);
-            mov_write_string_metadata(s, pb_buf, "\251alb", "album"      , 0);
-            mov_write_string_metadata(s, pb_buf, "\251day", "date"       , 0);
-            mov_write_string_metadata(s, pb_buf, "\251swr", "encoder"    , 0);
-            mov_write_string_metadata(s, pb_buf, "\251des", "comment"    , 0);
-            mov_write_string_metadata(s, pb_buf, "\251gen", "genre"      , 0);
-            mov_write_string_metadata(s, pb_buf, "\251cpy", "copyright"  , 0);
+            mov_write_metadata(s, pb_buf, "\251nam", "title");
+            mov_write_metadata(s, pb_buf, "\251aut", "author");
+            mov_write_metadata(s, pb_buf, "\251alb", "album");
+            mov_write_metadata(s, pb_buf, "\251day", "date");
+            mov_write_metadata(s, pb_buf, "\251swr", "encoder");
+            mov_write_metadata(s, pb_buf, "\251des", "comment");
+            mov_write_metadata(s, pb_buf, "\251gen", "genre");
+            mov_write_metadata(s, pb_buf, "\251cpy", "copyright");
         } else {
             /* iTunes meta data */
-            mov_write_meta_tag(pb_buf, mov, s);
+            mov_write_meta_tag(s, pb_buf);
         }
 
         if (s->nb_chapters)
@@ -1887,6 +1862,28 @@ static int mov_write_udta_tag(AVIOContext *pb, MOVMuxContext *mov,
     return 0;
 }
 
+static int utf8len(const uint8_t *b)
+{
+    int len=0;
+    int val;
+    while(*b){
+        GET_UTF8(val, *b++, return -1;)
+        len++;
+    }
+    return len;
+}
+
+static int ascii_to_wc(AVIOContext *pb, const uint8_t *b)
+{
+    int val;
+    while(*b){
+        GET_UTF8(val, *b++, return -1;)
+        avio_wb16(pb, val);
+    }
+    avio_wb16(pb, 0x00);
+    return 0;
+}
+
 static void mov_write_psp_udta_tag(AVIOContext *pb,
                                   const char *str, const char *lang, int type)
 {
@@ -1895,7 +1892,7 @@ static void mov_write_psp_udta_tag(AVIOContext *pb,
         return;
     avio_wb16(pb, len*2+10);            /* size */
     avio_wb32(pb, type);                /* type */
-    avio_wb16(pb, language_code(lang)); /* language */
+    avio_wb16(pb, ff_mov_iso639_to_lang(lang, 1)); /* language */
     avio_wb16(pb, 0x01);                /* ? */
     ascii_to_wc(pb, str);
 }
@@ -1922,7 +1919,7 @@ static int mov_write_uuidusmt_tag(AVIOContext *pb, AVFormatContext *s)
         // ?
         avio_wb16(pb, 0x0C);                 /* size */
         avio_wb32(pb, 0x0B);                 /* type */
-        avio_wb16(pb, language_code("und")); /* language */
+        avio_wb16(pb, ff_mov_iso639_to_lang("und", 1)); /* language */
         avio_wb16(pb, 0x0);                  /* ? */
         avio_wb16(pb, 0x021C);               /* data */
 
@@ -2044,7 +2041,7 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
     if (mov->mode == MODE_PSP)
         mov_write_uuidusmt_tag(pb, s);
     else
-        mov_write_udta_tag(pb, mov, s);
+        mov_write_udta_tag(pb, s);
 
     return updateSize(pb, pos);
 }
