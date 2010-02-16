@@ -1104,7 +1104,7 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
                      ", pass 2");
     }
     bitrate = get_bit_rate(enc);
-    if (bitrate != 0) {
+    if (bitrate / 1000 != 0) {
         snprintf(buf + strlen(buf), buf_size - strlen(buf),
                  ", %d kb/s", bitrate / 1000);
     }
