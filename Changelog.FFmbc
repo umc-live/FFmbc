@@ -1,3 +1,22 @@
+FFmbc-0.4:
+- Sync on FFmpeg svn r21845.
+- Full support for reading and writing covert art in mp3 and iTunes m4a,m4v,mp4.
+- "-coverfile" commandline option to set a cover file. png,jpg,bmp supported.
+- Correctly write Quicktime metadata as utf-8.
+- Fixed a bug with temporal offset when muxing mpeg-2 long gop in MXF.
+- Huge speedup when opening Quicktime and mpeg-4 files.
+- Timecode for Quicktime and MXF files can now be set when stream copying.
+- Added x264 sources in contrib directory, git 5b86182d1240b441f28462abf3d40b7371de5ba3
+- Enable pthreads by default.
+- Fixed a bug with interlaced VC-3 decoding.
+- Integrate libavfilter. New commandline option -vf, see doc/libavfiter.texi
+- Auto-rotate iPhone 3GS files.
+- Support lyrics in mp3 and iTunes m4a,m4v,mp4.
+- Automatically set current UTC time in created files.
+- New AVFMT_HAS_PTS flag in AVInputFormat to specify that format has pts.
+- Write and read metadata "reel_name" in mov timecode track if present.
+- MPEG TS muxer now produces streams playable by VLC and Quicktime.
+
 FFmbc-0.3:
 - Sync on FFmpeg svn r20539.
 - Write Quicktime timecode track.
