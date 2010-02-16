@@ -225,7 +225,7 @@ static const struct {
     { MKTAG(0xa9,'a','u','t'), "author" },
     { MKTAG(0xa9,'c','m','t'), "comment" },
     { MKTAG(0xa9,'c','p','y'), "copyright" },
-    { MKTAG(0xa9,'d','a','y'), "year" },
+    { MKTAG(0xa9,'d','a','y'), "date" },
     { MKTAG(0xa9,'e','n','c'), "encoder" },
     { MKTAG(0xa9,'s','w','r'), "encoder" },
     { MKTAG(0xa9,'f','m','t'), "original_format" },
@@ -264,8 +264,13 @@ static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         if (tag == MKTAG('d','a','t','a')) {
             data_type = avio_rb32(pb); // type
             switch (data_type) {
-            case 0:  type = METADATA_INT; break;
-            case 1:  type = METADATA_STRING; break;
+            case  1:  type = METADATA_STRING; break; // UTF-8
+          //case  2:  type = METADATA_STRING; break; // UTF-16BE
+          //case  3:  type = METADATA_STRING; break; // MAC Encoded
+            case 21:  type = METADATA_INT;    break; // signed
+            case 22:  type = METADATA_INT;    break; // unsigned
+            case 23:  type = METADATA_FLOAT;  break; // 32BE
+            case 24:  type = METADATA_FLOAT;  break; // 64BE
             default:
                 av_log(c->fc, AV_LOG_DEBUG,
                        "unsupported data type: %d\n", data_type);
@@ -316,7 +321,19 @@ static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     if (parse)
         parse(c, pb, size, data_type, key);
-    else if (type == METADATA_INT) {
+    else if (type == METADATA_FLOAT) {
+        double value;
+        switch (size) {
+        case 8: value = av_int2dbl(avio_rb64(pb)); break;
+        case 4: value = av_int2dbl(avio_rb32(pb)); break;
+        default:
+            av_dlog(c->fc, "unsupported int size: %d\n", size);
+            avio_skip(pb, size);
+            value = 0;
+            break;
+        }
+        av_dict_set_float(c->metadata, key, value);
+    } else if (type == METADATA_INT) {
         int value;
         switch (size) {
         case 4: value = avio_rb32(pb); break;
