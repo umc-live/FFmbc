@@ -266,7 +266,7 @@ static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             switch (data_type) {
             case  1:  type = METADATA_STRING; break; // UTF-8
           //case  2:  type = METADATA_STRING; break; // UTF-16BE
-          //case  3:  type = METADATA_STRING; break; // MAC Encoded
+            case  3:  type = METADATA_STRING; break; // MAC Encoded
             case 21:  type = METADATA_INT;    break; // signed
             case 22:  type = METADATA_INT;    break; // unsigned
             case 23:  type = METADATA_FLOAT;  break; // 32BE
@@ -288,6 +288,7 @@ static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             size > atom.size) {
             language[0] = 0;
             avio_seek(pb, -4, SEEK_CUR);
+            langcode = 0;
             goto unrecognized;
         }
         atom.size -= 4;
@@ -350,15 +351,29 @@ static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     } else {
         AVDictionaryEntry *tag = NULL;
         uint8_t *buf;
-        if (type == METADATA_STRING)
-            buf = av_malloc(size+1);
-        else
+        if (type == METADATA_STRING) {
+            if (data_type == 3 || (data_type == 0 && langcode < 0x800)) { // MAC Encoded
+                if (size >= UINT_MAX/2)
+                    return 0;
+                buf = av_malloc(size*2+1);
+                if (!buf)
+                    return AVERROR(ENOMEM);
+                size = mov_read_mac_string(c, pb, size, buf, size*2+1);
+            } else { // UTF-8
+                if (size >= UINT_MAX)
+                    return 0;
+                buf = av_malloc(size+1);
+                if (!buf)
+                    return AVERROR(ENOMEM);
+                avio_read(pb, buf, size);
+                buf[size] = 0;
+            }
+        } else {
             buf = av_malloc(size);
-        if (!buf)
-            return AVERROR(ENOMEM);
-        avio_read(pb, buf, size);
-        if (type == METADATA_STRING)
-            buf[size] = 0;
+            if (!buf)
+                return AVERROR(ENOMEM);
+            avio_read(pb, buf, size);
+        }
         if (av_dict_set_custom(c->metadata, &tag, type, key, buf, size,
                                AV_DICT_DONT_STRDUP_VAL) < 0) {
             av_free(buf);
