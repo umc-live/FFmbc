@@ -3329,6 +3329,58 @@ static int opt_frame_aspect_ratio(const char *opt, const char *arg)
     return 0;
 }
 
+static int opt_cover_file(const char *opt, const char *arg)
+{
+    FILE *cover_file;
+    uint8_t *buf;
+    int file_size;
+    const char *mime = NULL;
+    AVDictionaryEntry *tag;
+    char *ext = strrchr(arg, '.');
+    if (!ext) {
+        fprintf(stderr, "Could not find file extension to guess mime type\n");
+        ffmpeg_exit(1);
+    }
+    if (!strcmp(ext+1, "jpg"))
+        mime = "image/jpeg";
+    else if (!strcmp(ext+1, "png"))
+        mime = "image/png";
+    else if (!strcmp(ext+1, "bmp"))
+        mime = "image/bmp";
+    else {
+        fprintf(stderr, "Unknown extension, supported: .jpg, .png, .bmp\n");
+        ffmpeg_exit(1);
+    }
+
+    cover_file = fopen(arg, "r");
+    if (!cover_file) {
+        fprintf(stderr, "Could not open cover file\n");
+        ffmpeg_exit(1);
+    }
+    file_size = fseek(cover_file, 0, SEEK_END);
+    if (file_size < 0) {
+        fprintf(stderr, "Could not compute cover file size\n");
+        ffmpeg_exit(1);
+    }
+    file_size = ftell(cover_file);
+    fseek(cover_file, 0, SEEK_SET);
+
+    buf = av_malloc(file_size);
+    if (!buf)
+        ffmpeg_exit(1);
+    if (fread(buf, file_size, 1, cover_file) != 1) {
+        fprintf(stderr, "Could not read cover file\n");
+        ffmpeg_exit(1);
+    }
+
+    if (av_dict_set_custom(&metadata, &tag, METADATA_BYTEARRAY, "cover",
+                           buf, file_size, AV_DICT_DONT_STRDUP_VAL) < 0)
+        ffmpeg_exit(1);
+    av_metadata_set_attribute(tag, "mime", mime);
+
+    return 0;
+}
+
 static int opt_metadata(const char *opt, const char *arg)
 {
     char *mid= strchr(arg, '=');
@@ -4758,6 +4810,7 @@ static const OptionDef options[] = {
     { "timestamp", HAS_ARG, {(void*)opt_recording_timestamp}, "set the recording timestamp ('now' to set the current time)", "time" },
     { "metadata", HAS_ARG, {(void*)opt_metadata}, "add metadata", "string=string" },
     { "dframes", OPT_INT | HAS_ARG, {(void*)&max_frames[AVMEDIA_TYPE_DATA]}, "set the number of data frames to record", "number" },
+    { "coverfile", HAS_ARG, {(void*)opt_cover_file}, "add cover artwork", "coverfilepath" },
     { "benchmark", OPT_BOOL | OPT_EXPERT, {(void*)&do_benchmark},
       "add timings for benchmarking" },
     { "timelimit", HAS_ARG, {(void*)opt_timelimit}, "set max runtime in seconds", "limit" },

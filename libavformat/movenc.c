@@ -1675,7 +1675,10 @@ static int mov_write_covr_tag(AVIOContext *pb, MOVMuxContext *mov,
         return 0;
 
     mime = av_metadata_get_attribute(t, "mime");
-    av_log(NULL, AV_LOG_INFO, "mime %s\n", mime);
+    if (!mime) {
+        av_log(s, AV_LOG_ERROR, "error, no mime type set for cover\n");
+        return 0;
+    }
     if (!strcmp(mime, "image/jpeg"))
         type = 13;
     else if (!strcmp(mime, "image/png"))

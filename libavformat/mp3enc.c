@@ -113,8 +113,10 @@ static int id3v2_put_apic(AVFormatContext *s, AVDictionaryEntry *tag)
 {
     const char *mime = av_metadata_get_attribute(tag, "mime");
     int len;
-    if (!mime)
+    if (!mime) {
+        av_log(s, AV_LOG_ERROR, "error, no mime type set for cover\n");
         return 0;
+    }
     avio_wtag(s->pb, "APIC");
     len = 1+strlen(mime)+1+1+1+tag->len;
     id3v2_put_size(s, len);
