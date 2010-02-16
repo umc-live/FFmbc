@@ -1312,6 +1312,17 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
                 st->codec->bits_per_coded_sample = bits_per_sample;
                 sc->sample_size = (bits_per_sample >> 3) * st->codec->channels;
             }
+        } else if (st->codec->codec_tag == MKTAG('t','m','c','d')) {
+            int val;
+            avio_rb32(pb); /* reserved */
+            val = avio_rb32(pb); /* flags */
+            if (val & 1)
+                st->codec->flags2 |= CODEC_FLAG2_DROP_FRAME_TIMECODE;
+            val = avio_rb32(pb);
+            val = avio_rb32(pb);
+            st->codec->time_base.den = avio_r8(pb);
+            st->codec->time_base.num = 1;
+            avio_skip(pb, size - (avio_tell(pb) - start_pos));
         } else if(st->codec->codec_type==AVMEDIA_TYPE_SUBTITLE){
             // ttxt stsd contains display flags, justification, background
             // color, fonts, and default styles, so fake an atom to read it
