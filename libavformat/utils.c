@@ -3406,10 +3406,10 @@ static void dump_metadata(void *ctx, AVDictionary *m, const char *indent)
             if (lang)
                 av_log(ctx, AV_LOG_INFO, "(%s)", lang);
             av_log(ctx, AV_LOG_INFO, ": ");
-            if (tag->type == METADATA_BYTEARRAY)
+            if (tag->type == METADATA_BYTEARRAY || !strcmp(tag->key, "lyrics"))
                 dump_bytearray(ctx, tag->value, FFMIN(tag->len, 64));
             else
-                av_log(ctx, AV_LOG_INFO, "%s\n", tag->value);
+                av_log(ctx, AV_LOG_INFO, "%.64s\n", tag->value);
             for (i = 0; tag->attributes && i < tag->attributes->count; i++) {
                 if (!strcmp(tag->attributes->elems[i].key, "language"))
                     continue;
