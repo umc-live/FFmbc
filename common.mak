@@ -5,6 +5,10 @@
 # first so "all" becomes default target
 all: all-yes
 
+# disable suffix rules, we do not use them and like this we avoid (most?)
+# implicit rules which might cause slowdowns or bugs
+.SUFFIXES:
+
 ifndef SUBDIR
 
 ifndef V
