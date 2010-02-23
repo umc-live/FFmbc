@@ -66,64 +66,77 @@ static unsigned int get_size(AVIOContext *s, int len)
     return v;
 }
 
-static void read_ttag(AVFormatContext *s, AVIOContext *pb, int taglen, const char *key)
+static int read_id3v2_string(AVFormatContext *s, AVIOContext *pb,
+                             const char *key, int taglen,
+                             int encoding, char *dst, int dstlen)
 {
-    char *q, dst[512];
-    const char *val = NULL;
-    int len, dstlen = sizeof(dst) - 1;
-    unsigned genre;
     unsigned int (*get)(AVIOContext*) = avio_rb16;
+    char *q = dst;
+    uint8_t tmp;
+    uint32_t ch;
+    int bom;
 
-    dst[0] = 0;
-    if (taglen < 1)
-        return;
-
-    taglen--; /* account for encoding type byte */
-
-    switch (avio_r8(pb)) { /* encoding type */
-
+    switch (encoding) {
     case ID3v2_ENCODING_ISO8859:
-        q = dst;
-        while (taglen-- && q - dst < dstlen - 7) {
-            uint8_t tmp;
-            PUT_UTF8(avio_r8(pb), tmp, *q++ = tmp;)
+        while (taglen) {
+            uint32_t val = avio_r8(pb); taglen--;
+            if (!val)
+                break;
+            PUT_UTF8(val, tmp, if (q - dst < dstlen) *q++ = tmp;);
         }
         *q = 0;
         break;
-
     case ID3v2_ENCODING_UTF16BOM:
-        taglen -= 2;
-        switch (avio_rb16(pb)) {
+        bom = avio_rb16(pb); taglen -= 2;
+        switch (bom) {
         case 0xfffe:
             get = avio_rl16;
         case 0xfeff:
             break;
         default:
-            av_log(s, AV_LOG_ERROR, "Incorrect BOM value in tag %s.\n", key);
-            return;
+            av_log(s, AV_LOG_ERROR, "Incorrect BOM value: %x in tag %s\n", bom, key);
+            return taglen;
         }
         // fall-through
-
     case ID3v2_ENCODING_UTF16BE:
-        q = dst;
-        while (taglen > 1 && q - dst < dstlen - 7) {
-            uint32_t ch;
-            uint8_t tmp;
-
-            GET_UTF16(ch, ((taglen -= 2) >= 0 ? get(pb) : 0), break;)
-            PUT_UTF8(ch, tmp, *q++ = tmp;)
+        while (taglen > 1) {
+            uint16_t val = get(pb); taglen -= 2;
+            if (!val)
+                break;
+            GET_UTF16(ch, val, break;);
+            PUT_UTF8(ch, tmp, if (q - dst < dstlen) *q++ = tmp;);
         }
         *q = 0;
         break;
-
     case ID3v2_ENCODING_UTF8:
-        len = FFMIN(taglen, dstlen);
-        avio_read(pb, dst, len);
-        dst[len] = 0;
+        while (taglen) {
+            uint32_t val = avio_r8(pb); taglen--;
+            if (!val)
+                break;
+            GET_UTF8(ch, val, break;);
+            PUT_UTF8(ch, tmp, if (q - dst < dstlen) *q++ = tmp;);
+        }
+        *q = 0;
         break;
     default:
-        av_log(s, AV_LOG_WARNING, "Unknown encoding in tag %s.\n", key);
+        av_log(s, AV_LOG_WARNING, "Unknown encoding in tag %s\n", key);
     }
+    return taglen;
+}
+
+static void read_ttag(AVFormatContext *s, AVIOContext *pb, int taglen, const char *key)
+{
+    char dst[512];
+    const char *val = NULL;
+    int len, dstlen = sizeof(dst) - 1;
+    unsigned genre, encoding;
+
+    if (taglen < 1)
+        return;
+
+    taglen--; /* account for encoding type byte */
+    encoding = avio_r8(pb);
+    taglen = read_id3v2_string(s, pb, key, taglen, encoding, dst, dstlen);
 
     if (!(strcmp(key, "TCON") && strcmp(key, "TCO"))
         && (sscanf(dst, "(%d)", &genre) == 1 || sscanf(dst, "%d", &genre) == 1)
@@ -131,10 +144,9 @@ static void read_ttag(AVFormatContext *s, AVIOContext *pb, int taglen, const cha
         val = ff_id3v1_genre_str[genre];
     else if (!(strcmp(key, "TXXX") && strcmp(key, "TXX"))) {
         /* dst now contains two 0-terminated strings */
-        dst[dstlen] = 0;
         len = strlen(dst);
-        key = dst;
-        val = dst + FFMIN(len + 1, dstlen);
+        read_id3v2_string(s, pb, key, taglen, encoding, dst+len, dstlen-len);
+        val = dst+len;
     } else if (!strcmp(key, "TDAT")) {
         /* date in the form DDMM, change to DD/MM */
         dst[5] = 0;
@@ -193,6 +205,30 @@ static void merge_date(AVDictionary **m)
 finish:
     if (date[0])
         av_dict_set(m, "date", date, 0);
+}
+
+static int read_uslt(AVFormatContext *s, int taglen, const char *key)
+{
+    AVDictionaryEntry *tag;
+    uint8_t *data;
+    char lang[4];
+    int encoding;
+
+    encoding = avio_r8(s->pb); // encoding
+    avio_read(s->pb, lang, 3);
+    taglen -= 4;
+    taglen = read_id3v2_string(s, s->pb, key, taglen, encoding, lang+3, 0); // description
+    data = av_malloc(taglen);
+    if (!data)
+        return AVERROR(ENOMEM);
+    read_id3v2_string(s, s->pb, key, taglen, encoding, data, taglen-1);
+
+    if (av_dict_set_custom(&s->metadata, &tag, METADATA_STRING, key, data,
+                           strlen(data), AV_DICT_DONT_STRDUP_VAL) < 0)
+        return -1;
+    av_metadata_set_attribute(tag, "language", lang);
+
+    return 0;
 }
 
 static int read_apic(AVFormatContext *s, int taglen, const char *key)
@@ -321,6 +357,8 @@ static void ff_id3v2_parse(AVFormatContext *s, int len, uint8_t version, uint8_t
             }
         } else if (!strcmp(tag, "APIC")) {
             read_apic(s, tlen, tag);
+        } else if (!strcmp(tag, "USLT") || !strcmp(tag, "ULT")) {
+            read_uslt(s, tlen, tag);
         } else if (!tag[0]) {
             if (tag[1])
                 av_log(s, AV_LOG_WARNING, "invalid frame id, assuming padding");
@@ -391,6 +429,7 @@ const AVMetadataConv ff_id3v2_34_metadata_conv[] = {
     { "TRCK", "track"},
     { "TSSE", "encoder"},
     { "TYER", "year"},
+    { "USLT", "lyrics"},
     { 0 }
 };
 
@@ -406,6 +445,7 @@ const AVMetadataConv ff_id3v2_4_metadata_conv[] = {
 
 const AVMetadataConv ff_id3v2_2_metadata_conv[] = {
     { "TAL",  "album"},
+    { "TCM",  "composer"},
     { "TCO",  "genre"},
     { "TT2",  "title"},
     { "TEN",  "encoded_by"},
@@ -413,6 +453,8 @@ const AVMetadataConv ff_id3v2_2_metadata_conv[] = {
     { "TP2",  "album_artist"},
     { "TP3",  "performer"},
     { "TRK",  "track"},
+    { "ULT",  "lyrics"},
+    { "TYE",  "year"},
     { 0 }
 };
 
@@ -422,7 +464,7 @@ const char ff_id3v2_tags[][4] = {
    "TFLT", "TIT1", "TIT2", "TIT3", "TKEY", "TLAN", "TLEN", "TMED",
    "TOAL", "TOFN", "TOLY", "TOPE", "TOWN", "TPE1", "TPE2", "TPE3",
    "TPE4", "TPOS", "TPUB", "TRCK", "TRSN", "TRSO", "TSRC", "TSSE",
-   "APIC",
+   "APIC", "USLT",
    { 0 },
 };
 

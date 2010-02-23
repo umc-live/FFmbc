@@ -129,6 +129,25 @@ static int id3v2_put_apic(AVFormatContext *s, AVDictionaryEntry *tag)
     return 4+4+2+len;
 }
 
+static int id3v2_put_uslt(AVFormatContext *s, AVDictionaryEntry *tag)
+{
+    const char *lang = av_metadata_get_attribute(tag, "language");
+    int len;
+    avio_wtag(s->pb, "USLT");
+    len = 1+3+1+tag->len;
+    id3v2_put_size(s, len);
+    avio_wb16(s->pb, 0); // flags
+    avio_w8(s->pb, 3); // encoding
+    if (!lang)
+        lang = "eng";
+    avio_w8(s->pb, lang[0]);
+    avio_w8(s->pb, lang[1]);
+    avio_w8(s->pb, lang[2]);
+    avio_w8(s->pb, 0); // description
+    avio_write(s->pb, tag->value, tag->len);
+    return 4+4+2+len;
+}
+
 #if CONFIG_MP2_MUXER
 AVOutputFormat ff_mp2_muxer = {
     .name              = "mp2",
@@ -164,6 +183,8 @@ static int id3v2_check_write_tag(AVFormatContext *s, AVDictionaryEntry *t, const
 
     if (!strcmp(t->key, "APIC"))
         return id3v2_put_apic(s, t);
+    else if (!strcmp(t->key, "USLT"))
+        return id3v2_put_uslt(s, t);
     else if (t->key[0] != 'T' || strlen(t->key) != 4)
         return -1;
     tag = AV_RB32(t->key);
