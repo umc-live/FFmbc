@@ -91,7 +91,7 @@ typedef struct {
 //    int64_t packet_start;
     FrameCode frame_code[256];
     uint8_t header_len[128];
-    const uint8_t *header[128];
+    uint8_t *header[128];
     uint64_t next_startcode;     ///< stores the next startcode if it has already been parsed but the stream is not seekable
     StreamContext *stream;
     ChapterContext *chapter;
