@@ -3038,6 +3038,8 @@ int avformat_write_header(AVFormatContext *s, AVDictionary **options)
     /* set muxer identification string */
     if (s->nb_streams && !(s->streams[0]->codec->flags & CODEC_FLAG_BITEXACT)) {
         av_dict_set(&s->metadata, "encoder", LIBAVFORMAT_IDENT, 0);
+        if (!s->timestamp)
+            s->timestamp = parse_date("now", 0) / 1000000;
     }
 
     if(s->oformat->write_header){
