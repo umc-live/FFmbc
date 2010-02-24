@@ -942,8 +942,22 @@ static int mov_write_rtp_tag(AVIOContext *pb, MOVTrack *track)
     return updateSize(pb, pos);
 }
 
-static int mov_write_tmcd_tag(AVIOContext *pb, MOVTrack *track)
+static int mov_write_mac_string(AVIOContext *pb, const char *name,
+                                const char *value, const char *lang)
 {
+    int64_t pos = avio_tell(pb);
+    unsigned len = strlen(value);
+    avio_wb32(pb, 0); /* size */
+    avio_wtag(pb, name);
+    avio_wb16(pb, len); /* string length */
+    avio_wb16(pb, ff_mov_iso639_to_lang(lang, 0));
+    avio_write(pb, value, len);
+    return updateSize(pb, pos);
+}
+
+static int mov_write_tmcd_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
+{
+    AVDictionaryEntry *t = av_dict_get(s->metadata, "reel_name", NULL, 0);
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, "tmcd");
@@ -956,10 +970,13 @@ static int mov_write_tmcd_tag(AVIOContext *pb, MOVTrack *track)
     avio_wb32(pb, track->enc->time_base.num); /* frame duration */
     avio_w8(pb, av_rescale_rnd(track->timescale, 1, track->enc->time_base.num, AV_ROUND_UP)); /* number of frames */
     avio_w8(pb, 0);
+    if (t)
+        mov_write_mac_string(pb, "name", t->value,
+                             av_metadata_get_attribute(t, "language"));
     return updateSize(pb, pos);
 }
 
-static int mov_write_stsd_tag(AVIOContext *pb, MOVTrack *track)
+static int mov_write_stsd_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
@@ -975,7 +992,7 @@ static int mov_write_stsd_tag(AVIOContext *pb, MOVTrack *track)
     else if (track->enc->codec_tag == MKTAG('r','t','p',' '))
         mov_write_rtp_tag(pb, track);
     else if (track->enc->codec_tag == MKTAG('t','m','c','d'))
-        mov_write_tmcd_tag(pb, track);
+        mov_write_tmcd_tag(s, pb, track);
 
     return updateSize(pb, pos);
 }
@@ -1093,12 +1110,12 @@ static int mov_write_dref_tag(AVIOContext *pb)
     return 28;
 }
 
-static int mov_write_stbl_tag(AVIOContext *pb, MOVTrack *track)
+static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, "stbl");
-    mov_write_stsd_tag(pb, track);
+    mov_write_stsd_tag(s, pb, track);
     mov_write_stts_tag(pb, track);
     if ((track->enc->codec_type == AVMEDIA_TYPE_VIDEO ||
          track->enc->codec_tag == MKTAG('r','t','p',' ')) &&
@@ -1260,7 +1277,7 @@ static int mov_write_hmhd_tag(AVIOContext *pb)
     return 28;
 }
 
-static int mov_write_minf_tag(AVIOContext *pb, MOVTrack *track)
+static int mov_write_minf_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
@@ -1280,7 +1297,7 @@ static int mov_write_minf_tag(AVIOContext *pb, MOVTrack *track)
     if (track->mode == MODE_MOV) /* FIXME: Why do it for MODE_MOV only ? */
         mov_write_hdlr_tag(pb, NULL);
     mov_write_dinf_tag(pb);
-    mov_write_stbl_tag(pb, track);
+    mov_write_stbl_tag(s, pb, track);
     return updateSize(pb, pos);
 }
 
@@ -1317,14 +1334,14 @@ static int mov_write_mdhd_tag(AVIOContext *pb, MOVTrack *track)
     return 32;
 }
 
-static int mov_write_mdia_tag(AVIOContext *pb, MOVTrack *track)
+static int mov_write_mdia_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, "mdia");
     mov_write_mdhd_tag(pb, track);
     mov_write_hdlr_tag(pb, track);
-    mov_write_minf_tag(pb, track);
+    mov_write_minf_tag(s, pb, track);
     return updateSize(pb, pos);
 }
 
@@ -1503,7 +1520,7 @@ static int mov_write_udta_sdp(AVIOContext *pb, AVFormatContext *ctx, int index)
     return len + 24;
 }
 
-static int mov_write_trak_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
+static int mov_write_trak_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track, AVStream *st)
 {
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
@@ -1518,7 +1535,7 @@ static int mov_write_trak_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
     mov_write_edts_tag(pb, track); // PSP Movies require edts box
     if (track->tref_tag)
         mov_write_tref_tag(pb, track);
-    mov_write_mdia_tag(pb, track);
+    mov_write_mdia_tag(s, pb, track);
     if (track->mode == MODE_PSP)
         mov_write_uuid_tag_psp(pb,track);  // PSP Movies require this uuid box
     if (track->tag == MKTAG('r','t','p',' '))
@@ -1663,19 +1680,6 @@ static int mov_write_itunes_string(AVIOContext *pb, const char *name,
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, name);
     mov_write_data_tag(pb, value, len, 1);
-    return updateSize(pb, pos);
-}
-
-static int mov_write_mac_string(AVIOContext *pb, const char *name,
-                                const char *value, const char *lang)
-{
-    int64_t pos = avio_tell(pb);
-    unsigned len = strlen(value);
-    avio_wb32(pb, 0); /* size */
-    avio_wtag(pb, name);
-    avio_wb16(pb, len); /* string length */
-    avio_wb16(pb, ff_mov_iso639_to_lang(lang, 1));
-    avio_write(pb, value, len);
     return updateSize(pb, pos);
 }
 
@@ -2034,7 +2038,7 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
     //mov_write_iods_tag(pb, mov);
     for (i=0; i<mov->nb_streams; i++) {
         if(mov->tracks[i].entry > 0) {
-            mov_write_trak_tag(pb, &(mov->tracks[i]), i < s->nb_streams ? s->streams[i] : NULL);
+            mov_write_trak_tag(s, pb, &(mov->tracks[i]), i < s->nb_streams ? s->streams[i] : NULL);
         }
     }
 
@@ -2316,7 +2320,7 @@ static int mov_create_timecode_track(AVFormatContext *s, int tracknum)
     MOVTrack *track = &mov->tracks[tracknum];
     AVPacket pkt;
     AVStream *vst = NULL;
-    int i, framenum, drop;
+    int i, framenum = 0, drop = 0;
 
     for (i = 0; i < s->nb_streams; i++) {
         if (s->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -2329,7 +2333,8 @@ static int mov_create_timecode_track(AVFormatContext *s, int tracknum)
         return -1;
     }
 
-    framenum = ff_timecode_to_framenum(mov->timecode, vst->codec->time_base, &drop);
+    if (mov->timecode)
+        framenum = ff_timecode_to_framenum(mov->timecode, vst->codec->time_base, &drop);
     if (framenum < 0) {
         if (framenum == -1)
             av_log(s, AV_LOG_ERROR, "error parsing timecode, syntax: 00:00:00[;:]00\n");
@@ -2436,7 +2441,7 @@ static int mov_write_header(AVFormatContext *s)
 
     mov->nb_streams = s->nb_streams;
 
-    if (mov->timecode)
+    if (mov->timecode || av_dict_get(s->metadata, "reel_name", NULL, 0))
         mov->timecode_track = mov->nb_streams++;
     if (mov->mode & (MODE_MOV|MODE_IPOD) && s->nb_chapters)
         mov->chapter_track = mov->nb_streams++;

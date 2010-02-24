@@ -212,6 +212,7 @@ static const struct {
     { MKTAG( 'c','p','r','t'), "copyright" },
     { MKTAG( 'd','e','s','c'), "description" },
     { MKTAG( 'l','d','e','s'), "synopsis" },
+    { MKTAG( 'n','a','m','e'), "reel_name" },
     { MKTAG( 't','v','s','h'), "show" },
     { MKTAG( 't','v','e','n'), "episode_id" },
     { MKTAG( 't','v','n','n'), "network" },
@@ -1345,16 +1346,23 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
                 sc->sample_size = (bits_per_sample >> 3) * st->codec->channels;
             }
         } else if (st->codec->codec_tag == MKTAG('t','m','c','d')) {
-            int val;
+            int val, left;
             avio_rb32(pb); /* reserved */
             val = avio_rb32(pb); /* flags */
             if (val & 1)
                 st->codec->flags2 |= CODEC_FLAG2_DROP_FRAME_TIMECODE;
             val = avio_rb32(pb);
+            av_dlog(c->fc, "val %d\n", val);
             val = avio_rb32(pb);
+            av_dlog(c->fc, "val %d\n", val);
             st->codec->time_base.den = avio_r8(pb);
             st->codec->time_base.num = 1;
-            avio_skip(pb, size - (avio_tell(pb) - start_pos));
+            av_dlog(c->fc, "tbc %d/%d\n", st->codec->time_base.num,
+                    st->codec->time_base.den);
+            avio_r8(pb);
+            left = size - (avio_tell(pb) - start_pos);
+            if (left > 8)
+                mov_read_default(c, pb, (MOVAtom){ AV_RL32("udta"), left });
         } else if(st->codec->codec_type==AVMEDIA_TYPE_SUBTITLE){
             // ttxt stsd contains display flags, justification, background
             // color, fonts, and default styles, so fake an atom to read it
