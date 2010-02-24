@@ -158,7 +158,7 @@ static int roq_read_packet(AVFormatContext *s,
             if (ret != chunk_size)
                 return AVERROR(EIO);
             pkt->stream_index = roq->video_stream_index;
-            pkt->pts = roq->video_pts++;
+            pkt->dts = pkt->pts = roq->video_pts++;
 
             packet_read = 1;
             break;
@@ -190,10 +190,10 @@ static int roq_read_packet(AVFormatContext *s,
 
             if (chunk_type == RoQ_QUAD_VQ) {
                 pkt->stream_index = roq->video_stream_index;
-                pkt->pts = roq->video_pts++;
+                pkt->dts = pkt->pts = roq->video_pts++;
             } else {
                 pkt->stream_index = roq->audio_stream_index;
-                pkt->pts = roq->audio_frame_count;
+                pkt->dts = pkt->pts = roq->audio_frame_count;
                 roq->audio_frame_count += (chunk_size / roq->audio_channels);
             }
 
