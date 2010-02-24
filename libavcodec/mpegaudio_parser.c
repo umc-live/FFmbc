@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/intreadwrite.h"
 #include "parser.h"
 #include "mpegaudiodecheader.h"
 
@@ -47,6 +48,7 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
     uint32_t state= pc->state;
     int i;
     int next= END_NOT_FOUND;
+    int sr = 0, channels = 0, bit_rate = 0, frame_size = 0;
 
     for(i=0; i<buf_size; ){
         if(s->frame_size){
@@ -60,7 +62,7 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
             }
         }else{
             while(i<buf_size){
-                int ret, sr, channels, bit_rate, frame_size;
+                int ret;
 
                 state= (state<<8) + buf[i++];
 
@@ -74,13 +76,6 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
                     s->header= state;
                     s->header_count++;
                     s->frame_size = ret-4;
-
-                    if(s->header_count > 1){
-                        avctx->sample_rate= sr;
-                        avctx->channels   = channels;
-                        avctx->frame_size = frame_size;
-                        avctx->bit_rate   = bit_rate;
-                    }
                     break;
                 }
             }
@@ -93,6 +88,18 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
         *poutbuf_size = 0;
         return buf_size;
     }
+
+    state = AV_RB32(buf);
+    if (ff_mpa_decode_header(avctx, state, &sr, &channels, &frame_size, &bit_rate) < 0) {
+        *poutbuf = NULL;
+        *poutbuf_size = 0;
+        return next;
+    }
+
+    avctx->sample_rate= sr;
+    avctx->channels   = channels;
+    avctx->frame_size = frame_size;
+    avctx->bit_rate   = bit_rate;
 
     *poutbuf = buf;
     *poutbuf_size = buf_size;
