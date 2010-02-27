@@ -917,7 +917,7 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
 static int mpegts_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVStream *st = s->streams[pkt->stream_index];
-    int size = pkt->size;
+    int i, size = pkt->size;
     uint8_t *buf= pkt->data;
     uint8_t *data= NULL;
     MpegTSWriteStream *ts_st = st->priv_data;
@@ -991,6 +991,17 @@ static int mpegts_write_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     if (st->codec->codec_type != AVMEDIA_TYPE_AUDIO) {
+        // flush buffered audio
+        for (i = 0; i < s->nb_streams; i++) {
+            AVStream *st = s->streams[i];
+            MpegTSWriteStream *ts_st = st->priv_data;
+            if (ts_st->payload_index > 0) {
+                mpegts_write_pes(s, st, ts_st->payload, ts_st->payload_index,
+                                 ts_st->payload_pts, ts_st->payload_dts,
+                                 st->codec->codec_type == AVMEDIA_TYPE_AUDIO);
+                ts_st->payload_index = 0;
+            }
+        }
         // for video and subtitle, write a single pes packet
         mpegts_write_pes(s, st, buf, size, pts, dts, pkt->flags & AV_PKT_FLAG_KEY);
         av_free(data);
