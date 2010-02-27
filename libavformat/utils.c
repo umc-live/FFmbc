@@ -1991,8 +1991,11 @@ static void estimate_timings_from_pts(AVFormatContext *ic, int64_t old_offset)
 
     for (i=0; i<ic->nb_streams; i++) {
         st = ic->streams[i];
-        if (st->start_time == AV_NOPTS_VALUE && st->first_dts == AV_NOPTS_VALUE)
-            av_log(st->codec, AV_LOG_WARNING, "start time is not set in estimate_timings_from_pts\n");
+        if(st->start_time == AV_NOPTS_VALUE &&
+           (st->codec->codec_type == AVMEDIA_TYPE_VIDEO ||
+            st->codec->codec_type == AVMEDIA_TYPE_AUDIO ||
+            st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE))
+            av_log(ic, AV_LOG_WARNING, "st:%d, start time is not set in av_estimate_timings_from_pts\n", i);
 
         if (st->parser) {
             av_parser_close(st->parser);
