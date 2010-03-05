@@ -3565,10 +3565,7 @@ void av_dump_format(AVFormatContext *ic,
     if(ic->nb_programs) {
         int j, k, total = 0;
         for(j=0; j<ic->nb_programs; j++) {
-            AVDictionaryEntry *name = av_dict_get(ic->programs[j]->metadata,
-                                                  "name", NULL, 0);
-            av_log(NULL, AV_LOG_INFO, "  Program %d %s\n", ic->programs[j]->id,
-                   name ? name->value : "");
+            av_log(NULL, AV_LOG_INFO, "  Program %d\n", ic->programs[j]->id);
             dump_metadata(NULL, ic->programs[j]->metadata, "    ");
             for(k=0; k<ic->programs[j]->nb_stream_indexes; k++) {
                 dump_stream_format(ic, ic->programs[j]->stream_index[k], index, is_output);
