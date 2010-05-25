@@ -97,6 +97,16 @@ typedef struct StreamMap {
     int sync_stream_index;
 } StreamMap;
 
+/* select an audio channel to extract */
+typedef struct AudioChannelMap {
+    int file_index;
+    int stream_index;
+    int channel_index;
+    int out_file_index;
+    int out_stream_index;
+    int out_channel_index;
+} AudioChannelMap;
+
 /**
  * select an input file for an output file
  */
@@ -125,6 +135,10 @@ static int nb_output_files = 0;
 
 static StreamMap *stream_maps = NULL;
 static int nb_stream_maps;
+
+#define MAX_AUDIO_CHANNEL_MAPS 8
+static AudioChannelMap audio_channel_maps[MAX_AUDIO_CHANNEL_MAPS];
+static int nb_audio_channel_maps;
 
 /* first item specifies output metadata, second is input */
 static MetadataMap (*meta_data_maps)[2] = NULL;
@@ -255,10 +269,20 @@ static AVBitStreamFilterContext *subtitle_bitstream_filters=NULL;
 
 struct InputStream;
 
+typedef struct {
+    uint8_t *buf;
+    unsigned buf_size;
+    unsigned last_sample_pos; /* last valid sample pos in buf */
+    unsigned buf_index[MAX_AUDIO_CHANNEL_MAPS];
+    unsigned sample_size; /* size of one sample */
+    unsigned out_channels;
+} AudioMergeContext;
+
 typedef struct OutputStream {
     int file_index;          /* file index */
     int index;               /* stream index in the output file */
-    int source_index;        /* InputStream index */
+    int source_index[MAX_AUDIO_CHANNEL_MAPS]; /* AVInputStream index */
+    int nb_source_indexes;   /* number of source indexes */
     AVStream *st;            /* stream in the output file */
     int encoding_needed;     /* true if encoding needed for this stream */
     int frame_number;
@@ -287,6 +311,11 @@ typedef struct OutputStream {
     int forced_kf_index;
 
     /* audio only */
+    AudioChannelMap *audio_channel_maps[MAX_AUDIO_CHANNEL_MAPS];
+    int nb_audio_channel_maps;
+    uint8_t *audio_merge_buf;
+    AudioMergeContext audiomerge;
+
     int audio_resample;
     ReSampleContext *resample; /* for audio resampling */
     int resample_sample_fmt;
@@ -816,6 +845,107 @@ static void write_frame(AVFormatContext *s, AVPacket *pkt, AVCodecContext *avctx
     }
 }
 
+static int audiomerge_init(AudioMergeContext *a, int out_channels, int sample_size)
+{
+    int i;
+
+    if (sample_size <= 0 || out_channels <= 0)
+        return -1;
+
+    a->out_channels = out_channels;
+    a->sample_size = sample_size;
+
+    a->buf_size = out_channels*sample_size*48000; // 1 sec at 48khz
+    a->buf = av_malloc(a->buf_size);
+    if (!a->buf)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < out_channels; i++)
+        a->buf_index[i] = i*sample_size;
+
+    return 0;
+}
+
+static int audiomerge_add_channel(AudioMergeContext *a, uint8_t *input,
+                                  unsigned in_channel, unsigned out_channel,
+                                  unsigned in_channels, unsigned samples)
+{
+    if (out_channel >= a->out_channels)
+        return -1;
+
+    //fprintf(stderr, "in channel %d out channel %d samples %d\n", in_channel, out_channel, samples);
+
+    if (a->buf_index[out_channel] +
+        (int64_t)samples*a->sample_size*a->out_channels >= a->buf_size) {
+        uint8_t *buf;
+        if (a->buf_size + (int64_t)samples*a->sample_size*a->out_channels >= UINT_MAX)
+            goto error;
+        a->buf_size += (int64_t)samples*a->sample_size*a->out_channels;
+        buf = av_realloc(a->buf, a->buf_size);
+        if (!buf) {
+        error:
+            fprintf(stderr, "error reallocating audiomerge buffer\n");
+            return -1;
+        }
+        a->buf = buf;
+    }
+
+    input += a->sample_size*in_channel;
+    while (samples--) {
+        memcpy(a->buf + a->buf_index[out_channel], input, a->sample_size);
+        a->buf_index[out_channel] += a->sample_size*a->out_channels;
+        input += a->sample_size*in_channels;
+    }
+
+    a->last_sample_pos = FFMAX(a->buf_index[out_channel], a->last_sample_pos);
+
+    return 0;
+}
+
+
+static unsigned audiomerge_complete_size(AudioMergeContext *a)
+{
+    int i, min = INT_MAX;
+    int align = a->out_channels*a->sample_size;
+
+    for (i = 0; i < a->out_channels; i++)
+        min = FFMIN(a->buf_index[i], min);
+    return (min / align) * align;
+}
+
+static unsigned audiomerge_get_buffered_samples(const OutputStream *ost, const InputStream *ist)
+{
+    int i;
+
+    if (!ost->nb_audio_channel_maps)
+        return 0;
+
+    for (i = 0; i < ost->nb_audio_channel_maps; i++) {
+        if (ost->audio_channel_maps[i]->file_index == ist->file_index &&
+            ost->audio_channel_maps[i]->stream_index == ist->st->index) {
+            return ost->audiomerge.buf_index[ost->audio_channel_maps[i]->out_channel_index] /
+                (ost->audiomerge.sample_size*ost->audiomerge.out_channels);
+        }
+    }
+    fprintf(stderr, "error, could not find corresponding channel mapping\n");
+    return 0;
+}
+
+static void audiomerge_drain_complete_size(AudioMergeContext *a)
+{
+    int i;
+    unsigned complete_size = audiomerge_complete_size(a);
+
+    if (!complete_size)
+        return;
+
+    memmove(a->buf, a->buf + complete_size,
+            a->last_sample_pos - complete_size);
+    a->last_sample_pos -= complete_size;
+    for (i = 0; i < a->out_channels; i++)
+        a->buf_index[i] -= complete_size;
+}
+
 #define MAX_AUDIO_PACKET_SIZE (128 * 1024)
 
 static void do_audio_out(AVFormatContext *s,
@@ -826,8 +956,7 @@ static void do_audio_out(AVFormatContext *s,
     uint8_t *buftmp;
     int64_t audio_out_size, audio_buf_size;
     int64_t allocated_for_size= size;
-
-    int size_out, frame_bytes, ret, resample_changed;
+    int size_out, frame_bytes, ret, resample_changed, i, in_channels;
     AVCodecContext *enc= ost->st->codec;
     AVCodecContext *dec= ist->st->codec;
     int osize = av_get_bytes_per_sample(enc->sample_fmt);
@@ -858,7 +987,12 @@ need_realloc:
         ffmpeg_exit(1);
     }
 
-    if (enc->channels != dec->channels)
+    if (ost->nb_audio_channel_maps > 0)
+        in_channels = enc->channels; // do not mix channels
+    else
+        in_channels = dec->channels;
+
+    if (enc->channels != in_channels)
         ost->audio_resample = 1;
 
     resample_changed = ost->resample_sample_fmt  != dec->sample_fmt ||
@@ -867,6 +1001,10 @@ need_realloc:
 
     if ((ost->audio_resample && !ost->resample) || resample_changed) {
         if (resample_changed) {
+            if (ost->nb_audio_channel_maps > 0) {
+                fprintf(stderr, "Input stream audio configuration changed, aborting\n");
+                ffmpeg_exit(1);
+            }
             av_log(NULL, AV_LOG_INFO, "Input stream #%d.%d frame changed from rate:%d fmt:%s ch:%d to rate:%d fmt:%s ch:%d\n",
                    ist->file_index, ist->st->index,
                    ost->resample_sample_rate, av_get_sample_fmt_name(ost->resample_sample_fmt), ost->resample_channels,
@@ -885,15 +1023,16 @@ need_realloc:
             ost->resample = NULL;
             ost->audio_resample = 0;
         } else {
+            ost->audio_resample = 1;
             if (dec->sample_fmt != AV_SAMPLE_FMT_S16)
                 fprintf(stderr, "Warning, using s16 intermediate sample format for resampling\n");
-            ost->resample = av_audio_resample_init(enc->channels,    dec->channels,
+            ost->resample = av_audio_resample_init(enc->channels,    in_channels,
                                                    enc->sample_rate, dec->sample_rate,
                                                    enc->sample_fmt,  dec->sample_fmt,
                                                    16, 10, 0, 0.8);
             if (!ost->resample) {
                 fprintf(stderr, "Can not resample %d channels @ %d Hz to %d channels @ %d Hz\n",
-                        dec->channels, dec->sample_rate,
+                        in_channels, dec->sample_rate,
                         enc->channels, enc->sample_rate);
                 ffmpeg_exit(1);
             }
@@ -916,9 +1055,15 @@ need_realloc:
         ost->reformat_pair=MAKE_SFMT_PAIR(enc->sample_fmt,dec->sample_fmt);
     }
 
+    // sync_ist will be set to the first input stream with audiomerge
+    if(ost->audio_channel_maps > 0)
+        ost->sync_ist = ist;
+
     if(audio_sync_method){
         double delta = get_sync_ipts(ost) * enc->sample_rate - ost->sync_opts
-                - av_fifo_size(ost->fifo)/(enc->channels * 2);
+            - av_fifo_size(ost->fifo)/(enc->channels * 2)
+            - audiomerge_get_buffered_samples(ost, ist) /
+            (double)dec->sample_rate * enc->sample_rate;
         double idelta= delta*dec->sample_rate / enc->sample_rate;
         int byte_delta= ((int)idelta)*2*dec->channels;
 
@@ -968,12 +1113,24 @@ need_realloc:
         ost->sync_opts= lrintf(get_sync_ipts(ost) * enc->sample_rate)
                         - av_fifo_size(ost->fifo)/(enc->channels * 2); //FIXME wrong
 
-    if (ost->audio_resample) {
-        buftmp = audio_buf;
-        size_out = audio_resample(ost->resample,
-                                  (short *)buftmp, (short *)buf,
-                                  size / (dec->channels * isize));
-        size_out = size_out * enc->channels * osize;
+    if (ost->nb_audio_channel_maps > 0) {
+        for (i = 0; i < ost->nb_audio_channel_maps; i++) {
+            if (ost->audio_channel_maps[i]->file_index == ist->file_index &&
+                ost->audio_channel_maps[i]->stream_index == ist->st->index) {
+                if (audiomerge_add_channel(&ost->audiomerge, buf,
+                                           ost->audio_channel_maps[i]->channel_index,
+                                           ost->audio_channel_maps[i]->out_channel_index,
+                                           dec->channels,
+                                           size/(isize*dec->channels)) < 0) {
+                    fprintf(stderr, "audiomerge failed\n");
+                    ffmpeg_exit(1);
+                }
+            }
+        }
+        buftmp = ost->audiomerge.buf;
+        size_out = audiomerge_complete_size(&ost->audiomerge);
+        if (!size_out)
+            return; // no complete frame
     } else {
         buftmp = buf;
         size_out = size;
@@ -993,6 +1150,14 @@ need_realloc:
         }
         buftmp = audio_buf;
         size_out = len*osize;
+    }
+
+    if (ost->audio_resample) {
+        size_out = audio_resample(ost->resample,
+                                  (short *)audio_buf, (short *)buftmp,
+                                  size_out / (in_channels * isize));
+        size_out = size_out * enc->channels * osize;
+        buftmp = audio_buf;
     }
 
     /* now encode as many frames as possible */
@@ -1064,6 +1229,9 @@ need_realloc:
         pkt.flags |= AV_PKT_FLAG_KEY;
         write_frame(s, &pkt, enc, ost->bitstream_filters);
     }
+
+    if (ost->nb_audio_channel_maps > 0)
+        audiomerge_drain_complete_size(&ost->audiomerge);
 }
 
 static void pre_process_video_frame(InputStream *ist, AVPicture *picture, void **bufp)
@@ -1499,7 +1667,6 @@ static void print_report(AVFormatContext **output_files,
         mins %= 60;
 
         bitrate = pts ? total_size * 8 / (pts / 1000.0) : 0;
-
         snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
                  "size=%8.0fkB time=", total_size / 1024.0);
         snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
@@ -1545,7 +1712,7 @@ static int output_packet(InputStream *ist, int ist_index,
 {
     AVFormatContext *os;
     OutputStream *ost;
-    int ret, i;
+    int ret, i, j;
     int got_output;
     AVFrame picture;
     void *buffer_to_free = NULL;
@@ -1695,7 +1862,14 @@ static int output_packet(InputStream *ist, int ist_index,
         if (start_time == 0 || ist->pts >= start_time) {
             for(i=0;i<nb_ostreams;i++) {
                 ost = ost_table[i];
-                if (ost->input_video_filter && ost->source_index == ist_index) {
+                if (ost->input_video_filter) {
+                    for(j=0;j<ost->nb_source_indexes;j++) {
+                        if (ost->source_index[j] == ist_index)
+                            break;
+                    }
+                    if (j == ost->nb_source_indexes)
+                        continue;
+
                     if (!picture.sample_aspect_ratio.num)
                         picture.sample_aspect_ratio = ist->st->sample_aspect_ratio;
                     picture.pts = ist->pts;
@@ -1734,7 +1908,12 @@ static int output_packet(InputStream *ist, int ist_index,
                 int frame_size;
 
                 ost = ost_table[i];
-                if (ost->source_index == ist_index) {
+                for(j=0;j<ost->nb_source_indexes;j++) {
+                    if (ost->source_index[j] == ist_index)
+                        break;
+                }
+                if (j == ost->nb_source_indexes)
+                    continue;
 #if CONFIG_AVFILTER
                 frame_available = ist->st->codec->codec_type != AVMEDIA_TYPE_VIDEO ||
                     !ost->output_video_filter || avfilter_poll_frame(ost->output_video_filter->inputs[0]);
@@ -1863,7 +2042,6 @@ static int output_packet(InputStream *ist, int ist_index,
                     avfilter_unref_buffer(ost->picref);
                 }
 #endif
-                }
             }
 
         av_free(buffer_to_free);
@@ -1879,7 +2057,11 @@ static int output_packet(InputStream *ist, int ist_index,
 
         for(i=0;i<nb_ostreams;i++) {
             ost = ost_table[i];
-            if (ost->source_index == ist_index) {
+            for(j=0;j<ost->nb_source_indexes;j++) {
+                if (ost->source_index[j] == ist_index)
+                    break;
+            }
+            if (j < ost->nb_source_indexes) {
                 AVCodecContext *enc= ost->st->codec;
                 os = output_files[ost->file_index];
 
@@ -2112,6 +2294,30 @@ static int transcode(AVFormatContext **output_files,
         }
     }
 
+    /* Sanity check audio channel mapping */
+    for(i=0;i<nb_audio_channel_maps;i++) {
+        int fi = audio_channel_maps[i].file_index;
+        int si = audio_channel_maps[i].stream_index;
+        int ci = audio_channel_maps[i].channel_index;
+        int fo = audio_channel_maps[i].out_file_index;
+        int so = audio_channel_maps[i].out_stream_index;
+
+        if (fi < 0 || fi > nb_input_files - 1 ||
+            si < 0 || si > input_files[fi].ctx->nb_streams - 1) {
+            fprintf(stderr,"Could not find input stream #%d.%d\n", fi, si);
+            exit(1);
+        }
+        if (ci < 0 || ci >= input_files[fi].ctx->streams[si]->codec->channels) {
+            fprintf(stderr,"Could not find audio channel #%d.%d:%d\n", fi, si, ci);
+            exit(1);
+        }
+        if (fo < 0 || fo > nb_output_files - 1 ||
+            so < 0 || so > output_files[fo]->nb_streams - 1) {
+            fprintf(stderr,"Could not find output stream #%d.%d\n", fo, so);
+            exit(1);
+        }
+    }
+
     ost_table = av_mallocz(sizeof(OutputStream *) * nb_ostreams);
     if (!ost_table)
         goto fail;
@@ -2159,11 +2365,12 @@ static int transcode(AVFormatContext **output_files,
             int found;
             ost = ost_table[n] = output_streams_for_file[k][i];
             if (nb_stream_maps > 0) {
-                ost->source_index = input_files[stream_maps[n].file_index].ist_index +
+                ost->source_index[0] = input_files[stream_maps[n].file_index].ist_index +
                     stream_maps[n].stream_index;
+                ost->nb_source_indexes = 1;
 
                 /* Sanity check that the stream types match */
-                if (input_streams[ost->source_index].st->codec->codec_type != ost->st->codec->codec_type) {
+                if (input_streams[ost->source_index[0]].st->codec->codec_type != ost->st->codec->codec_type) {
                     int i= ost->file_index;
                     av_dump_format(output_files[i], i, output_files[i]->filename, 1);
                     fprintf(stderr, "Codec type mismatch for mapping #%d.%d -> #%d.%d\n",
@@ -2171,7 +2378,37 @@ static int transcode(AVFormatContext **output_files,
                         ost->file_index, ost->index);
                     ffmpeg_exit(1);
                 }
-
+            } else if (ost->st->codec->codec_type == AVMEDIA_TYPE_AUDIO && nb_audio_channel_maps > 0) {
+                for(j=0;j<nb_audio_channel_maps;j++) {
+                    AudioChannelMap *m = &audio_channel_maps[j];
+                    if (ost->file_index == m->out_file_index &&
+                        ost->index == m->out_stream_index) {
+                        ost->source_index[ost->nb_source_indexes++] =
+                            input_files[m->file_index].ist_index + m->stream_index;
+                        ist = &input_streams[ost->source_index[ost->nb_source_indexes-1]];
+                        /* Sanity check that the stream types match */
+                        if (ist->st->codec->codec_type != ost->st->codec->codec_type) {
+                            int i = ost->file_index;
+                            av_dump_format(output_files[i], i, output_files[i]->filename, 1);
+                            fprintf(stderr, "Codec type mismatch for audio mapping #%d.%d -> #%d.%d\n",
+                                    ist->file_index, ist->st->index, ost->file_index, ost->index);
+                            ffmpeg_exit(1);
+                        }
+                        ost->audio_channel_maps[ost->nb_audio_channel_maps++] = m;
+                        if (m->out_channel_index == -1)
+                            m->out_channel_index = ost->audiomerge.out_channels;
+                        ost->audiomerge.out_channels++;
+                    }
+                }
+                /* Sanity check out audio channel number */
+                for(j=0;j<ost->nb_audio_channel_maps;j++) {
+                    AudioChannelMap *m = ost->audio_channel_maps[j];
+                    if (m->out_channel_index >= ost->audiomerge.out_channels) {
+                        fprintf(stderr, "Channel number %d does not exist: channels %d\n",
+                                m->out_channel_index, ost->audiomerge.out_channels);
+                        ffmpeg_exit(1);
+                    }
+                }
             } else {
                 /* get corresponding input stream index : we select the first one with the right type */
                 found = 0;
@@ -2194,7 +2431,8 @@ static int transcode(AVFormatContext **output_files,
                     if (ist->discard && ist->st->discard != AVDISCARD_ALL && !skip &&
                         ist->st->codec->codec_type == ost->st->codec->codec_type &&
                         nb_frame_threshold[ist->st->codec->codec_type] <= ist->st->codec_info_nb_frames) {
-                            ost->source_index = j;
+                            ost->source_index[0] = j;
+                            ost->nb_source_indexes = 1;
                             found = 1;
                             break;
                     }
@@ -2207,7 +2445,8 @@ static int transcode(AVFormatContext **output_files,
                             ist = &input_streams[j];
                             if (   ist->st->codec->codec_type == ost->st->codec->codec_type
                                 && ist->st->discard != AVDISCARD_ALL) {
-                                ost->source_index = j;
+                                ost->source_index[0] = j;
+                                ost->nb_source_indexes = 1;
                                 found = 1;
                             }
                         }
@@ -2221,11 +2460,18 @@ static int transcode(AVFormatContext **output_files,
                     }
                 }
             }
-            ist = &input_streams[ost->source_index];
-            ist->discard = 0;
+            for(j=0;j<ost->nb_source_indexes;j++) {
+                ist = &input_streams[ost->source_index[j]];
+                ist->discard = 0;
+            }
+            if (!ist) {
+                fprintf(stderr, "Could not find input stream matching output stream #%d.%d\n",
+                        ost->file_index, ost->index);
+                ffmpeg_exit(1);
+            }
             ost->sync_ist = (nb_stream_maps > 0) ?
                 &input_streams[input_files[stream_maps[n].sync_file_index].ist_index +
-                         stream_maps[n].sync_stream_index] : ist;
+                               stream_maps[n].sync_stream_index] : &input_streams[ost->source_index[0]];
         }
     }
 
@@ -2233,7 +2479,7 @@ static int transcode(AVFormatContext **output_files,
     for(i=0;i<nb_ostreams;i++) {
         ost = ost_table[i];
         os = output_files[ost->file_index];
-        ist = &input_streams[ost->source_index];
+        ist = &input_streams[ost->source_index[0]];
 
         codec = ost->st->codec;
         icodec = ist->st->codec;
@@ -2352,11 +2598,28 @@ static int transcode(AVFormatContext **output_files,
                     codec->channel_layout = 0;
                 ost->audio_resample = codec->sample_rate != icodec->sample_rate || audio_sync_method > 1;
                 icodec->request_channels = codec->channels;
-                ist->decoding_needed = 1;
+                for (j = 0; j < ost->nb_source_indexes; j++) {
+                    ist = &input_streams[ost->source_index[j]];
+                    icodec = ist->st->codec;
+                    ist->decoding_needed = 1;
+                }
                 ost->encoding_needed = 1;
                 ost->resample_sample_fmt  = icodec->sample_fmt;
                 ost->resample_sample_rate = icodec->sample_rate;
                 ost->resample_channels    = icodec->channels;
+
+                if (ost->audiomerge.out_channels > 0) {
+                    codec->channels = ost->audiomerge.out_channels; // update channels to merged channels
+                    if (audiomerge_init(&ost->audiomerge, ost->audiomerge.out_channels,
+                                        av_get_bytes_per_sample(icodec->sample_fmt)) < 0) {
+                        fprintf(stderr, "Audiomerge initialization failed\n");
+                        ffmpeg_exit(1);
+                    }
+
+                }
+                if (av_get_channel_layout_nb_channels(codec->channel_layout) != codec->channels)
+                    codec->channel_layout = 0;
+
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 if (codec->pix_fmt == PIX_FMT_NONE)
@@ -2484,7 +2747,7 @@ static int transcode(AVFormatContext **output_files,
         ost = ost_table[i];
         if (ost->encoding_needed) {
             AVCodec *codec = ost->enc;
-            AVCodecContext *dec = input_streams[ost->source_index].st->codec;
+            AVCodecContext *dec = input_streams[ost->source_index[0]].st->codec;
             if (!codec) {
                 snprintf(error, sizeof(error), "Encoder (codec id %d) not found for output stream #%d.%d",
                          ost->st->codec->codec_id, ost->file_index, ost->index);
@@ -2666,16 +2929,23 @@ static int transcode(AVFormatContext **output_files,
         fprintf(stderr, "Stream mapping:\n");
         for(i=0;i<nb_ostreams;i++) {
             ost = ost_table[i];
+            for(j=0;j<ost->nb_source_indexes;j++) {
             fprintf(stderr, "  Stream #%d.%d -> #%d.%d",
-                    input_streams[ost->source_index].file_index,
-                    input_streams[ost->source_index].st->index,
+                    input_streams[ost->source_index[j]].file_index,
+                    input_streams[ost->source_index[j]].st->index,
                     ost->file_index,
                     ost->index);
-            if (ost->sync_ist != &input_streams[ost->source_index])
+            if (ost->nb_audio_channel_maps > 0) {
+                fprintf(stderr, " [channel: %d -> %d]",
+                        ost->audio_channel_maps[j]->channel_index,
+                        ost->audio_channel_maps[j]->out_channel_index);
+            }
+            if (ost->sync_ist != &input_streams[ost->source_index[0]])
                 fprintf(stderr, " [sync #%d.%d]",
                         ost->sync_ist->file_index,
                         ost->sync_ist->st->index);
             fprintf(stderr, "\n");
+            }
         }
     }
 
@@ -2765,28 +3035,31 @@ static int transcode(AVFormatContext **output_files,
             double ipts, opts;
             ost = ost_table[i];
             os = output_files[ost->file_index];
-            ist = &input_streams[ost->source_index];
+            for(j=0;j<ost->nb_source_indexes;j++) {
+            ist = &input_streams[ost->source_index[j]];
             if(ist->is_past_recording_time || no_packet[ist->file_index])
                 continue;
-                opts = ost->st->pts.val * av_q2d(ost->st->time_base);
+            opts = ost->st->pts.val * av_q2d(ost->st->time_base);
             ipts = (double)ist->pts;
             if (!input_files[ist->file_index].eof_reached){
                 if(ipts < ipts_min) {
                     ipts_min = ipts;
-                    if(input_sync ) file_index = ist->file_index;
+                    if(input_sync || ost->nb_source_indexes > 1) file_index = ist->file_index;
                 }
                 if(opts < opts_min) {
                     opts_min = opts;
-                    if(!input_sync) file_index = ist->file_index;
+                    if(!input_sync && ost->nb_source_indexes == 1) file_index = ist->file_index;
                 }
             }
             if(ost->frame_number >= max_frames[ost->st->codec->codec_type]){
                 file_index= -1;
-                break;
+                goto out;
+            }
             }
         }
         /* if none, if is finished */
         if (file_index < 0) {
+        out:
             if(no_packet_count){
                 no_packet_count=0;
                 memset(no_packet, 0, sizeof(no_packet));
@@ -2950,6 +3223,7 @@ static int transcode(AVFormatContext **output_files,
                 av_freep(&ost->st->codec->subtitle_header);
                 av_free(ost->resample_frame.data[0]);
                 av_free(ost->forced_kf_pts);
+                av_free(ost->audiomerge.buf);
                 if (ost->video_resample)
                     sws_freeContext(ost->img_resample_ctx);
                 if (ost->resample)
@@ -3177,6 +3451,47 @@ static int opt_codec_tag(const char *opt, const char *arg)
     if (!tail || *tail)
         *codec_tag = AV_RL32(arg);
 
+    return 0;
+}
+
+static int opt_map_audio_channel(const char *opt, const char *arg)
+{
+    AudioChannelMap *m;
+    char *p;
+
+    if (nb_audio_channel_maps == MAX_AUDIO_CHANNEL_MAPS) {
+        fprintf(stderr, "Only %d channels mappings are supported\n", MAX_AUDIO_CHANNEL_MAPS);
+        exit(1);
+    }
+
+    m = &audio_channel_maps[nb_audio_channel_maps++];
+
+    m->file_index = strtol(arg, &p, 0);
+    if (*p) p++;
+    else goto syntax_error;
+
+    m->stream_index = strtol(p, &p, 0);
+    if (*p) {
+        p++;
+        m->channel_index = strtol(p, &p, 0);
+        if (*p) {
+            p++;
+            m->out_file_index = strtol(p, &p, 0);
+            if (*p) p++;
+            else goto syntax_error;
+            m->out_stream_index = strtol(p, &p, 0);
+            if (*p) {
+                p++;
+                m->out_channel_index = strtol(p, &p, 0);
+            } else
+                m->out_channel_index = -1;
+        } else
+            goto syntax_error;
+    } else {
+    syntax_error:
+        fprintf(stderr, "Syntax error, usage: file.stream:channel:outfile.stream[:channel]\n");
+        exit(1);
+    }
     return 0;
 }
 
@@ -4440,6 +4755,7 @@ static const OptionDef options[] = {
       "outfile[,metadata]:infile[,metadata]" },
     { "map_chapters",  HAS_ARG | OPT_EXPERT, {(void*)opt_map_chapters},  "set chapters mapping", "outfile:infile" },
     { "t", HAS_ARG, {(void*)opt_recording_time}, "record or transcode \"duration\" seconds of audio/video", "duration" },
+    { "map_audio_channel", HAS_ARG | OPT_EXPERT, {(void*)opt_map_audio_channel}, "set audio channel extraction on stream", "file.stream:channel:outfile.stream[:channel]" },
     { "fs", HAS_ARG | OPT_INT64, {(void*)&limit_filesize}, "set the limit file size in bytes", "limit_size" }, //
     { "ss", HAS_ARG, {(void*)opt_start_time}, "set the start time offset", "time_off" },
     { "itsoffset", HAS_ARG, {(void*)opt_input_ts_offset}, "set the input ts offset", "time_off" },
