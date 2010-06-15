@@ -388,6 +388,7 @@ static int configure_video_filters(InputStream *ist, OutputStream *ost)
     AVCodecContext *icodec = ist->st->codec;
     enum PixelFormat pix_fmts[] = { codec->pix_fmt, PIX_FMT_NONE };
     AVRational sample_aspect_ratio;
+    AVDictionaryEntry *t;
     char args[255];
     int ret;
 
@@ -411,6 +412,22 @@ static int configure_video_filters(InputStream *ist, OutputStream *ost)
     if (ret < 0)
         return ret;
     last_filter = ost->input_video_filter;
+
+    if (t = av_dict_get(ist->st->metadata, "rotate", NULL, 0)) {
+        AVFilterContext *filter;
+        snprintf(args, 255, "%d", atoi(t->value));
+        fprintf(stderr, "Auto-inserting rotate filter of %d degrees\n",
+                atoi(t->value));
+        if ((ret = avfilter_open(&filter, avfilter_get_by_name("rotate"),
+                                 "auto-rotate")) < 0)
+            return ret;
+        if ((ret = avfilter_init_filter(filter, args, NULL)) < 0)
+            return ret;
+        if ((ret = avfilter_link(last_filter, 0, filter, 0)) < 0)
+            return ret;
+        last_filter = filter;
+        avfilter_graph_add_filter(ost->graph, last_filter);
+    }
 
     if (codec->width  != icodec->width || codec->height != icodec->height) {
         snprintf(args, 255, "%d:%d:flags=0x%X",

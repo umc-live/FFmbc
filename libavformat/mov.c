@@ -2104,6 +2104,8 @@ static int mov_read_tkhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         display_matrix[i][0] = avio_rb32(pb);   // 16.16 fixed point
         display_matrix[i][1] = avio_rb32(pb);   // 16.16 fixed point
         avio_rb32(pb);           // 2.30 fixed point (not used)
+        //av_log(c->fc, AV_LOG_INFO, "%d %d %d %d\n", st->index,
+        //       display_matrix[i][0], display_matrix[i][1], display_matrix[i][2]);
     }
 
     width = avio_rb32(pb);       // 16.16 fixed point track width
@@ -2111,8 +2113,19 @@ static int mov_read_tkhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     sc->width = width >> 16;
     sc->height = height >> 16;
 
+    //Assign clockwise rotate values based on transform matrix so that
+    //we can compensate for iPhone orientation during capture.
+
+    if (display_matrix[1][0] == -65536 && display_matrix[0][1] == 65536) {
+         av_dict_set(&st->metadata, "rotate", "90", 0);
+    }
+
     if (display_matrix[0][0] == -65536 && display_matrix[1][1] == -65536) {
          av_dict_set(&st->metadata, "rotate", "180", 0);
+    }
+
+    if (display_matrix[1][0] == 65536 && display_matrix[0][1] == -65536) {
+         av_dict_set(&st->metadata, "rotate", "270", 0);
     }
 
     // transform the display width/height according to the matrix
