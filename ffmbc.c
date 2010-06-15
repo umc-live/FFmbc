@@ -172,7 +172,6 @@ static char *video_codec_name = NULL;
 static unsigned int video_codec_tag = 0;
 static char *video_language = NULL;
 static int same_quality = 0;
-static int do_deinterlace = 0;
 static int top_field_first = -1;
 static int me_threshold = 0;
 static int intra_dc_precision = 8;
@@ -1251,45 +1250,6 @@ need_realloc:
         audiomerge_drain_complete_size(&ost->audiomerge);
 }
 
-static void pre_process_video_frame(InputStream *ist, AVPicture *picture, void **bufp)
-{
-    AVCodecContext *dec;
-    AVPicture *picture2;
-    AVPicture picture_tmp;
-    uint8_t *buf = 0;
-
-    dec = ist->st->codec;
-
-    /* deinterlace : must be done before any resize */
-    if (do_deinterlace) {
-        int size;
-
-        /* create temporary picture */
-        size = avpicture_get_size(dec->pix_fmt, dec->width, dec->height);
-        buf = av_malloc(size);
-        if (!buf)
-            return;
-
-        picture2 = &picture_tmp;
-        avpicture_fill(picture2, buf, dec->pix_fmt, dec->width, dec->height);
-
-        if(avpicture_deinterlace(picture2, picture,
-                                 dec->pix_fmt, dec->width, dec->height) < 0) {
-            /* if error, do not deinterlace */
-            fprintf(stderr, "Deinterlacing failed\n");
-            av_free(buf);
-            buf = NULL;
-            picture2 = picture;
-        }
-    } else {
-        picture2 = picture;
-    }
-
-    if (picture != picture2)
-        *picture = *picture2;
-    *bufp = buf;
-}
-
 /* we begin to correct av delay at this threshold */
 #define AV_DELAY_MAX 0.100
 
@@ -1732,7 +1692,6 @@ static int output_packet(InputStream *ist, int ist_index,
     int ret, i, j;
     int got_output;
     AVFrame picture;
-    void *buffer_to_free = NULL;
     static unsigned int samples_size= 0;
     AVSubtitle subtitle, *subtitle_to_free;
     int64_t pkt_pts = AV_NOPTS_VALUE;
@@ -1838,8 +1797,6 @@ static int output_packet(InputStream *ist, int ist_index,
                             ist->st->codec->time_base.den;
                     }
                     avpkt.size = 0;
-                    buffer_to_free = NULL;
-                    pre_process_video_frame(ist, (AVPicture *)&picture, &buffer_to_free);
                     break;
             case AVMEDIA_TYPE_SUBTITLE:
                 ret = avcodec_decode_subtitle2(ist->st->codec,
@@ -2061,7 +2018,6 @@ static int output_packet(InputStream *ist, int ist_index,
 #endif
             }
 
-        av_free(buffer_to_free);
         /* XXX: allocate the subtitles in the codec ? */
         if (subtitle_to_free) {
             avsubtitle_free(subtitle_to_free);
@@ -4806,6 +4762,12 @@ static int opt_passlogfile(const char *opt, const char *arg)
     return 0;
 }
 
+static int opt_deinterlace(const char *opt, const char *arg)
+{
+    fprintf(stderr, "Please use vf=yadif\n");
+    return -1;
+}
+
 static const OptionDef options[] = {
     /* main options */
 #include "cmdutils_common_opts.h"
@@ -4879,8 +4841,7 @@ static const OptionDef options[] = {
       "use same quantizer as source (implies VBR)" },
     { "pass", HAS_ARG | OPT_VIDEO, {(void*)opt_pass}, "select the pass number (1 or 2)", "n" },
     { "passlogfile", HAS_ARG | OPT_VIDEO, {(void*)&opt_passlogfile}, "select two pass log file name prefix", "prefix" },
-    { "deinterlace", OPT_BOOL | OPT_EXPERT | OPT_VIDEO, {(void*)&do_deinterlace},
-      "deinterlace pictures" },
+    { "deinterlace", OPT_VIDEO, {(void*)&opt_deinterlace}, "deinterlace pictures" },
     { "psnr", OPT_BOOL | OPT_EXPERT | OPT_VIDEO, {(void*)&do_psnr}, "calculate PSNR of compressed frames" },
     { "vstats", OPT_EXPERT | OPT_VIDEO, {(void*)&opt_vstats}, "dump video coding statistics to file" },
     { "vstats_file", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_vstats_file}, "dump video coding statistics to file", "file" },
