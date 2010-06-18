@@ -36,6 +36,7 @@
 #include "mpegvideo_common.h"
 #include "mjpegenc.h"
 #include "msmpeg4.h"
+#include "mpeg12.h"
 #include "faandct.h"
 #include "xvmc_internal.h"
 #include "thread.h"
@@ -544,6 +545,7 @@ int ff_mpeg_update_thread_context(AVCodecContext *dst, const AVCodecContext *src
 void MPV_common_defaults(MpegEncContext *s){
     s->y_dc_scale_table=
     s->c_dc_scale_table= ff_mpeg1_dc_scale_table;
+    s->qscale_table= ff_mpeg2_linear_qscale;
     s->chroma_qscale_table= ff_default_chroma_qscale_table;
     s->progressive_frame= 1;
     s->progressive_sequence= 1;
@@ -2491,6 +2493,8 @@ static void dct_unquantize_mpeg2_intra_c(MpegEncContext *s,
         block[0] = block[0] * s->y_dc_scale;
     else
         block[0] = block[0] * s->c_dc_scale;
+
+    qscale = s->qscale_table[qscale];
     quant_matrix = s->intra_matrix;
     for(i=1;i<=nCoeffs;i++) {
         int j= s->intra_scantable.permutated[i];
@@ -2498,10 +2502,10 @@ static void dct_unquantize_mpeg2_intra_c(MpegEncContext *s,
         if (level) {
             if (level < 0) {
                 level = -level;
-                level = (int)(level * qscale * quant_matrix[j]) >> 3;
+                level = (int)(level * qscale * quant_matrix[j]) >> 4;
                 level = -level;
             } else {
-                level = (int)(level * qscale * quant_matrix[j]) >> 3;
+                level = (int)(level * qscale * quant_matrix[j]) >> 4;
             }
             block[j] = level;
         }
@@ -2522,6 +2526,7 @@ static void dct_unquantize_mpeg2_intra_bitexact(MpegEncContext *s,
         block[0] = block[0] * s->y_dc_scale;
     else
         block[0] = block[0] * s->c_dc_scale;
+    qscale = s->qscale_table[qscale];
     quant_matrix = s->intra_matrix;
     for(i=1;i<=nCoeffs;i++) {
         int j= s->intra_scantable.permutated[i];
@@ -2529,10 +2534,10 @@ static void dct_unquantize_mpeg2_intra_bitexact(MpegEncContext *s,
         if (level) {
             if (level < 0) {
                 level = -level;
-                level = (int)(level * qscale * quant_matrix[j]) >> 3;
+                level = (int)(level * qscale * quant_matrix[j]) >> 4;
                 level = -level;
             } else {
-                level = (int)(level * qscale * quant_matrix[j]) >> 3;
+                level = (int)(level * qscale * quant_matrix[j]) >> 4;
             }
             block[j] = level;
             sum+=level;
@@ -2551,6 +2556,7 @@ static void dct_unquantize_mpeg2_inter_c(MpegEncContext *s,
     if(s->alternate_scan) nCoeffs= 63;
     else nCoeffs= s->block_last_index[n];
 
+    qscale = s->qscale_table[qscale];
     quant_matrix = s->inter_matrix;
     for(i=0; i<=nCoeffs; i++) {
         int j= s->intra_scantable.permutated[i];
@@ -2559,11 +2565,11 @@ static void dct_unquantize_mpeg2_inter_c(MpegEncContext *s,
             if (level < 0) {
                 level = -level;
                 level = (((level << 1) + 1) * qscale *
-                         ((int) (quant_matrix[j]))) >> 4;
+                         ((int) (quant_matrix[j]))) >> 5;
                 level = -level;
             } else {
                 level = (((level << 1) + 1) * qscale *
-                         ((int) (quant_matrix[j]))) >> 4;
+                         ((int) (quant_matrix[j]))) >> 5;
             }
             block[j] = level;
             sum+=level;

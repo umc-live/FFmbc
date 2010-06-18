@@ -31,6 +31,8 @@ extern VLC ff_dc_lum_vlc;
 extern VLC ff_dc_chroma_vlc;
 
 extern uint8_t ff_mpeg12_static_rl_table_store[2][2][2*MAX_RUN + MAX_LEVEL + 3];
+extern const uint8_t ff_mpeg2_non_linear_qscale[32];
+extern const uint8_t ff_mpeg2_linear_qscale[32];
 
 void ff_mpeg12_common_init(MpegEncContext *s);
 void ff_mpeg12_init_vlcs(void);

@@ -191,11 +191,7 @@ static inline int get_dmv(MpegEncContext *s)
 static inline int get_qscale(MpegEncContext *s)
 {
     int qscale = get_bits(&s->gb, 5);
-    if (s->q_scale_type) {
-        return non_linear_qscale[qscale];
-    } else {
-        return qscale << 1;
-    }
+    return s->qscale_table[qscale];
 }
 
 /* motion type (for MPEG-2) */
@@ -1176,6 +1172,7 @@ static av_cold int mpeg_decode_init(AVCodecContext *avctx)
     s->mpeg_enc_ctx.picture_number = 0;
     s->repeat_field = 0;
     s->mpeg_enc_ctx.codec_id= avctx->codec->id;
+    s->mpeg_enc_ctx.qscale_table = ff_mpeg2_linear_qscale;
     avctx->color_range= AVCOL_RANGE_MPEG;
     if (avctx->codec->id == CODEC_ID_MPEG1VIDEO)
         avctx->chroma_sample_location = AVCHROMA_LOC_CENTER;
@@ -1605,6 +1602,11 @@ static void mpeg_decode_picture_coding_extension(Mpeg1Context *s1)
     if(s->progressive_sequence && !s->frame_pred_frame_dct){
         av_log(s->avctx, AV_LOG_ERROR, "invalid frame_pred_frame_dct\n");
     }
+
+    if(s->q_scale_type == 1)
+        s->qscale_table = ff_mpeg2_non_linear_qscale;
+    else
+        s->qscale_table = ff_mpeg2_linear_qscale;
 
     if(s->picture_structure == PICT_FRAME){
         s->first_field=0;

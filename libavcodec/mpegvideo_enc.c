@@ -34,6 +34,7 @@
 #include "mpegvideo.h"
 #include "mpegvideo_common.h"
 #include "h263.h"
+#include "mpeg12.h"
 #include "mjpegenc.h"
 #include "msmpeg4.h"
 #include "faandct.h"
@@ -61,13 +62,14 @@ static int dct_quantize_trellis_c(MpegEncContext *s, DCTELEM *block, int n, int 
 static uint8_t default_mv_penalty[MAX_FCODE+1][MAX_MV*2+1];
 static uint8_t default_fcode_tab[MAX_MV*2+1];
 
-void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][64],
-                           const uint16_t *quant_matrix, int bias, int qmin, int qmax, int intra)
+void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][64], const uint8_t *qscale_table,
+                       const uint16_t *quant_matrix, int bias, int qmin, int qmax, int intra, uint64_t numerator)
 {
-    int qscale;
+    int qp;
     int shift=0;
 
-    for(qscale=qmin; qscale<=qmax; qscale++){
+    for (qp = qmin; qp <= qmax; qp++) {
+        int qscale = qscale_table ? qscale_table[qp] : qp;
         int i;
         if (dsp->fdct == ff_jpeg_fdct_islow_8 ||
             dsp->fdct == ff_jpeg_fdct_islow_10
@@ -82,7 +84,7 @@ void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][6
                 /* (1 << 36) / 19952 >= (1 << 36) / (ff_aanscales[i] * qscale * quant_matrix[i]) >= (1 << 36) / 249205026 */
                 /* 3444240           >= (1 << 36) / (ff_aanscales[i] * qscale * quant_matrix[i]) >= 275 */
 
-                qmat[qscale][i] = (int)((UINT64_C(1) << QMAT_SHIFT) /
+                qmat[qp][i] = (int)((numerator << QMAT_SHIFT) /
                                 (qscale * quant_matrix[j]));
             }
         } else if (dsp->fdct == fdct_ifast
@@ -97,7 +99,7 @@ void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][6
                 /* (1 << 36) / 19952 >= (1 << 36) / (ff_aanscales[i] * qscale * quant_matrix[i]) >= (1<<36)/249205026 */
                 /* 3444240           >= (1 << 36) / (ff_aanscales[i] * qscale * quant_matrix[i]) >= 275 */
 
-                qmat[qscale][i] = (int)((UINT64_C(1) << (QMAT_SHIFT + 14)) /
+                qmat[qp][i] = (int)((numerator << (QMAT_SHIFT + 14)) /
                                 (ff_aanscales[i] * qscale * quant_matrix[j]));
             }
         } else {
@@ -108,12 +110,12 @@ void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][6
                    so (1<<19) / 16 >= (1<<19) / (qscale * quant_matrix[i]) >= (1<<19) / 7905
                    so 32768        >= (1<<19) / (qscale * quant_matrix[i]) >= 67
                 */
-                qmat[qscale][i] = (int)((UINT64_C(1) << QMAT_SHIFT) / (qscale * quant_matrix[j]));
-//                qmat  [qscale][i] = (1 << QMAT_SHIFT_MMX) / (qscale * quant_matrix[i]);
-                qmat16[qscale][0][i] = (1 << QMAT_SHIFT_MMX) / (qscale * quant_matrix[j]);
 
-                if(qmat16[qscale][0][i]==0 || qmat16[qscale][0][i]==128*256) qmat16[qscale][0][i]=128*256-1;
-                qmat16[qscale][1][i]= ROUNDED_DIV(bias<<(16-QUANT_BIAS_SHIFT), qmat16[qscale][0][i]);
+                qmat[qp][i] = (int)((numerator << QMAT_SHIFT) / (qscale * quant_matrix[j]));
+                qmat16[qp][0][i] = (numerator << QMAT_SHIFT_MMX) / (qscale * quant_matrix[j]);
+
+                if(qmat16[qp][0][i]==0 || qmat16[qp][0][i]==128*256) qmat16[qp][0][i]=128*256-1;
+                qmat16[qp][1][i]= ROUNDED_DIV(bias<<(16-QUANT_BIAS_SHIFT), qmat16[qp][0][i]);
             }
         }
 
@@ -126,7 +128,7 @@ void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][6
                    ) {
                 max = (8191LL*ff_aanscales[i]) >> 14;
             }
-            while(((max * qmat[qscale][i]) >> shift) > INT_MAX){
+            while(((max * qmat[qp][i]) >> shift) > INT_MAX){
                 shift++;
             }
         }
@@ -460,15 +462,9 @@ av_cold int MPV_encode_init(AVCodecContext *avctx)
         }
     }
 
-    if(s->q_scale_type == 1){
-        if(s->codec_id != CODEC_ID_MPEG2VIDEO){
-            av_log(avctx, AV_LOG_ERROR, "non linear quant is only available for mpeg2\n");
-            return -1;
-        }
-        if(avctx->qmax > 12){
-            av_log(avctx, AV_LOG_ERROR, "non linear quant only supports qmax <= 12 currently\n");
-            return -1;
-        }
+    if(s->q_scale_type == 1 && s->codec_id != CODEC_ID_MPEG2VIDEO){
+        av_log(avctx, AV_LOG_ERROR, "non linear quant is only available for mpeg2\n");
+        return -1;
     }
 
     if(s->avctx->thread_count > 1 && s->codec_id != CODEC_ID_MPEG4
@@ -739,10 +735,14 @@ av_cold int MPV_encode_init(AVCodecContext *avctx)
     /* precompute matrix */
     /* for mjpeg, we do include qscale in the matrix */
     if (s->out_format != FMT_MJPEG) {
-        ff_convert_matrix(&s->dsp, s->q_intra_matrix, s->q_intra_matrix16,
-                       s->intra_matrix, s->intra_quant_bias, avctx->qmin, 31, 1);
-        ff_convert_matrix(&s->dsp, s->q_inter_matrix, s->q_inter_matrix16,
-                       s->inter_matrix, s->inter_quant_bias, avctx->qmin, 31, 0);
+        if (s->q_scale_type)
+            s->qscale_table = ff_mpeg2_non_linear_qscale;
+        else
+            s->qscale_table = ff_mpeg2_linear_qscale;
+        ff_convert_matrix(&s->dsp, s->q_intra_matrix, s->q_intra_matrix16, s->qscale_table,
+                          s->intra_matrix, s->intra_quant_bias, avctx->qmin, 31, 1, 2);
+        ff_convert_matrix(&s->dsp, s->q_inter_matrix, s->q_inter_matrix16, s->qscale_table,
+                          s->inter_matrix, s->inter_quant_bias, avctx->qmin, 31, 0, 2);
     }
 
     if(ff_rate_control_init(s) < 0)
@@ -2911,8 +2911,8 @@ static int encode_picture(MpegEncContext *s, int picture_number)
         s->y_dc_scale_table=
         s->c_dc_scale_table= ff_mpeg2_dc_scale_table[s->intra_dc_precision];
         s->intra_matrix[0] = ff_mpeg2_dc_scale_table[s->intra_dc_precision][8];
-        ff_convert_matrix(&s->dsp, s->q_intra_matrix, s->q_intra_matrix16,
-                       s->intra_matrix, s->intra_quant_bias, 8, 8, 1);
+        ff_convert_matrix(&s->dsp, s->q_intra_matrix, s->q_intra_matrix16, NULL,
+                          s->intra_matrix, s->intra_quant_bias, 8, 8, 1, 1);
         s->qscale= 8;
     }
 

@@ -349,6 +349,8 @@ static void dct_unquantize_mpeg2_intra_mmx(MpegEncContext *s,
         block0 = block[0] * s->y_dc_scale;
     else
         block0 = block[0] * s->c_dc_scale;
+
+    qscale = s->qscale_table[qscale];
     quant_matrix = s->intra_matrix;
 __asm__ volatile(
                 "pcmpeqw %%mm7, %%mm7           \n\t"
@@ -379,8 +381,8 @@ __asm__ volatile(
                 "pxor %%mm5, %%mm5              \n\t" // FIXME slow
                 "pcmpeqw (%0, %%"REG_a"), %%mm4 \n\t" // block[i] == 0 ? -1 : 0
                 "pcmpeqw 8(%0, %%"REG_a"), %%mm5\n\t" // block[i] == 0 ? -1 : 0
-                "psraw $3, %%mm0                \n\t"
-                "psraw $3, %%mm1                \n\t"
+                "psraw $4, %%mm0                \n\t"
+                "psraw $4, %%mm1                \n\t"
                 "pxor %%mm2, %%mm0              \n\t"
                 "pxor %%mm3, %%mm1              \n\t"
                 "psubw %%mm2, %%mm0             \n\t"
@@ -410,6 +412,7 @@ static void dct_unquantize_mpeg2_inter_mmx(MpegEncContext *s,
     if(s->alternate_scan) nCoeffs= 63; //FIXME
     else nCoeffs= s->intra_scantable.raster_end[ s->block_last_index[n] ];
 
+    qscale = s->qscale_table[qscale];
         quant_matrix = s->inter_matrix;
 __asm__ volatile(
                 "pcmpeqw %%mm7, %%mm7           \n\t"
@@ -444,8 +447,8 @@ __asm__ volatile(
                 "pxor %%mm5, %%mm5              \n\t" // FIXME slow
                 "pcmpeqw (%0, %%"REG_a"), %%mm4 \n\t" // block[i] == 0 ? -1 : 0
                 "pcmpeqw 8(%0, %%"REG_a"), %%mm5\n\t" // block[i] == 0 ? -1 : 0
-                "psrlw $4, %%mm0                \n\t"
-                "psrlw $4, %%mm1                \n\t"
+                "psrlw $5, %%mm0                \n\t"
+                "psrlw $5, %%mm1                \n\t"
                 "pxor %%mm2, %%mm0              \n\t"
                 "pxor %%mm3, %%mm1              \n\t"
                 "psubw %%mm2, %%mm0             \n\t"
