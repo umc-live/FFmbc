@@ -219,8 +219,8 @@ static int audio_stream_copy = 0;
 static int video_stream_copy = 0;
 static int subtitle_stream_copy = 0;
 static int data_stream_copy = 0;
-static int video_sync_method= -1;
-static int audio_sync_method= 0;
+static int video_sync_method= 1;
+static int audio_sync_method= 1;
 static float audio_drift_threshold= 0.1;
 static int copy_ts= 0;
 static int copy_tb= 0;
@@ -1096,11 +1096,10 @@ need_realloc:
                     byte_delta= FFMAX(byte_delta, -size);
                     size += byte_delta;
                     buf  -= byte_delta;
-                    if(verbose > 2)
+                    if(verbose > 0)
                         fprintf(stderr, "discarding %d audio samples\n", (int)-delta);
                     if(!size)
                         return;
-                    ist->is_start=0;
                 }else{
                     static uint8_t *input_tmp= NULL;
                     input_tmp= av_realloc(input_tmp, byte_delta + size);
@@ -1109,13 +1108,11 @@ need_realloc:
                         allocated_for_size= byte_delta + (int64_t)size;
                         goto need_realloc;
                     }
-                    ist->is_start=0;
-
                     memset(input_tmp, 0, byte_delta);
                     memcpy(input_tmp + byte_delta, buf, size);
                     buf= input_tmp;
                     size += byte_delta;
-                    if(verbose > 2)
+                    if(verbose > 0)
                         fprintf(stderr, "adding %d audio samples of silence\n", (int)delta);
                 }
             }else if(audio_sync_method>1){
@@ -1250,6 +1247,8 @@ need_realloc:
 
     if (ost->nb_audio_channel_maps > 0)
         audiomerge_drain_complete_size(&ost->audiomerge);
+
+    ist->is_start = 0;
 }
 
 /* we begin to correct av delay at this threshold */
@@ -3790,9 +3789,14 @@ static int opt_input_file(const char *opt, const char *filename)
     }
 
     timestamp = start_time;
-    /* add the stream start time */
-    if (ic->start_time != AV_NOPTS_VALUE)
-        timestamp += ic->start_time;
+    /* sync on video stream */
+    i = av_find_default_stream_index(ic);
+    if (i >= 0 && ic->streams[i]->start_time != AV_NOPTS_VALUE &&
+        ic->streams[i]->start_time > 0) {
+        int64_t start = av_rescale_q(ic->streams[i]->start_time,
+                                     ic->streams[i]->time_base, AV_TIME_BASE_Q);
+        timestamp += start;
+    }
 
     /* if seeking requested, we execute it */
     if (start_time != 0) {
