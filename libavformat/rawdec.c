@@ -103,6 +103,20 @@ int ff_raw_read_header(AVFormatContext *s, AVFormatParameters *ap)
             st->codec->width  = width;
             st->codec->height = height;
             st->codec->pix_fmt = pix_fmt;
+
+            if(st->codec->codec_id == CODEC_ID_RAWVIDEO &&
+               st->codec->pix_fmt != PIX_FMT_NONE && !url_is_streamed(s->pb)) {
+                int frame_size = avpicture_get_size(st->codec->pix_fmt,
+                                                    st->codec->width, st->codec->height);
+                if (frame_size < 0) {
+                    av_log(s, AV_LOG_ERROR, "could not get frame size\n");
+                    return -1;
+                }
+                if (url_fsize(s->pb) % frame_size)
+                    av_log(s, AV_LOG_WARNING, "partial file\n");
+                st->nb_frames = url_fsize(s->pb) / frame_size;
+                st->duration = st->nb_frames;
+            }
 fail:
             return ret;
             }

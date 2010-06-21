@@ -44,12 +44,31 @@ static int rawvideo_read_packet(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
+static int rawvideo_read_seek(AVFormatContext *s, int stream_index,
+                              int64_t ts, int flags)
+{
+    AVStream *st = s->streams[0];
+    unsigned frame_size;
+
+    if (!s->pb->seekable)
+        return -1;
+
+    frame_size = avpicture_get_size(st->codec->pix_fmt,
+                                    st->codec->width, st->codec->height);
+    if ((ts+1)*frame_size > avio_size(s->pb))
+        return -1;
+
+    avio_seek(s->pb, ts*frame_size, SEEK_SET);
+    return 0;
+}
+
 AVInputFormat ff_rawvideo_demuxer = {
     .name           = "rawvideo",
     .long_name      = NULL_IF_CONFIG_SMALL("raw video format"),
     .priv_data_size = sizeof(FFRawVideoDemuxerContext),
     .read_header    = ff_raw_read_header,
     .read_packet    = rawvideo_read_packet,
+    .read_seek      = rawvideo_read_seek,
     .flags= AVFMT_GENERIC_INDEX,
     .extensions = "yuv,cif,qcif,rgb",
     .value = CODEC_ID_RAWVIDEO,
