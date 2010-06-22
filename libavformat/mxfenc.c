@@ -44,10 +44,14 @@
 #include "internal.h"
 #include "mxf.h"
 
-static const int NTSC_samples_per_frame[] = { 1602, 1601, 1602, 1601, 1602, 0 };
-static const int P60_samples_per_frame[]  = {  801,  801,  800,  801,  801, 0 };
-static const int PAL_samples_per_frame[]  = { 1920, 0 };
-static const int P50_samples_per_frame[]  = {  960, 0 };
+static const int samples_per_frame_tab[][6] = {
+    { 2002, 0 },                         // 24000/1001
+    { 2000, 0 },                         // 24
+    { 1920, 0 },                         // 25
+    { 1602, 1601, 1602, 1601, 1602, 0 }, // 30000/1001
+    {  960, 0 },                         // 50
+    {  801,  801,  800,  801,  801, 0 }, // 60000/1001
+};
 
 extern AVOutputFormat ff_mxf_d10_muxer;
 
@@ -1416,20 +1420,28 @@ static int mxf_write_header(AVFormatContext *s)
                 av_log(s, AV_LOG_ERROR, "video stream must be first track\n");
                 return -1;
             }
-            if (fabs(av_q2d(st->codec->time_base) - 1/25.0) < 0.0001) {
-                samples_per_frame = PAL_samples_per_frame;
+            if (fabs(av_q2d(st->codec->time_base) - 1001/24000.0) < 0.00004) {
+                samples_per_frame = samples_per_frame_tab[0];
+                mxf->time_base = (AVRational){ 1001, 24000 };
+                mxf->timecode_base = 24;
+            } else if (fabs(av_q2d(st->codec->time_base) - 1/24.0) < 0.0001) {
+                samples_per_frame = samples_per_frame_tab[1];
+                mxf->time_base = (AVRational){ 1, 24 };
+                mxf->timecode_base = 24;
+            } else if (fabs(av_q2d(st->codec->time_base) - 1/25.0) < 0.0001) {
+                samples_per_frame = samples_per_frame_tab[2];
                 mxf->time_base = (AVRational){ 1, 25 };
                 mxf->timecode_base = 25;
             } else if (fabs(av_q2d(st->codec->time_base) - 1001/30000.0) < 0.0001) {
-                samples_per_frame = NTSC_samples_per_frame;
+                samples_per_frame = samples_per_frame_tab[3];
                 mxf->time_base = (AVRational){ 1001, 30000 };
                 mxf->timecode_base = 30;
             } else if (fabs(av_q2d(st->codec->time_base) - 1/50.0) < 0.0001) {
-                samples_per_frame = P50_samples_per_frame;
+                samples_per_frame = samples_per_frame_tab[4];
                 mxf->time_base = (AVRational){ 1, 50 };
                 mxf->timecode_base = 50;
             } else if (fabs(av_q2d(st->codec->time_base) - 1001/60000.0) < 0.0001) {
-                samples_per_frame = P60_samples_per_frame;
+                samples_per_frame = samples_per_frame_tab[5];
                 mxf->time_base = (AVRational){ 1001, 60000 };
                 mxf->timecode_base = 60;
             } else {
@@ -1552,7 +1564,7 @@ static int mxf_write_header(AVFormatContext *s)
     mxf->timecode_track->index = -1;
 
     if (!samples_per_frame)
-        samples_per_frame = PAL_samples_per_frame;
+        samples_per_frame = samples_per_frame_tab[2]; // 25 fps
 
     if (ff_audio_interleave_init(s, samples_per_frame, mxf->time_base) < 0)
         return -1;
