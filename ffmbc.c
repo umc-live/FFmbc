@@ -1087,7 +1087,7 @@ need_realloc:
 
         if (verbose > 3)
             fprintf(stderr, "adelta:%f ost->sync_opts:%"PRId64", ost->sync_ipts:%f, size:%d, stream:#%d.%d\n",
-                    delta, ost->sync_opts, get_sync_ipts(ost), size, ist->file_index, ist->st->index);
+                    delta / enc->sample_rate, ost->sync_opts, get_sync_ipts(ost), size, ist->file_index, ist->st->index);
 
         //FIXME resample delay
         if(fabs(delta) > 50){
