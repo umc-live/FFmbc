@@ -4205,10 +4205,11 @@ typedef struct AVBitStreamFilter {
                   const uint8_t *buf, int buf_size, int keyframe);
     void (*close)(AVBitStreamFilterContext *bsfc);
     struct AVBitStreamFilter *next;
+    int (*init)(AVBitStreamFilterContext *bsfc, const char *args);
 } AVBitStreamFilter;
 
 void av_register_bitstream_filter(AVBitStreamFilter *bsf);
-AVBitStreamFilterContext *av_bitstream_filter_init(const char *name);
+AVBitStreamFilterContext *av_bitstream_filter_init(const char *name, const char *args);
 int av_bitstream_filter_filter(AVBitStreamFilterContext *bsfc,
                                AVCodecContext *avctx, const char *args,
                                uint8_t **poutbuf, int *poutbuf_size,

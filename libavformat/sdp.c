@@ -165,7 +165,7 @@ static char *extradata2psets(AVCodecContext *c)
     if (c->extradata[0] == 1) {
         uint8_t *dummy_p;
         int dummy_int;
-        AVBitStreamFilterContext *bsfc= av_bitstream_filter_init("h264_mp4toannexb");
+        AVBitStreamFilterContext *bsfc= av_bitstream_filter_init("h264_mp4toannexb", NULL);
 
         if (!bsfc) {
             av_log(c, AV_LOG_ERROR, "Cannot open the h264_mp4toannexb BSF!\n");

@@ -4698,11 +4698,22 @@ static int opt_vstats(const char *opt, const char *arg)
 
 static int opt_bsf(const char *opt, const char *arg)
 {
-    AVBitStreamFilterContext *bsfc= av_bitstream_filter_init(arg); //FIXME split name and args for filter at '='
+    AVBitStreamFilterContext *bsfc;
     AVBitStreamFilterContext **bsfp;
+    char *name = av_strdup(arg);
+    char *args = strchr(name, '=');
+
+    if (args) {
+        *args = 0;
+        args++;
+    }
+
+    bsfc = av_bitstream_filter_init(name, args);
+
+    av_free(name);
 
     if(!bsfc){
-        fprintf(stderr, "Unknown bitstream filter %s\n", arg);
+        fprintf(stderr, "Error opening bitstream filter %s\n", name);
         ffmpeg_exit(1);
     }
 
