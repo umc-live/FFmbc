@@ -1079,11 +1079,11 @@ need_realloc:
 
     if(audio_sync_method){
         double delta = get_sync_ipts(ost) * enc->sample_rate - ost->sync_opts
-            - av_fifo_size(ost->fifo)/(enc->channels * 2)
+            - av_fifo_size(ost->fifo)/(enc->channels * osize)
             - audiomerge_get_buffered_samples(ost, ist) /
             (double)dec->sample_rate * enc->sample_rate;
         double idelta= delta*dec->sample_rate / enc->sample_rate;
-        int byte_delta= ((int)idelta)*2*dec->channels;
+        int byte_delta= ((int)idelta)*isize*dec->channels;
 
         if (verbose > 3)
             fprintf(stderr, "adelta:%f ost->sync_opts:%"PRId64", ost->sync_ipts:%f, size:%d, stream:#%d.%d\n",
@@ -1097,7 +1097,9 @@ need_realloc:
                     size += byte_delta;
                     buf  -= byte_delta;
                     if(verbose > 0)
-                        fprintf(stderr, "discarding %d audio samples\n", (int)-delta);
+                        fprintf(stderr, "discarding %d audio samples in stream #%d.%d\n",
+                                -byte_delta/(isize*ist->st->codec->channels),
+                                ist->file_index, ist->st->index);
                     if(!size)
                         return;
                 }else{
@@ -1113,7 +1115,9 @@ need_realloc:
                     buf= input_tmp;
                     size += byte_delta;
                     if(verbose > 0)
-                        fprintf(stderr, "adding %d audio samples of silence\n", (int)delta);
+                        fprintf(stderr, "adding %d audio samples in stream #%d.%d\n",
+                                byte_delta/(isize*ist->st->codec->channels),
+                                ist->file_index, ist->st->index);
                 }
             }else if(audio_sync_method>1){
                 int comp= av_clip(delta, -audio_sync_method, audio_sync_method);
@@ -1126,7 +1130,7 @@ need_realloc:
         }
     }else
         ost->sync_opts= lrintf(get_sync_ipts(ost) * enc->sample_rate)
-                        - av_fifo_size(ost->fifo)/(enc->channels * 2); //FIXME wrong
+                        - av_fifo_size(ost->fifo)/(enc->channels * osize); //FIXME wrong
 
     if (ost->nb_audio_channel_maps > 0) {
         for (i = 0; i < ost->nb_audio_channel_maps; i++) {
