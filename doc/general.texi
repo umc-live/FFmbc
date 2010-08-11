@@ -15,22 +15,6 @@ FFmpeg can be hooked up with a number of external libraries to add support
 for more formats. None of them are used by default, their use has to be
 explicitly requested by passing the appropriate flags to @file{./configure}.
 
-@section OpenCORE AMR
-
-FFmpeg can make use of the OpenCORE libraries for AMR-NB
-decoding/encoding and AMR-WB decoding.
-
-Go to @url{http://sourceforge.net/projects/opencore-amr/} and follow the instructions for
-installing the libraries. Then pass @code{--enable-libopencore-amrnb} and/or
-@code{--enable-libopencore-amrwb} to configure to enable the libraries.
-
-Note that OpenCORE is under the Apache License 2.0 (see
-@url{http://www.apache.org/licenses/LICENSE-2.0} for details), which is
-incompatible with the LGPL version 2.1 and GPL version 2. You have to
-upgrade FFmpeg's license to LGPL version 3 (or if you have enabled
-GPL components, GPL version 3) to use it.
-
-
 @chapter Supported File Formats and Codecs
 
 You can use the @code{-formats} and @code{-codecs} options to have an exhaustive list.
