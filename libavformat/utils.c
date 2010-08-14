@@ -1949,7 +1949,12 @@ static void estimate_timings_from_bit_rate(AVFormatContext *ic)
         bit_rate = 0;
         for(i=0;i<ic->nb_streams;i++) {
             st = ic->streams[i];
-            if (st->codec->bit_rate > 0)
+            if (st->codec->bit_rate <= 0 &&
+                (st->codec->codec_type == AVMEDIA_TYPE_VIDEO ||
+                 st->codec->codec_type == AVMEDIA_TYPE_AUDIO)) {
+                bit_rate = 0;
+                break;
+            }
             bit_rate += st->codec->bit_rate;
         }
         ic->bit_rate = bit_rate;
