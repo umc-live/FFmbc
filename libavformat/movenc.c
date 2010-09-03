@@ -1658,7 +1658,7 @@ static int mov_write_string_metadata(AVFormatContext *s, AVIOContext *pb,
         return 0;
 
     lang = av_metadata_get_attribute(t, "language");
-    langcode = lang ? ff_mov_iso639_to_lang(lang, 1) : 0;
+    langcode = ff_mov_iso639_to_lang(lang, 1);
 
     return mov_write_string_tag(pb, name, t->value, langcode, long_style);
 }

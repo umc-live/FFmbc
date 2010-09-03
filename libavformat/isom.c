@@ -301,12 +301,12 @@ static const char mov_mdhd_language_map[][4] = {
     "cat", "lat", "que", "grn", "aym", "tat", "uig", "dzo", "jav"
 };
 
-int ff_mov_iso639_to_lang(const char lang[4], int mp4)
+int ff_mov_iso639_to_lang(const char *lang, int mp4)
 {
     int i, code = 0;
 
     /* old way, only for QT? */
-    for (i = 0; lang[0] && !mp4 && i < FF_ARRAY_ELEMS(mov_mdhd_language_map); i++) {
+    for (i = 0; lang && !mp4 && i < FF_ARRAY_ELEMS(mov_mdhd_language_map); i++) {
         if (!strcmp(lang, mov_mdhd_language_map[i]))
             return i;
     }
@@ -314,7 +314,7 @@ int ff_mov_iso639_to_lang(const char lang[4], int mp4)
     if (!mp4)
         return -1;
     /* handle undefined as such */
-    if (lang[0] == '\0')
+    if (!lang)
         lang = "und";
     /* 5bit ascii */
     for (i = 0; i < 3; i++) {
