@@ -1796,10 +1796,13 @@ static int output_packet(InputStream *ist, int ist_index,
                     }
                     ist->next_pts = ist->pts = picture.best_effort_timestamp;
                     if (ist->st->codec->time_base.num != 0) {
-                        int ticks= ist->st->parser ? ist->st->parser->repeat_pict+1 : ist->st->codec->ticks_per_frame;
+                        int ticks = ist->st->codec->ticks_per_frame;
                         ist->next_pts += ((int64_t)AV_TIME_BASE *
                                           ist->st->codec->time_base.num * ticks) /
                             ist->st->codec->time_base.den;
+                    } else if (ist->st->avg_frame_rate.num) {
+                        ist->next_pts += ((int64_t)AV_TIME_BASE * ist->st->avg_frame_rate.den) /
+                            ist->st->avg_frame_rate.num;
                     }
                     avpkt.size = 0;
                     break;
@@ -1825,10 +1828,13 @@ static int output_packet(InputStream *ist, int ist_index,
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 if (ist->st->codec->time_base.num != 0) {
-                    int ticks= ist->st->parser ? ist->st->parser->repeat_pict+1 : ist->st->codec->ticks_per_frame;
+                    int ticks = ist->st->codec->ticks_per_frame;
                     ist->next_pts += ((int64_t)AV_TIME_BASE *
                                       ist->st->codec->time_base.num * ticks) /
                         ist->st->codec->time_base.den;
+                } else if (ist->st->avg_frame_rate.num) {
+                    ist->next_pts += ((int64_t)AV_TIME_BASE * ist->st->avg_frame_rate.den) /
+                        ist->st->avg_frame_rate.num;
                 }
                 break;
             }
