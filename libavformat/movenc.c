@@ -841,6 +841,26 @@ static int mov_write_clap_tag(AVIOContext *pb, MOVTrack *track)
     return 40;
 }
 
+static int mov_write_fiel_tag(AVIOContext *pb, MOVTrack *track)
+{
+    avio_wb32(pb, 10);
+    avio_wtag(pb, "fiel");
+    avio_w8(pb, 2);
+    // mjpeg stores 2 field independantly, not interleaved
+    if (track->enc->interlaced == 1) { // top field first
+        if (track->enc->codec_id == CODEC_ID_MJPEG)
+            avio_w8(pb, 1);
+        else
+            avio_w8(pb, 9);
+    } else {
+        if (track->enc->codec_id == CODEC_ID_MJPEG)
+            avio_w8(pb, 6);
+        else
+            avio_w8(pb, 14);
+    }
+    return 10;
+}
+
 static int mov_write_video_tag(AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
@@ -915,6 +935,10 @@ static int mov_write_video_tag(AVIOContext *pb, MOVTrack *track)
     }
 
     if (track->mode == MODE_MOV) {
+        if (track->enc->interlaced > 0) {
+            mov_write_fiel_tag(pb, track);
+            padding = 1;
+        }
         if (padding)
             avio_wb32(pb, 0); // padding for FCP
     }

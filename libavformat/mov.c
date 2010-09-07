@@ -944,6 +944,27 @@ static int mov_read_extradata(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_fiel(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+    int fields;
+    int detail;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+    st = c->fc->streams[c->fc->nb_streams-1];
+
+    fields = avio_r8(pb);
+    detail = avio_r8(pb);
+    if (fields == 1) {
+        st->codec->interlaced = -1; // forced progressive because of dv
+    } else if (fields == 2) {
+        // quicktime icefloe 019
+        st->codec->interlaced = (detail == 6 || detail == 14) + 1;
+    }
+    return 0;
+}
+
 static int mov_read_wave(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -2437,7 +2458,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('e','d','t','s'), mov_read_default },
 { MKTAG('e','l','s','t'), mov_read_elst },
 { MKTAG('e','n','d','a'), mov_read_enda },
-{ MKTAG('f','i','e','l'), mov_read_extradata },
+{ MKTAG('f','i','e','l'), mov_read_fiel },
 { MKTAG('f','t','y','p'), mov_read_ftyp },
 { MKTAG('g','l','b','l'), mov_read_glbl },
 { MKTAG('h','d','l','r'), mov_read_hdlr },

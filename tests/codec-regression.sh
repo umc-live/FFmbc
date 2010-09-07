@@ -35,7 +35,7 @@ do_video_encoding mpeg2ivlc-qprd.mpg "-vb 500k -bf 2 -trellis 1 -flags +qprd+mv0
 do_video_decoding
 
 #mpeg2 4:2:2 encoding
-do_video_encoding mpeg2_422.mpg "-vb 1000k -bf 2 -trellis 1 -flags +qprd+mv0+ildct+ilme -flags2 +ivlc -mbd rd -vcodec mpeg2video -pix_fmt yuv422p -f mpeg2video"
+do_video_encoding mpeg2_422.mpg "-vb 1000k -bf 2 -trellis 1 -flags +qprd+mv0 -bff -flags2 +ivlc -mbd rd -vcodec mpeg2video -pix_fmt yuv422p -f mpeg2video"
 do_video_decoding
 
 # mpeg2
@@ -43,22 +43,22 @@ do_video_encoding mpeg2.mpg "-qscale 10 -vcodec mpeg2video -idct int -dct int -f
 do_video_decoding "-idct int"
 
 # mpeg2 encoding interlaced
-do_video_encoding mpeg2i.mpg "-qscale 10 -vcodec mpeg2video -f mpeg1video -flags +ildct+ilme"
+do_video_encoding mpeg2i.mpg "-qscale 10 -vcodec mpeg2video -f mpeg1video -bff"
 do_video_decoding
 fi
 
 if [ -n "$do_mpeg2thread" ] ; then
 # mpeg2 encoding interlaced
-do_video_encoding mpeg2thread.mpg "-qscale 10 -vcodec mpeg2video -f mpeg1video -bf 2 -flags +ildct+ilme -threads 2"
+do_video_encoding mpeg2thread.mpg "-qscale 10 -vcodec mpeg2video -f mpeg1video -bf 2 -bff -threads 2"
 do_video_decoding
 
 # mpeg2 encoding interlaced using intra vlc
-do_video_encoding mpeg2threadivlc.mpg "-qscale 10 -vcodec mpeg2video -f mpeg1video -bf 2 -flags +ildct+ilme -flags2 +ivlc -threads 2"
+do_video_encoding mpeg2threadivlc.mpg "-qscale 10 -vcodec mpeg2video -f mpeg1video -bf 2 -bff -flags2 +ivlc -threads 2"
 do_video_decoding
 
 # mpeg2 encoding interlaced
 file=${outfile}mpeg2reuse.mpg
-do_ffmpeg $file $DEC_OPTS -me_threshold 256 -i ${target_path}/${outfile}mpeg2thread.mpg $ENC_OPTS -sameq -me_threshold 256 -mb_threshold 1024 -vcodec mpeg2video -f mpeg1video -bf 2 -flags +ildct+ilme -threads 4
+do_ffmpeg $file $DEC_OPTS -me_threshold 256 -i ${target_path}/${outfile}mpeg2thread.mpg $ENC_OPTS -sameq -me_threshold 256 -mb_threshold 1024 -vcodec mpeg2video -f mpeg1video -bf 2 -bff -threads 4
 do_video_decoding
 fi
 
@@ -220,7 +220,7 @@ do_video_decoding "" "-s cif -pix_fmt yuv420p -sws_flags neighbor+bitexact"
 fi
 
 if [ -n "$do_dnxhd_1080i" ] ; then
-do_video_encoding dnxhd-1080i.dnxhd "-vcodec dnxhd -flags +ildct -s hd1080 -b 120M -pix_fmt yuv422p -vframes 5 -an"
+do_video_encoding dnxhd-1080i.dnxhd "-vcodec dnxhd -tff -s hd1080 -b 120M -pix_fmt yuv422p -vframes 5 -an"
 do_video_decoding "" "-s cif -pix_fmt yuv420p"
 fi
 

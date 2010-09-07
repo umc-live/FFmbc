@@ -50,9 +50,8 @@ static int yuv4_generate_header(AVFormatContext *s, char* buf)
     if ( aspectn == 0 && aspectd == 1 ) aspectd = 0;  // 0:0 means unknown
 
     inter = 'p'; /* progressive is the default */
-    if (st->codec->coded_frame && st->codec->coded_frame->interlaced_frame) {
-        inter = st->codec->coded_frame->top_field_first ? 't' : 'b';
-    }
+    if (st->codec->interlaced > 0)
+        inter = st->codec->interlaced == 1 ? 't' : 'b';
 
     switch(st->codec->pix_fmt) {
     case PIX_FMT_GRAY8:
@@ -394,10 +393,8 @@ static int yuv4_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (av_get_packet(s->pb, pkt, packet_size) != packet_size)
         return AVERROR(EIO);
 
-    if (s->streams[0]->codec->coded_frame) {
-        s->streams[0]->codec->coded_frame->interlaced_frame = s1->interlaced_frame;
-        s->streams[0]->codec->coded_frame->top_field_first = s1->top_field_first;
-    }
+    if (s1->interlaced_frame)
+        s->streams[0]->codec->interlaced = 2 - s1->top_field_first;
 
     pkt->stream_index = 0;
     return 0;

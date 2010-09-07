@@ -1092,8 +1092,9 @@ static int dvvideo_decode_frame(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return -1;
     }
-    s->picture.interlaced_frame = 1;
-    s->picture.top_field_first  = 0;
+    s->picture.interlaced_frame = avctx->height != 720;
+    // assume hd is top field first
+    s->picture.top_field_first = avctx->height >= 1080;
 
     s->buf = buf;
     avctx->execute(avctx, dv_decode_video_segment, s->sys->work_chunks, NULL,

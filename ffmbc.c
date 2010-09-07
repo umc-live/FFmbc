@@ -172,7 +172,7 @@ static char *video_codec_name = NULL;
 static unsigned int video_codec_tag = 0;
 static char *video_language = NULL;
 static int same_quality = 0;
-static int top_field_first = -1;
+static int interlaced = 0;
 static int me_threshold = 0;
 static int intra_dc_precision = 8;
 static int loop_input = 0;
@@ -1449,15 +1449,8 @@ static void do_video_out(AVFormatContext *s,
             AVFrame big_picture;
 
             big_picture= *final_picture;
-            /* better than nothing: use input picture interlaced
-               settings */
-            big_picture.interlaced_frame = in_picture->interlaced_frame;
-            if (ost->st->codec->flags & (CODEC_FLAG_INTERLACED_DCT|CODEC_FLAG_INTERLACED_ME)) {
-                if(top_field_first == -1)
-                    big_picture.top_field_first = in_picture->top_field_first;
-                else
-                    big_picture.top_field_first = top_field_first;
-            }
+            big_picture.interlaced_frame = ost->st->codec->interlaced > 0;
+            big_picture.top_field_first = ost->st->codec->interlaced == 1;
 
             /* handles sameq here. This is not correct because it may
                not be a global option */
@@ -2482,6 +2475,8 @@ static int transcode(AVFormatContext **output_files,
             codec->codec_id = icodec->codec_id;
             codec->codec_type = icodec->codec_type;
 
+            codec->interlaced = icodec->interlaced;
+
             if(!codec->codec_tag){
                 if(   !os->oformat->codec_tag
                    || av_codec_get_id (os->oformat->codec_tag, icodec->codec_tag) == codec->codec_id
@@ -2664,7 +2659,6 @@ static int transcode(AVFormatContext **output_files,
                     av_log(os, AV_LOG_WARNING, "Frame rate very high for a muxer not effciciently supporting it.\n"
                                                "Please consider specifiying a lower framerate, a different muxer or -vsync 2\n");
                 }
-
 #if CONFIG_AVFILTER
                 if (configure_video_filters(ist, ost)) {
                     fprintf(stderr, "Error opening filters!\n");
@@ -2747,6 +2741,14 @@ static int transcode(AVFormatContext **output_files,
             if (avcodec_open2(ost->st->codec, codec, &ost->opts) < 0) {
                 fprintf(stderr, "Error while opening encoder for output stream #%d.%d - maybe incorrect parameters such as bit_rate, rate, width or height\n",
                         ost->file_index, ost->index);
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
+            // validate interlaced configuration
+            if (ost->st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+                ost->st->codec->flags & (CODEC_FLAG_INTERLACED_DCT|CODEC_FLAG_INTERLACED_ME) &&
+                ost->st->codec->interlaced < 1) {
+                av_log(NULL, AV_LOG_ERROR, "Error: interlaced flags are set but interlacing is not specified, use -tff or -bff\n");
                 ret = AVERROR(EINVAL);
                 goto fail;
             }
@@ -3384,11 +3386,23 @@ static int opt_qscale(const char *opt, const char *arg)
     return 0;
 }
 
+static int opt_interlaced(const char *opt, const char *arg)
+{
+    if (!strcmp(opt, "tff"))
+        interlaced = 1;
+    else if (!strcmp(opt, "bff"))
+        interlaced = 2;
+    else {
+        fprintf(stderr, "error, unrecognized parameter '%s', specify either 'tff' or 'bff'\n", opt);
+        return -1;
+    }
+    return 0;
+}
+
 static int opt_top_field_first(const char *opt, const char *arg)
 {
-    top_field_first = parse_number_or_die(opt, arg, OPT_INT, 0, 1);
-    opt_default(opt, arg);
-    return 0;
+    fprintf(stderr, "option is deprecated, use -tff or -bff\n");
+    return -1;
 }
 
 static int opt_thread_count(const char *opt, const char *arg)
@@ -3884,7 +3898,7 @@ static int opt_input_file(const char *opt, const char *filename)
     input_files[nb_input_files - 1].ist_index  = nb_input_streams - ic->nb_streams;
     input_files[nb_input_files - 1].ts_offset  = input_ts_offset - (copy_ts ? 0 : timestamp);
 
-    top_field_first = -1;
+    interlaced = 0;
     frame_rate    = (AVRational){0, 0};
     frame_pix_fmt = PIX_FMT_NONE;
     frame_height = 0;
@@ -4015,6 +4029,11 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
         if (video_qscale || same_quality) {
             video_enc->flags |= CODEC_FLAG_QSCALE;
             video_enc->global_quality = FF_QP2LAMBDA * video_qscale;
+        }
+
+        if (interlaced > 0) {
+            video_enc->flags |= CODEC_FLAG_INTERLACED_DCT|CODEC_FLAG_INTERLACED_ME;
+            video_enc->interlaced = interlaced;
         }
 
         if(intra_matrix)
@@ -4871,7 +4890,7 @@ static const OptionDef options[] = {
 #endif
     { "intra_matrix", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_intra_matrix}, "specify intra matrix coeffs", "matrix" },
     { "inter_matrix", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_inter_matrix}, "specify inter matrix coeffs", "matrix" },
-    { "top", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_top_field_first}, "top=1/bottom=0/auto=-1 field first", "" },
+    { "top", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_top_field_first}, "top=1/bottom=0/auto=-1 field first", "Removed, use -tff or -bff instead" },
     { "dc", OPT_INT | HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)&intra_dc_precision}, "intra_dc_precision", "precision" },
     { "vtag", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_codec_tag}, "force video tag/fourcc", "fourcc/tag" },
     { "newvideo", OPT_VIDEO, {(void*)opt_new_stream}, "add a new video stream to the current output stream" },
@@ -4880,6 +4899,8 @@ static const OptionDef options[] = {
     { "force_fps", OPT_BOOL | OPT_EXPERT | OPT_VIDEO, {(void*)&force_fps}, "force the selected framerate, disable the best supported framerate selection" },
     { "streamid", HAS_ARG | OPT_EXPERT, {(void*)opt_streamid}, "set the value of an outfile streamid", "streamIndex:value" },
     { "force_key_frames", OPT_STRING | HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void *)&forced_key_frames}, "force key frames at specified timestamps", "timestamps" },
+    { "tff", OPT_EXPERT | OPT_VIDEO, {(void*)opt_interlaced}, "set top field first interlaced encoding", "interlacing" },
+    { "bff", OPT_EXPERT | OPT_VIDEO, {(void*)opt_interlaced}, "set bottom field first interlaced encoding", "interlacing" },
 
     /* audio options */
     { "aframes", OPT_INT | HAS_ARG | OPT_AUDIO, {(void*)&max_frames[AVMEDIA_TYPE_AUDIO]}, "set the number of audio frames to record", "number" },

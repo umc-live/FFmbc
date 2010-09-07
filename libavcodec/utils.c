@@ -791,6 +791,15 @@ int attribute_align_arg avcodec_decode_video2(AVCodecContext *avctx, AVFrame *pi
             picture->best_effort_timestamp = guess_correct_pts(avctx,
                                                             picture->pkt_pts,
                                                             picture->pkt_dts);
+            if (avctx->interlaced == -1) {
+                picture->interlaced_frame = 0;
+                picture->top_field_first = 0;
+            } else if (avctx->interlaced > 0) {
+                picture->interlaced_frame = 1;
+                picture->top_field_first = avctx->interlaced == 1;
+            }
+            if (picture->interlaced_frame)
+                avctx->interlaced = 2 - picture->top_field_first;
         }
     }else
         ret= 0;
@@ -1050,8 +1059,11 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
         }
         if (enc->width) {
             snprintf(buf + strlen(buf), buf_size - strlen(buf),
-                     ", %dx%d",
-                     enc->width, enc->height);
+                     ", %dx%d%c", enc->width, enc->height,
+                     enc->interlaced > 0 ? 'i' : 'p');
+            if (enc->interlaced > 0)
+                snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                         enc->interlaced == 1 ? " tff" : " bff");
             if (enc->sample_aspect_ratio.num) {
                 av_reduce(&display_aspect_ratio.num, &display_aspect_ratio.den,
                           enc->width*enc->sample_aspect_ratio.num,

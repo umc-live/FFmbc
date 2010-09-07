@@ -2918,7 +2918,19 @@ typedef struct AVCodecContext {
     int64_t pts_correction_last_pts;       /// PTS of the last frame
     int64_t pts_correction_last_dts;       /// DTS of the last frame
 
-
+    /**
+     * Video contains at least one interlaced frame.
+     * For codec that support mixing interlaced and progressive frames, you must check
+     * AVFrame->interlaced_frame which will not be set for progressive frames.
+     * Values:
+     * -1: forced progressive (dv progressive or stored interlaced)
+     *  0: progressive,
+     *  1: top field first,
+     *  2: bottom field first
+     * - encoding: unused
+     * - decoding: Set by libavcodec
+     */
+    int interlaced;
 } AVCodecContext;
 
 /**
