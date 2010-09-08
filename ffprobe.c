@@ -199,6 +199,18 @@ static void show_stream(AVFormatContext *fmt_ctx, int stream_idx)
                 printf("display_aspect_ratio=%d:%d\n", display_aspect_ratio.num,
                                                        display_aspect_ratio.den);
             }
+            if (stream->sample_aspect_ratio.num &&
+                (stream->sample_aspect_ratio.num != dec_ctx->sample_aspect_ratio.num ||
+                 stream->sample_aspect_ratio.den != dec_ctx->sample_aspect_ratio.den)) {
+                printf("sample_aspect_ratio=%d:%d\n", stream->sample_aspect_ratio.num,
+                                                             stream->sample_aspect_ratio.den);
+                av_reduce(&display_aspect_ratio.num, &display_aspect_ratio.den,
+                          dec_ctx->width  * stream->sample_aspect_ratio.num,
+                          dec_ctx->height * stream->sample_aspect_ratio.den,
+                          1024*1024);
+                printf("display_aspect_ratio=%d:%d\n", display_aspect_ratio.num,
+                                                       display_aspect_ratio.den);
+            }
             printf("pix_fmt=%s\n",                 dec_ctx->pix_fmt != PIX_FMT_NONE ?
                    av_pix_fmt_descriptors[dec_ctx->pix_fmt].name : "unknown");
             printf("level=%d\n",                   dec_ctx->level);
