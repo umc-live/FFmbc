@@ -1627,6 +1627,9 @@ static int input_request_frame(AVFilterLink *link)
     avfilter_copy_frame_props(picref, priv->frame);
     picref->pts = pts;
 
+    picref->pos = pkt.pos;
+    picref->video->interlaced = priv->frame->interlaced_frame;
+    picref->video->top_field_first = priv->frame->top_field_first;
     avfilter_start_frame(link, picref);
     avfilter_draw_slice(link, 0, link->h, 1);
     avfilter_end_frame(link);
