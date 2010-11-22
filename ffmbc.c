@@ -156,7 +156,7 @@ static int nb_streamid_map = 0;
 
 static int frame_width  = 0;
 static int frame_height = 0;
-static float frame_aspect_ratio = 0;
+static AVRational frame_aspect_ratio;
 static enum PixelFormat frame_pix_fmt = PIX_FMT_NONE;
 static int frame_bits_per_raw_sample = 0;
 static enum AVSampleFormat audio_sample_fmt = AV_SAMPLE_FMT_NONE;
@@ -303,7 +303,7 @@ typedef struct OutputStream {
     int resample_pix_fmt;
     AVRational frame_rate;
 
-    float frame_aspect_ratio;
+    AVRational frame_aspect_ratio;
 
     /* forced key frames */
     int64_t *forced_kf_pts;
@@ -456,8 +456,8 @@ static int configure_video_filters(InputStream *ist, OutputStream *ost)
     codec->width  = ost->output_video_filter->inputs[0]->w;
     codec->height = ost->output_video_filter->inputs[0]->h;
     codec->sample_aspect_ratio = ost->st->sample_aspect_ratio =
-        ost->frame_aspect_ratio ? // overriden by the -aspect cli option
-        av_d2q(ost->frame_aspect_ratio*codec->height/codec->width, 255) :
+        ost->frame_aspect_ratio.num ? // overriden by the -aspect cli option
+        av_mul_q(ost->frame_aspect_ratio, (AVRational){ codec->height, codec->width }) :
         ost->output_video_filter->inputs[0]->sample_aspect_ratio;
 
     return 0;
@@ -1941,7 +1941,7 @@ static int output_packet(InputStream *ist, int ist_index,
                             break;
                         case AVMEDIA_TYPE_VIDEO:
 #if CONFIG_AVFILTER
-                            if (ost->picref->video && !ost->frame_aspect_ratio)
+                            if (ost->picref->video && !ost->frame_aspect_ratio.num)
                                 ost->st->codec->sample_aspect_ratio = ost->picref->video->sample_aspect_ratio;
 #endif
                             do_video_out(os, ost, ist, &picture, &frame_size,
@@ -3310,7 +3310,6 @@ static int opt_frame_pix_fmt(const char *opt, const char *arg)
 static int opt_frame_aspect_ratio(const char *opt, const char *arg)
 {
     int x = 0, y = 0;
-    double ar = 0;
     const char *p;
     char *end;
 
@@ -3319,16 +3318,17 @@ static int opt_frame_aspect_ratio(const char *opt, const char *arg)
         x = strtol(arg, &end, 10);
         if (end == p)
             y = strtol(end+1, &end, 10);
-        if (x > 0 && y > 0)
-            ar = (double)x / (double)y;
+        if (x > 0 && y > 0) {
+            frame_aspect_ratio.num = x;
+            frame_aspect_ratio.den = y;
+        }
     } else
-        ar = strtod(arg, NULL);
+        frame_aspect_ratio = av_d2q(strtod(arg, NULL), 255);
 
-    if (!ar) {
+    if (!frame_aspect_ratio.num || !frame_aspect_ratio.den) {
         fprintf(stderr, "Incorrect aspect ratio specification.\n");
         return AVERROR(EINVAL);
     }
-    frame_aspect_ratio = ar;
     return 0;
 }
 
@@ -3938,7 +3938,7 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
     st  = ost->st;
     if (!video_stream_copy) {
         ost->frame_aspect_ratio = frame_aspect_ratio;
-        frame_aspect_ratio = 0;
+        frame_aspect_ratio = (AVRational){0,0};
 #if CONFIG_AVFILTER
         ost->avfilter = vfilters;
         vfilters = NULL;
@@ -3963,7 +3963,8 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
     if (video_stream_copy) {
         st->stream_copy = 1;
         video_enc->sample_aspect_ratio =
-        st->sample_aspect_ratio = av_d2q(frame_aspect_ratio*frame_height/frame_width, 255);
+        st->sample_aspect_ratio =
+            av_mul_q(frame_aspect_ratio, (AVRational){ frame_height, frame_width });
     } else {
         const char *p;
         int i;
