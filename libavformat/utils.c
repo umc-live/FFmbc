@@ -806,6 +806,16 @@ static int get_audio_frame_size(AVCodecContext *enc, int size)
     if (enc->frame_size <= 1) {
         int bits_per_sample = av_get_bits_per_sample(enc->codec_id);
 
+        if (enc->block_align) {
+            int samples_per_frame = 0;
+            if (enc->codec_id == CODEC_ID_ADPCM_IMA_WAV)
+                samples_per_frame = (enc->block_align - 4 * enc->channels) * 8 / (4 * enc->channels) + 1;
+            else if (enc->codec_id == CODEC_ID_ADPCM_MS)
+                samples_per_frame = (enc->block_align - 7 * enc->channels) * 2 / enc->channels + 2;
+            if (samples_per_frame)
+                return samples_per_frame * size / enc->block_align;
+        }
+
         if (bits_per_sample) {
             if (enc->channels == 0)
                 return -1;
