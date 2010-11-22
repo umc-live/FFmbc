@@ -2498,6 +2498,9 @@ static int transcode(AVFormatContext **output_files,
             if (extra_size > INT_MAX)
                 goto fail;
 
+            /* generate pts for source file */
+            input_files[ist->file_index].ctx->flags |= AVFMT_FLAG_GENPTS;
+
             /* if stream_copy is selected, no need to decode or encode */
             codec->codec_id = icodec->codec_id;
             codec->codec_type = icodec->codec_type;
