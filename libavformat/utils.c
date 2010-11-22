@@ -2414,6 +2414,11 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
         read_size += pkt->size;
 
         st = ic->streams[pkt->stream_index];
+        if (pkt->pts != AV_NOPTS_VALUE && st->start_time != AV_NOPTS_VALUE &&
+            st->start_time - pkt->pts < 1ULL<<(st->pts_wrap_bits-1) &&
+            pkt->pts < st->start_time && st->codec_info_nb_frames < 10) {
+            st->start_time = pkt->pts;
+        }
         if (st->codec_info_nb_frames>1) {
             int64_t t;
             if (st->time_base.den > 0 && (t=av_rescale_q(st->info->codec_info_duration, st->time_base, AV_TIME_BASE_Q)) >= ic->max_analyze_duration) {
