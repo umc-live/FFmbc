@@ -793,7 +793,6 @@ static int mov_read_mdhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     int version;
     char language[4] = {0};
     unsigned lang;
-    time_t creation_time;
 
     if (c->fc->nb_streams < 1)
         return 0;
@@ -806,13 +805,12 @@ static int mov_read_mdhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     avio_rb24(pb); /* flags */
     if (version == 1) {
-        creation_time = avio_rb64(pb);
+        avio_rb64(pb);
         avio_rb64(pb);
     } else {
-        creation_time = avio_rb32(pb);
+        avio_rb32(pb);
         avio_rb32(pb); /* modification time */
     }
-    mov_metadata_creation_time(&st->metadata, creation_time);
 
     sc->time_scale = avio_rb32(pb);
     st->duration = (version == 1) ? avio_rb64(pb) : avio_rb32(pb); /* duration */
