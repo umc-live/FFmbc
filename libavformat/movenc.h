@@ -38,6 +38,7 @@
 // ffmpeg -i testinput.avi  -f psp -r 14.985 -s 320x240 -b 768 -ar 24000 -ab 32 M4V00001.MP4
 #define MODE_3G2  0x10
 #define MODE_IPOD 0x20
+#define MODE_F4V  0x40
 
 typedef struct MOVIentry {
     unsigned int size;

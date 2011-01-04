@@ -70,6 +70,7 @@ OBJS-$(CONFIG_EA_CDATA_DEMUXER)          += eacdata.o
 OBJS-$(CONFIG_EA_DEMUXER)                += electronicarts.o
 OBJS-$(CONFIG_EAC3_DEMUXER)              += ac3dec.o rawdec.o
 OBJS-$(CONFIG_EAC3_MUXER)                += rawenc.o
+OBJS-$(CONFIG_F4V_MUXER)                 += movenc.o riff.o isom.o avc.o movenchint.o
 OBJS-$(CONFIG_FFM_DEMUXER)               += ffmdec.o
 OBJS-$(CONFIG_FFM_MUXER)                 += ffmenc.o
 OBJS-$(CONFIG_FFMETADATA_DEMUXER)        += ffmetadec.o

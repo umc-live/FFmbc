@@ -777,6 +777,14 @@ static const AVCodecTag codec_3gp_tags[] = {
     { CODEC_ID_NONE, 0 },
 };
 
+static const AVCodecTag codec_f4v_tags[] = {
+    { CODEC_ID_H264,   MKTAG('a','v','c','1') },
+    { CODEC_ID_AAC,    MKTAG('m','p','4','a') },
+    { CODEC_ID_MP3,    MKTAG('.','m','p','3') },
+    { CODEC_ID_VP6F,   MKTAG('V','P','6','F') },
+    { CODEC_ID_NONE, 0 },
+};
+
 static int mov_find_codec_tag(AVFormatContext *s, MOVTrack *track)
 {
     int tag = track->enc->codec_tag;
@@ -787,6 +795,8 @@ static int mov_find_codec_tag(AVFormatContext *s, MOVTrack *track)
         tag = ipod_get_codec_tag(s, track);
     else if (track->mode & MODE_3GP)
         tag = ff_codec_get_tag(codec_3gp_tags, track->enc->codec_id);
+    else if (track->mode & MODE_F4V)
+        tag = ff_codec_get_tag(codec_f4v_tags, track->enc->codec_id);
     else
         tag = mov_get_codec_tag(s, track);
 
@@ -2129,6 +2139,8 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
         avio_wtag(pb, "MSNV");
     else if (mov->mode == MODE_MP4)
         avio_wtag(pb, "mp42");
+    else if (mov->mode == MODE_F4V)
+        avio_wtag(pb, "f4v ");
     else if (mov->mode == MODE_IPOD)
         avio_wtag(pb, has_video ? "M4V ":"M4A ");
     else
@@ -2454,6 +2466,7 @@ static int mov_write_header(AVFormatContext *s)
         else if (!strcmp("mov", s->oformat->name)) mov->mode = MODE_MOV;
         else if (!strcmp("psp", s->oformat->name)) mov->mode = MODE_PSP;
         else if (!strcmp("ipod",s->oformat->name)) mov->mode = MODE_IPOD;
+        else if (!strcmp("f4v", s->oformat->name)) mov->mode = MODE_F4V;
 
         mov_write_ftyp_tag(pb,s);
         if (mov->mode == MODE_PSP) {
@@ -2658,6 +2671,22 @@ static int mov_write_trailer(AVFormatContext *s)
     return res;
 }
 
+#if CONFIG_F4V_MUXER
+AVOutputFormat ff_f4v_muxer = {
+    "f4v",
+    NULL_IF_CONFIG_SMALL("Flash F4V format"),
+    NULL,
+    "f4v",
+    sizeof(MOVMuxContext),
+    CODEC_ID_AAC,
+    CODEC_ID_H264,
+    mov_write_header,
+    ff_mov_write_packet,
+    mov_write_trailer,
+    .flags = AVFMT_GLOBALHEADER,
+    .codec_tag = (const AVCodecTag* const []){codec_f4v_tags, 0},
+};
+#endif
 #if CONFIG_MOV_MUXER
 AVOutputFormat ff_mov_muxer = {
     .name              = "mov",
