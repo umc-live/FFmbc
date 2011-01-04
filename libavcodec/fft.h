@@ -98,7 +98,7 @@ struct FFTContext {
 #endif
 
 #define COSTABLE(size) \
-    COSTABLE_CONST DECLARE_ALIGNED(32, FFTSample, FFT_NAME(ff_cos_##size))[size/2]
+    COSTABLE_CONST DECLARE_ALIGNED(32, FFTSample, av_hidden FFT_NAME(ff_cos_##size))[size/2]
 
 extern COSTABLE(16);
 extern COSTABLE(32);

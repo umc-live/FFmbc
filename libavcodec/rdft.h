@@ -32,7 +32,7 @@
 #endif
 
 #define SINTABLE(size) \
-    SINTABLE_CONST DECLARE_ALIGNED(16, FFTSample, ff_sin_##size)[size/2]
+    SINTABLE_CONST DECLARE_ALIGNED(16, FFTSample, av_hidden ff_sin_##size)[size/2]
 
 extern SINTABLE(16);
 extern SINTABLE(32);

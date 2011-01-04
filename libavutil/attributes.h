@@ -109,6 +109,14 @@
 #endif
 #endif
 
+#ifndef av_hidden
+#if defined(__GNUC__)
+#    define av_hidden __attribute__((visibility("hidden")))
+#else
+#    define av_hidden
+#endif
+#endif
+
 #ifndef av_alias
 #if AV_GCC_VERSION_AT_LEAST(3,3)
 #   define av_alias __attribute__((may_alias))
