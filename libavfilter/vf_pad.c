@@ -105,7 +105,30 @@ typedef struct {
     int      line_step[4];
     int hsub, vsub;         ///< chroma subsampling values
     int needs_copy;
+    AVRational aspect;      ///< pad to an aspect ratio
 } PadContext;
+
+static AVRational parse_aspect(const char *arg)
+{
+    int x = 0, y = 0;
+    const char *p;
+    char *end;
+    AVRational aspect_ratio = {0};
+
+    p = strchr(arg, ':');
+    if (p) {
+        x = strtol(arg, &end, 10);
+        if (end == p)
+            y = strtol(end+1, &end, 10);
+        if (x > 0 && y > 0) {
+            aspect_ratio.num = x;
+            aspect_ratio.den = y;
+        }
+    } else
+        aspect_ratio = av_d2q(strtod(arg, NULL), 255);
+
+    return aspect_ratio;
+}
 
 static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
 {
@@ -117,9 +140,20 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     av_strlcpy(pad->x_expr, "0" , sizeof(pad->w_expr));
     av_strlcpy(pad->y_expr, "0" , sizeof(pad->h_expr));
 
-    if (args)
-        sscanf(args, "%255[^:]:%255[^:]:%255[^:]:%255[^:]:%255s",
-               pad->w_expr, pad->h_expr, pad->x_expr, pad->y_expr, color_string);
+    if (args) {
+        const char *p;
+        p = strstr(args, "aspect=");
+        if (p) {
+            pad->aspect = parse_aspect(p+7);
+            if (!pad->aspect.num || !pad->aspect.den) {
+                av_log(ctx, AV_LOG_ERROR, "error parsing aspect ratio value\n");
+                return -1;
+            }
+        } else {
+            sscanf(args, "%255[^:]:%255[^:]:%255[^:]:%255[^:]:%255s",
+                   pad->w_expr, pad->h_expr, pad->x_expr, pad->y_expr, color_string);
+        }
+    }
 
     if (av_parse_color(pad->color, color_string, -1, ctx) < 0)
         return AVERROR(EINVAL);
@@ -197,6 +231,23 @@ static int config_input(AVFilterLink *inlink)
         goto eval_fail;
     pad->x = var_values[VAR_X] = res;
 
+    if (pad->aspect.num && pad->aspect.den) {
+        AVRational dar;
+        dar = av_mul_q(inlink->sample_aspect_ratio,
+                       (AVRational){ inlink->w, inlink->h });
+        if (av_cmp_q(pad->aspect, dar) < 0) {
+            pad->h = lrint(inlink->w * av_q2d(inlink->sample_aspect_ratio)
+                           / av_q2d(pad->aspect));
+            pad->w = inlink->w;
+            pad->y = lrint((pad->h - inlink->h) / 2.);
+        } else if (av_cmp_q(pad->aspect, dar) > 0) {
+            pad->w = lrint(inlink->h * av_q2d(pad->aspect) /
+                           av_q2d(inlink->sample_aspect_ratio));
+            pad->h = inlink->h;
+            pad->x = lrint((pad->w - inlink->w) / 2.);
+        }
+    }
+
     /* sanity check params */
     if (pad->w < 0 || pad->h < 0 || pad->x < 0 || pad->y < 0) {
         av_log(ctx, AV_LOG_ERROR, "Negative values are not acceptable.\n");
@@ -216,6 +267,9 @@ static int config_input(AVFilterLink *inlink)
     pad->in_w = inlink->w & ~((1 << pad->hsub) - 1);
     pad->in_h = inlink->h & ~((1 << pad->vsub) - 1);
 
+    //pad->w += ((1<<pad->hsub) - (pad->w & ((1<<pad->hsub) - 1))) & ((1<<pad->hsub) - 1);
+    //pad->h += ((1<<pad->vsub) - (pad->h & ((1<<pad->vsub) - 1))) & ((1<<pad->vsub) - 1);
+
     memcpy(rgba_color, pad->color, sizeof(rgba_color));
     ff_fill_line_with_color(pad->line, pad->line_step, pad->w, pad->color,
                             inlink->format, rgba_color, &is_packed_rgba, NULL);
@@ -227,8 +281,8 @@ static int config_input(AVFilterLink *inlink)
 
     if (pad->x <  0 || pad->y <  0                      ||
         pad->w <= 0 || pad->h <= 0                      ||
-        (unsigned)pad->x + (unsigned)inlink->w > pad->w ||
-        (unsigned)pad->y + (unsigned)inlink->h > pad->h) {
+        (unsigned)pad->x + (unsigned)pad->in_w > pad->w ||
+        (unsigned)pad->y + (unsigned)pad->in_h > pad->h) {
         av_log(ctx, AV_LOG_ERROR,
                "Input area %d:%d:%d:%d not within the padded area 0:0:%d:%d or zero-sized\n",
                pad->x, pad->y, pad->x + inlink->w, pad->y + inlink->h, pad->w, pad->h);
