@@ -106,6 +106,8 @@ typedef struct {
     int hsub, vsub;         ///< chroma subsampling values
     int needs_copy;
     AVRational aspect;      ///< pad to an aspect ratio
+    AVRational out_sar;     ///< output sample aspect ratio
+    int keep_aspect;        ///< keep display aspect ratio when padding
 } PadContext;
 
 static AVRational parse_aspect(const char *arg)
@@ -150,8 +152,9 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
                 return -1;
             }
         } else {
-            sscanf(args, "%255[^:]:%255[^:]:%255[^:]:%255[^:]:%255s",
-                   pad->w_expr, pad->h_expr, pad->x_expr, pad->y_expr, color_string);
+            sscanf(args, "%255[^:]:%255[^:]:%255[^:]:%255[^:]:%255[^:]:%d",
+                   pad->w_expr, pad->h_expr, pad->x_expr, pad->y_expr,
+                   color_string, &pad->keep_aspect);
         }
     }
 
@@ -270,6 +273,15 @@ static int config_input(AVFilterLink *inlink)
     //pad->w += ((1<<pad->hsub) - (pad->w & ((1<<pad->hsub) - 1))) & ((1<<pad->hsub) - 1);
     //pad->h += ((1<<pad->vsub) - (pad->h & ((1<<pad->vsub) - 1))) & ((1<<pad->vsub) - 1);
 
+    if (pad->keep_aspect) {
+        AVRational dar = av_mul_q(inlink->sample_aspect_ratio,
+                                  (AVRational){ inlink->w, inlink->h });
+        av_reduce(&pad->out_sar.num, &pad->out_sar.den,
+                  dar.num * pad->h, dar.den * pad->w, INT_MAX);
+    } else
+        pad->out_sar = inlink->sample_aspect_ratio;
+
+
     memcpy(rgba_color, pad->color, sizeof(rgba_color));
     ff_fill_line_with_color(pad->line, pad->line_step, pad->w, pad->color,
                             inlink->format, rgba_color, &is_packed_rgba, NULL);
@@ -304,6 +316,8 @@ static int config_output(AVFilterLink *outlink)
 
     outlink->w = pad->w;
     outlink->h = pad->h;
+    outlink->sample_aspect_ratio = pad->out_sar;
+
     return 0;
 }
 
