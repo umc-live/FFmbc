@@ -1,3 +1,49 @@
+FFmbc-0.6:
+- Sync on FFmpeg git 1762d9ced70ccc46c5d3e5d64e56a48d0fbbd4f7
+- Fix auto-rotate iphone 4 files
+- Increase maximum number of audio channel mappings to 64
+- New "aspect" option to pad filter, to pad video to a specific display aspect ratio
+- New parameter to crop filter to keep display aspect ratio when cropping
+- Improve yuv 4:2:2 to rgb conversion quality
+- Fix aspect ratio handling with libavfilter
+- Re-enabled shared libraries support
+- Fix DNxHD colors in Quicktime
+- Print correct ratecontrol and bitrate information when encoding
+- Write id3v2 v2.3 tags in mp3 files, compatible with Windows
+- Support stream copying and muxing of AMR NB packed frames
+- Flash F4V muxer, to allow muxing vp6 and mp3 the way Flash supports it
+- Print progression time in hh:mm:ss.us instead of secs
+- New "faststart" option in mov/mp4 muxer that automatically replace the header in front
+- Print ETA if duration is known
+- New "tinterlace" filter ported from mplayer
+- Allow one video filter chain per output stream
+- Fix yadif filter output, it was missing one frame previously
+- New "imx50" and "imx30" targets, to make encoding simpler
+- If audio channel count is less than 4 in MXF D10, automatically set it to 4
+- Automatically set vbv buffer size to the maximum when encoding mpeg-2 cbr
+- New "xdcamhd422" target
+- Support DVCAM 4:2:0 in GXF
+- Write aspect ratio information in GXF files
+- With libx264 codec, correctly support specifying a custom 2pass log file
+- When duplicating frames, correctly duplicate the previous frame
+- Enhance -metadata option, can now take comma separated tag=value pairs
+- Experimental mplayer filters support using -vf mp
+- Mux DVCPRO HD in quicktime correctly
+- Allow DNxHD encoding with Avid Nitris compatibility
+- Fix decoding of 16bit png files
+- Reenable -s commandline option
+- New filter colormatrix to convert between bt 601 and bt 709
+- Hide mmx/sse2 internal symbols, to allow creating a shared library from static libraries
+- Support multiple external reference files per track in Quicktime files
+- Fix -t and -vframes by considering output
+- Mpeg-2 encoder now sets correct aspect ratio even with square pixels
+- Mpeg-2 encoder now writes sequence display extension if color primaries are specified
+- Dithering when downsampling from 10 bits to 8 bits
+- Options are now reset between -i, output files and -newaudio,-newvideo parameters
+- Display starting timecode for MXF and Quicktime files
+- Remove FFserver
+- Fix Avisynth input audio stream timebase
+
 FFmbc-0.5:
 - Sync on FFmpeg svn r25017
 - Yadif video deinterlacing filter
