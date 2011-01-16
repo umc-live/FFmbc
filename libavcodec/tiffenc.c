@@ -452,6 +452,7 @@ AVCodec ff_tiff_encoder = {
     NULL,
     0,
     NULL,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .pix_fmts =
         (const enum PixelFormat[]) {PIX_FMT_RGB24, PIX_FMT_PAL8, PIX_FMT_GRAY8,
                               PIX_FMT_MONOBLACK, PIX_FMT_MONOWHITE,

@@ -203,4 +203,5 @@ AVCodec ff_pcx_encoder = {
         PIX_FMT_MONOBLACK,
         PIX_FMT_NONE},
     .long_name = NULL_IF_CONFIG_SMALL("PC Paintbrush PCX image"),
+    .capabilities = CODEC_CAP_LOSSLESS,
 };

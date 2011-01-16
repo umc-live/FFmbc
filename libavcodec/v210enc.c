@@ -26,6 +26,9 @@
 
 static av_cold int encode_init(AVCodecContext *avctx)
 {
+    int aligned_width = ((avctx->width + 47) / 48) * 48;
+    int stride = aligned_width * 8 / 3;
+
     if (avctx->width & 1) {
         av_log(avctx, AV_LOG_ERROR, "v210 needs even width\n");
         return -1;
@@ -44,6 +47,9 @@ static av_cold int encode_init(AVCodecContext *avctx)
 
     avctx->coded_frame->key_frame = 1;
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+
+    avctx->bit_rate = stride * avctx->height * 8LL *
+        avctx->time_base.den / avctx->time_base.num;
 
     return 0;
 }

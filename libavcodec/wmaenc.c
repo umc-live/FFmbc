@@ -40,7 +40,7 @@ static int encode_init(AVCodecContext * avctx){
     }
 
     if(avctx->bit_rate < 24*1000) {
-        av_log(avctx, AV_LOG_ERROR, "bitrate too low: got %i, need 24000 or higher\n",
+        av_log(avctx, AV_LOG_ERROR, "bitrate too low: got %"PRId64", need 24000 or higher\n",
                avctx->bit_rate);
         return AVERROR(EINVAL);
     }
@@ -72,8 +72,8 @@ static int encode_init(AVCodecContext * avctx){
         ff_mdct_init(&s->mdct_ctx[i], s->frame_len_bits - i + 1, 0, 1.0);
 
     avctx->block_align=
-    s->block_align= avctx->bit_rate*(int64_t)s->frame_len / (avctx->sample_rate*8);
-//av_log(NULL, AV_LOG_ERROR, "%d %d %d %d\n", s->block_align, avctx->bit_rate, s->frame_len, avctx->sample_rate);
+    s->block_align= avctx->bit_rate*s->frame_len / (avctx->sample_rate*8);
+//av_log(NULL, AV_LOG_ERROR, "%d %"PRId64" %d %d\n", s->block_align, avctx->bit_rate, s->frame_len, avctx->sample_rate);
     avctx->frame_size= s->frame_len;
 
     return 0;

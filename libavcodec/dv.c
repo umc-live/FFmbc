@@ -349,11 +349,16 @@ static av_cold int dvvideo_init(AVCodecContext *avctx)
 
 static av_cold int dvvideo_init_encoder(AVCodecContext *avctx)
 {
-    if (!ff_dv_codec_profile(avctx)) {
+    const DVprofile *profile = ff_dv_codec_profile(avctx);
+
+    if (!profile) {
         av_log(avctx, AV_LOG_ERROR, "Found no DV profile for %ix%i %s video\n",
                avctx->width, avctx->height, av_get_pix_fmt_name(avctx->pix_fmt));
         return -1;
     }
+
+    avctx->bit_rate = profile->frame_size * 8LL *
+        avctx->time_base.den / avctx->time_base.num;
 
     return dvvideo_init(avctx);
 }

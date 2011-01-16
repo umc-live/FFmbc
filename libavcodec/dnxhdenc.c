@@ -277,6 +277,9 @@ static int dnxhd_encode_init(AVCodecContext *avctx)
         ctx->m.mb_height /= 2;
     }
 
+    avctx->bit_rate = ctx->cid_table->coding_unit_size * 8LL * (1<<ctx->interlaced) *
+        avctx->time_base.den / avctx->time_base.num;
+
     ctx->m.mb_num = ctx->m.mb_height * ctx->m.mb_width;
 
     if (avctx->intra_quant_bias != FF_DEFAULT_QUANT_BIAS)

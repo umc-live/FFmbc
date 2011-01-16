@@ -70,8 +70,8 @@ static const AVOption *opt_find(void *obj, const char *name, const char *unit, i
 #define AV_CODEC_DEFAULT_BITRATE 200*1000
 
 static const AVOption options[]={
-{"b", "set bitrate (in bits/s)", OFFSET(bit_rate), FF_OPT_TYPE_INT, {.dbl = AV_CODEC_DEFAULT_BITRATE }, INT_MIN, INT_MAX, V|E},
-{"ab", "set bitrate (in bits/s)", OFFSET(bit_rate), FF_OPT_TYPE_INT, {.dbl = 64*1000 }, INT_MIN, INT_MAX, A|E},
+{"b", "set bitrate (in bits/s)", OFFSET(bit_rate), FF_OPT_TYPE_INT, {.dbl = AV_CODEC_DEFAULT_BITRATE }, 0, INT_MAX, V|E},
+{"ab", "set bitrate (in bits/s)", OFFSET(bit_rate), FF_OPT_TYPE_INT, {.dbl = 64*1000 }, 0, INT_MAX, A|E},
 {"bt", "set video bitrate tolerance (in bits/s)", OFFSET(bit_rate_tolerance), FF_OPT_TYPE_INT, {.dbl = AV_CODEC_DEFAULT_BITRATE*20 }, 1, INT_MAX, V|E},
 {"flags", NULL, OFFSET(flags), FF_OPT_TYPE_FLAGS, {.dbl = DEFAULT }, 0, UINT_MAX, V|A|E|D, "flags"},
 {"mv4", "use four motion vector by macroblock (mpeg4)", 0, FF_OPT_TYPE_CONST, {.dbl = CODEC_FLAG_4MV }, INT_MIN, INT_MAX, V|E, "flags"},
@@ -195,9 +195,9 @@ static const AVOption options[]={
 {"rc_qmod_freq", "experimental quantizer modulation", OFFSET(rc_qmod_freq), FF_OPT_TYPE_INT, {.dbl = DEFAULT }, INT_MIN, INT_MAX, V|E},
 {"rc_override_count", NULL, OFFSET(rc_override_count), FF_OPT_TYPE_INT, {.dbl = DEFAULT }, INT_MIN, INT_MAX},
 {"rc_eq", "set rate control equation", OFFSET(rc_eq), FF_OPT_TYPE_STRING, {.str = NULL}, CHAR_MIN, CHAR_MAX, V|E},
-{"maxrate", "set max video bitrate tolerance (in bits/s)", OFFSET(rc_max_rate), FF_OPT_TYPE_INT, {.dbl = DEFAULT }, INT_MIN, INT_MAX, V|E},
-{"minrate", "set min video bitrate tolerance (in bits/s)", OFFSET(rc_min_rate), FF_OPT_TYPE_INT, {.dbl = DEFAULT }, INT_MIN, INT_MAX, V|E},
-{"bufsize", "set ratecontrol buffer size (in bits)", OFFSET(rc_buffer_size), FF_OPT_TYPE_INT, {.dbl = DEFAULT }, INT_MIN, INT_MAX, A|V|E},
+{"maxrate", "set max video bitrate tolerance (in bits/s)", OFFSET(rc_max_rate), FF_OPT_TYPE_INT, {.dbl = DEFAULT }, 0, INT_MAX, V|E},
+{"minrate", "set min video bitrate tolerance (in bits/s)", OFFSET(rc_min_rate), FF_OPT_TYPE_INT, {.dbl = DEFAULT }, 0, INT_MAX, V|E},
+{"bufsize", "set ratecontrol buffer size (in bits)", OFFSET(rc_buffer_size), FF_OPT_TYPE_INT, {.dbl = DEFAULT }, 0, INT_MAX, A|V|E},
 {"rc_buf_aggressivity", "currently useless", OFFSET(rc_buffer_aggressivity), FF_OPT_TYPE_FLOAT, {.dbl = 1.0 }, -FLT_MAX, FLT_MAX, V|E},
 {"i_qfactor", "qp factor between P and I frames", OFFSET(i_quant_factor), FF_OPT_TYPE_FLOAT, {.dbl = -0.8 }, -FLT_MAX, FLT_MAX, V|E},
 {"i_qoffset", "qp offset between P and I frames", OFFSET(i_quant_offset), FF_OPT_TYPE_FLOAT, {.dbl = 0.0 }, -FLT_MAX, FLT_MAX, V|E},

@@ -972,6 +972,7 @@ AVCodec ff_sonic_ls_encoder = {
     sonic_encode_frame,
     sonic_encode_close,
     NULL,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .long_name = NULL_IF_CONFIG_SMALL("Sonic lossless"),
 };
 #endif

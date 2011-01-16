@@ -178,6 +178,7 @@ AVCodec ff_zlib_encoder = {
     encode_init,
     encode_frame,
     encode_end,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .pix_fmts = (const enum PixelFormat[]) { PIX_FMT_BGR24, PIX_FMT_NONE },
     .long_name = NULL_IF_CONFIG_SMALL("LCL (LossLess Codec Library) ZLIB"),
 };

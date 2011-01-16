@@ -246,7 +246,7 @@ static void build_frame_code(AVFormatContext *s){
         key_frame= intra_only;
 #if 1
         if(is_audio){
-            int frame_bytes= codec->frame_size*(int64_t)codec->bit_rate / (8*codec->sample_rate);
+            int frame_bytes= codec->frame_size*codec->bit_rate / (8*codec->sample_rate);
             int pts;
             for(pts=0; pts<2; pts++){
                 for(pred=0; pred<2; pred++){

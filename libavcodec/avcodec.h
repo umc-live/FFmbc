@@ -1158,12 +1158,8 @@ typedef struct AVCodecContext {
      * - set by avcodec_alloc_context
      */
     const AVClass *av_class;
-    /**
-     * the average bitrate
-     * - encoding: Set by user; unused for constant quantizer encoding.
-     * - decoding: Set by libavcodec. 0 or some bitrate if this info is available in the stream.
-     */
-    int bit_rate;
+
+    int unused;
 
     /**
      * number of bits the bitstream is allowed to diverge from the reference.
@@ -2931,6 +2927,13 @@ typedef struct AVCodecContext {
      * - decoding: Set by libavcodec
      */
     int interlaced;
+
+    /**
+     * the average bitrate
+     * - encoding: Set by user; unused for constant quantizer encoding.
+     * - decoding: Set by libavcodec. 0 or some bitrate if this info is available in the stream.
+     */
+    int64_t bit_rate;
 } AVCodecContext;
 
 /**

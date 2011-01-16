@@ -734,12 +734,7 @@ typedef struct AVFormatContext {
      */
     int64_t file_size;
 
-    /**
-     * Decoding: total stream bitrate in bit/s, 0 if not
-     * available. Never set it directly if the file_size and the
-     * duration are known as FFmpeg can compute it automatically.
-     */
-    int bit_rate;
+    int unused0;
 
     /* av_read_frame() support */
     AVStream *cur_st;
@@ -887,6 +882,13 @@ typedef struct AVFormatContext {
      * This will be moved into demuxer private options. Thus no API/ABI compatibility
      */
     int ts_id;
+
+    /**
+     * Decoding: total stream bitrate in bit/s, 0 if not
+     * available. Never set it directly if the file_size and the
+     * duration are known as FFmpeg can compute it automatically.
+     */
+    int64_t bit_rate;
 } AVFormatContext;
 
 typedef struct AVPacketList {

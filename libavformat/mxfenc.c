@@ -1491,7 +1491,7 @@ static int mxf_write_header(AVFormatContext *s)
                 }
 
                 mxf->edit_unit_byte_count = KAG_SIZE; // system element
-                mxf->edit_unit_byte_count += 16 + 4 + (uint64_t)st->codec->bit_rate *
+                mxf->edit_unit_byte_count += 16 + 4 + st->codec->bit_rate *
                     mxf->time_base.num / (8*mxf->time_base.den);
                 mxf->edit_unit_byte_count += klv_fill_size(mxf->edit_unit_byte_count);
                 mxf->edit_unit_byte_count += 16 + 4 + 4 + samples_per_frame[0]*8*4;
@@ -1645,7 +1645,7 @@ static void mxf_write_d10_video_packet(AVFormatContext *s, AVStream *st, AVPacke
 {
     MXFContext *mxf = s->priv_data;
     AVIOContext *pb = s->pb;
-    int packet_size = (uint64_t)st->codec->bit_rate*mxf->time_base.num /
+    int packet_size = st->codec->bit_rate*mxf->time_base.num /
         (8*mxf->time_base.den); // frame size
     int pad;
 

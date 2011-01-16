@@ -390,6 +390,7 @@ AVCodec ff_jpegls_encoder = { //FIXME avoid MPV_* lossless JPEG should not need 
     encode_init_ls,
     encode_picture_ls,
     NULL,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .pix_fmts= (const enum PixelFormat[]){PIX_FMT_BGR24, PIX_FMT_RGB24, PIX_FMT_GRAY8, PIX_FMT_GRAY16, PIX_FMT_NONE},
     .long_name= NULL_IF_CONFIG_SMALL("JPEG-LS"),
 };

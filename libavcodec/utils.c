@@ -969,9 +969,9 @@ AVCodec *avcodec_find_decoder_by_name(const char *name)
     return NULL;
 }
 
-static int get_bit_rate(AVCodecContext *ctx)
+static long long get_bit_rate(AVCodecContext *ctx)
 {
-    int bit_rate;
+    long long bit_rate;
     int bits_per_sample;
 
     switch(ctx->codec_type) {
@@ -1006,17 +1006,42 @@ size_t av_get_codec_tag_string(char *buf, size_t buf_size, unsigned int codec_ta
     return ret;
 }
 
+static int encoder_supports_global_quality(AVCodecContext *avctx)
+{
+    return avctx->codec_id == CODEC_ID_AAC ||
+        avctx->codec_id == CODEC_ID_MP3 ||
+        avctx->codec_id == CODEC_ID_THEORA ||
+        avctx->codec_id == CODEC_ID_VORBIS ||
+        avctx->codec_id == CODEC_ID_ASV1 ||
+        avctx->codec_id == CODEC_ID_DIRAC ||
+        avctx->codec_id == CODEC_ID_FLV1 ||
+        avctx->codec_id == CODEC_ID_H263 ||
+        avctx->codec_id == CODEC_ID_H263P ||
+        avctx->codec_id == CODEC_ID_MJPEG ||
+        avctx->codec_id == CODEC_ID_MPEG1VIDEO ||
+        avctx->codec_id == CODEC_ID_MPEG2VIDEO ||
+        avctx->codec_id == CODEC_ID_MPEG4 ||
+        avctx->codec_id == CODEC_ID_MSMPEG4V1 ||
+        avctx->codec_id == CODEC_ID_MSMPEG4V2 ||
+        avctx->codec_id == CODEC_ID_MSMPEG4V3 ||
+        avctx->codec_id == CODEC_ID_RV10 ||
+        avctx->codec_id == CODEC_ID_RV20 ||
+        avctx->codec_id == CODEC_ID_WMV1 ||
+        avctx->codec_id == CODEC_ID_WMV2;
+}
+
 void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
 {
     const char *codec_name;
     const char *profile = NULL;
     AVCodec *p;
     char buf1[32];
-    int bitrate;
+    long long bitrate;
     AVRational display_aspect_ratio;
+    int stream_copy = encode && !enc->codec;
 
-    if (encode)
-        p = avcodec_find_encoder(enc->codec_id);
+    if (encode && enc->codec)
+        p = enc->codec;
     else
         p = avcodec_find_decoder(enc->codec_id);
 
@@ -1081,10 +1106,6 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
                          enc->time_base.den/g);
             }
         }
-        if (encode) {
-            snprintf(buf + strlen(buf), buf_size - strlen(buf),
-                     ", q=%d-%d", enc->qmin, enc->qmax);
-        }
         break;
     case AVMEDIA_TYPE_AUDIO:
         snprintf(buf, buf_size,
@@ -1121,11 +1142,49 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
         if (enc->flags & CODEC_FLAG_PASS2)
             snprintf(buf + strlen(buf), buf_size - strlen(buf),
                      ", pass 2");
-    }
-    bitrate = get_bit_rate(enc);
-    if (bitrate / 1000 != 0) {
-        snprintf(buf + strlen(buf), buf_size - strlen(buf),
-                 ", %d kb/s", bitrate / 1000);
+        if (stream_copy) {
+            snprintf(buf + strlen(buf), buf_size - strlen(buf), ", stream copy");
+        } else if (enc->rc_max_rate) {
+            goto bitrate;
+        } else if ((enc->codec->capabilities & CODEC_CAP_LOSSLESS) ||
+            (enc->codec_id == CODEC_ID_SNOW && enc->global_quality == 0)) {
+            snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                     ", vbr, lossless");
+        } else if (!strcmp(codec_name, "libx264")) {
+            if (enc->crf > 0)
+                snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                         ", vbr, crf %.2f", enc->crf);
+            else if (enc->cqp == 0)
+                snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                         ", vbr, lossless");
+            else if (enc->cqp > 0)
+                snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                         ", vbr, qp %d", enc->cqp);
+            else
+                goto bitrate;
+        } else if (encoder_supports_global_quality(enc) && enc->global_quality > 0) {
+            if (enc->codec_type == AVMEDIA_TYPE_VIDEO)
+                snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                         ", vbr, qp %d", enc->global_quality / FF_QP2LAMBDA);
+            else
+                snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                         ", vbr, quality %f", enc->global_quality / (float)FF_QP2LAMBDA);
+        } else {
+        bitrate:
+            bitrate = get_bit_rate(enc);
+            if (bitrate / 1000 != 0) {
+                if (enc->rc_max_rate == bitrate && bitrate == enc->rc_min_rate)
+                    snprintf(buf + strlen(buf), buf_size - strlen(buf), ", cbr");
+                snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                         ", %lld kb/s", bitrate / 1000);
+            }
+        }
+    } else {
+        bitrate = get_bit_rate(enc);
+        if (bitrate / 1000 != 0) {
+            snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                     ", %lld kb/s", bitrate / 1000);
+        }
     }
 }
 

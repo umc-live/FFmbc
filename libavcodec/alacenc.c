@@ -536,7 +536,7 @@ AVCodec ff_alac_encoder = {
     alac_encode_init,
     alac_encode_frame,
     alac_encode_close,
-    .capabilities = CODEC_CAP_SMALL_LAST_FRAME,
+    .capabilities = CODEC_CAP_SMALL_LAST_FRAME | CODEC_CAP_LOSSLESS,
     .sample_fmts = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE},
     .long_name = NULL_IF_CONFIG_SMALL("ALAC (Apple Lossless Audio Codec)"),
 };

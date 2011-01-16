@@ -194,5 +194,6 @@ AVCodec ff_ljpeg_encoder = { //FIXME avoid MPV_* lossless JPEG should not need t
     MPV_encode_init,
     encode_picture_lossless,
     MPV_encode_end,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .long_name = NULL_IF_CONFIG_SMALL("Lossless JPEG"),
 };

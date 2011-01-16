@@ -351,6 +351,7 @@ AVCodec ff_qtrle_encoder = {
     qtrle_encode_init,
     qtrle_encode_frame,
     qtrle_encode_end,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .pix_fmts = (const enum PixelFormat[]){PIX_FMT_RGB24, PIX_FMT_RGB555BE, PIX_FMT_ARGB, PIX_FMT_GRAY8, PIX_FMT_NONE},
     .long_name = NULL_IF_CONFIG_SMALL("QuickTime Animation (RLE) video"),
 };

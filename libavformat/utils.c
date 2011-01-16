@@ -1979,7 +1979,7 @@ static void estimate_timings_from_bit_rate(AVFormatContext *ic)
         if (filesize > 0) {
             for(i = 0; i < ic->nb_streams; i++) {
                 st = ic->streams[i];
-                duration= av_rescale(8*filesize, st->time_base.den, ic->bit_rate*(int64_t)st->time_base.num);
+                duration= av_rescale(8*filesize, st->time_base.den, ic->bit_rate*st->time_base.num);
                 if (st->duration == AV_NOPTS_VALUE)
                     st->duration = duration;
             }
@@ -2113,7 +2113,7 @@ static void estimate_timings(AVFormatContext *ic, int64_t old_offset)
                i, (double)st->start_time / AV_TIME_BASE,
                (double)st->duration / AV_TIME_BASE);
         }
-        printf("stream: start_time: %0.3f duration: %0.3f bitrate=%d kb/s\n",
+        printf("stream: start_time: %0.3f duration: %0.3f bitrate=%"PRId64" kb/s\n",
                (double)ic->start_time / AV_TIME_BASE,
                (double)ic->duration / AV_TIME_BASE,
                ic->bit_rate / 1000);
@@ -3562,7 +3562,7 @@ void av_dump_format(AVFormatContext *ic,
         }
         av_log(NULL, AV_LOG_INFO, ", bitrate: ");
         if (ic->bit_rate) {
-            av_log(NULL, AV_LOG_INFO,"%d kb/s", ic->bit_rate / 1000);
+            av_log(NULL, AV_LOG_INFO,"%"PRId64" kb/s", ic->bit_rate / 1000);
         } else {
             av_log(NULL, AV_LOG_INFO, "N/A");
         }

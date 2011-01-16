@@ -157,6 +157,7 @@ AVCodec ff_bmp_encoder = {
     bmp_encode_init,
     bmp_encode_frame,
     NULL, //encode_end,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .pix_fmts = (const enum PixelFormat[]){
         PIX_FMT_BGR24,
         PIX_FMT_RGB555, PIX_FMT_RGB565,

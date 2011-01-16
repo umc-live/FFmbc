@@ -1477,6 +1477,7 @@ AVCodec ff_huffyuv_encoder = {
     encode_init,
     encode_frame,
     encode_end,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .pix_fmts= (const enum PixelFormat[]){PIX_FMT_YUV422P, PIX_FMT_RGB32, PIX_FMT_NONE},
     .long_name = NULL_IF_CONFIG_SMALL("Huffyuv / HuffYUV"),
 };
@@ -1491,6 +1492,7 @@ AVCodec ff_ffvhuff_encoder = {
     encode_init,
     encode_frame,
     encode_end,
+    .capabilities = CODEC_CAP_LOSSLESS,
     .pix_fmts= (const enum PixelFormat[]){PIX_FMT_YUV420P, PIX_FMT_YUV422P, PIX_FMT_RGB32, PIX_FMT_NONE},
     .long_name = NULL_IF_CONFIG_SMALL("Huffyuv FFmpeg variant"),
 };

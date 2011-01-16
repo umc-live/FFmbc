@@ -283,6 +283,7 @@ AVCodec ff_flashsv_encoder = {
     .init           = flashsv_encode_init,
     .encode         = flashsv_encode_frame,
     .close          = flashsv_encode_end,
+    .capabilities   = CODEC_CAP_LOSSLESS,
     .pix_fmts       = (const enum PixelFormat[]){PIX_FMT_BGR24, PIX_FMT_NONE},
     .long_name      = NULL_IF_CONFIG_SMALL("Flash Screen Video"),
 };
