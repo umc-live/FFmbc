@@ -136,7 +136,7 @@ static int nb_output_files = 0;
 static StreamMap *stream_maps = NULL;
 static int nb_stream_maps;
 
-#define MAX_AUDIO_CHANNEL_MAPS 8
+#define MAX_AUDIO_CHANNEL_MAPS 64
 static AudioChannelMap audio_channel_maps[MAX_AUDIO_CHANNEL_MAPS];
 static int nb_audio_channel_maps;
 
