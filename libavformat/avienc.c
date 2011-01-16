@@ -227,6 +227,23 @@ static int avi_write_header(AVFormatContext *s)
 
         stream = s->streams[i]->codec;
 
+        if (stream->codec_id == CODEC_ID_RAWVIDEO) {
+            switch (stream->pix_fmt) {
+            case PIX_FMT_BGR24:
+            case PIX_FMT_RGB555LE:
+            case PIX_FMT_RGB565LE:
+            case PIX_FMT_BGR555LE:
+            case PIX_FMT_BGR565LE:
+                break;
+            default:
+                stream->codec_tag = avcodec_pix_fmt_to_codec_tag(stream->pix_fmt);
+                if (!stream->codec_tag) {
+                    av_log(s, AV_LOG_ERROR, "Rawvideo pixel format not supported\n");
+                    return -1;
+                }
+            }
+        }
+
         /* stream generic header */
         strh = ff_start_tag(pb, "strh");
         switch(stream->codec_type) {
