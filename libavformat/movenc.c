@@ -2093,7 +2093,7 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
     MOVMuxContext *mov = s->priv_data;
     int64_t pos = avio_tell(pb);
     int has_h264 = 0, has_video = 0;
-    int minor = 0x200;
+    int minor = 0;
     int i;
 
     for (i = 0; i < s->nb_streams; i++) {
@@ -2116,7 +2116,7 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
     }else if (mov->mode == MODE_PSP)
         avio_wtag(pb, "MSNV");
     else if (mov->mode == MODE_MP4)
-        avio_wtag(pb, "isom");
+        avio_wtag(pb, "mp42");
     else if (mov->mode == MODE_IPOD)
         avio_wtag(pb, has_video ? "M4V ":"M4A ");
     else

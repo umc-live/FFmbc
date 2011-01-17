@@ -1,4 +1,4 @@
-28825bc4617b88bf1e2d43e7e5830178 *./tests/data/vsynth1/svq1.mov
+fc47ae5ad2035b3cb4dcd6e3e3d2c98f *./tests/data/vsynth1/svq1.mov
 1334403 ./tests/data/vsynth1/svq1.mov
 9cc35c54b2c77d36bd7e308b393c1f81 *./tests/data/svq1.vsynth1.out.yuv
 stddev:    9.58 PSNR: 28.50 MAXDIFF:  210 bytes:  7603200/  7603200
