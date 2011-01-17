@@ -86,8 +86,8 @@
 
 #include "libavutil/avassert.h"
 
-const char program_name[] = "ffmpeg";
-const int program_birth_year = 2000;
+const char program_name[] = "FFmbc";
+const int program_birth_year = 2008;
 
 /* select an input stream for an output stream */
 typedef struct StreamMap {
@@ -4078,8 +4078,8 @@ static int opt_intra_matrix(const char *opt, const char *arg)
 
 static void show_usage(void)
 {
-    printf("Hyper fast Audio and Video encoder\n");
-    printf("usage: ffmpeg [options] [[infile options] -i infile]... {[outfile options] outfile}...\n");
+    printf("\n");
+    printf("usage: ffmbc [options] [[infile options] -i infile]... {[outfile options] outfile}...\n");
     printf("\n");
 }
 
@@ -4558,7 +4558,7 @@ int main(int argc, char **argv)
 
     if(nb_output_files <= 0 && nb_input_files == 0) {
         show_usage();
-        fprintf(stderr, "Use -h to get full help or, even better, run 'man ffmpeg'\n");
+        fprintf(stderr, "Use -h to get full help or, even better, run 'man ffmbc'\n");
         ffmpeg_exit(1);
     }
 

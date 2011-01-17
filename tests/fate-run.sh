@@ -50,7 +50,7 @@ run(){
 }
 
 ffmpeg(){
-    run ffmpeg -v 0 -threads $threads -thread_type $thread_type "$@"
+    run ffmbc -v 0 -threads $threads -thread_type $thread_type "$@"
 }
 
 framecrc(){

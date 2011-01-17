@@ -2951,7 +2951,6 @@ static const OptionDef options[] = {
 
 static void show_usage(void)
 {
-    printf("Simple media player\n");
     printf("usage: ffplay [options] input_file\n");
     printf("\n");
 }

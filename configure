@@ -79,7 +79,6 @@ Configuration options:
   --enable-nonfree         allow use of nonfree code, the resulting libs
                            and binaries will be unredistributable [no]
   --disable-doc            do not build documentation
-  --disable-ffmpeg         disable ffmpeg build
   --disable-ffplay         disable ffplay build
   --disable-ffprobe        disable ffprobe build
   --disable-ffserver       disable ffserver build
@@ -277,8 +276,8 @@ die(){
     cat <<EOF
 
 If you think configure made a mistake, make sure you are using the latest
-version from Git.  If the latest version fails, report the problem to the
-ffmpeg-user@ffmpeg.org mailing list or IRC #ffmpeg on irc.freenode.net.
+version. If the latest version fails, report the problem to the
+ffmbc-dev@googlegroups.com mailing list.
 EOF
     if disabled logging; then
         cat <<EOF
@@ -911,7 +910,7 @@ CONFIG_LIST="
     dwt
     dxva2
     fastdiv
-    ffmpeg
+    ffmbc
     ffplay
     ffprobe
     ffserver
@@ -1641,6 +1640,7 @@ target_os_default=$(tolower $(uname -s))
 host_os=$target_os_default
 
 # configurable options
+enable ffmbc
 enable avcodec
 enable avdevice
 enable avfilter
@@ -2558,6 +2558,7 @@ die_license_disabled() {
     enabled $1 || { enabled $2 && die "$2 is $1 and --enable-$1 is not specified."; }
 }
 
+die_license_disabled gpl ffmbc
 die_license_disabled gpl libx264
 die_license_disabled gpl libxavs
 die_license_disabled gpl libxvid

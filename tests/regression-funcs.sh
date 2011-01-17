@@ -18,7 +18,7 @@ this="$test.$test_ref"
 outfile="$datadir/$test_ref/"
 
 # various files
-ffmpeg="$target_exec ${target_path}/ffmpeg"
+ffmpeg="$target_exec ${target_path}/ffmbc"
 tiny_psnr="tests/tiny_psnr"
 raw_src="${target_path}/$raw_src_dir/%02d.pgm"
 raw_dst="$datadir/$this.out.yuv"
