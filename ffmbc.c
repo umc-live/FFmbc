@@ -1042,7 +1042,7 @@ need_realloc:
             ost->audio_resample = 0;
         } else {
             ost->audio_resample = 1;
-            if (dec->sample_fmt != AV_SAMPLE_FMT_S16)
+            if (dec->sample_fmt != AV_SAMPLE_FMT_S16 && enc->sample_fmt != AV_SAMPLE_FMT_S16)
                 fprintf(stderr, "Warning, using s16 intermediate sample format for resampling\n");
             ost->resample = av_audio_resample_init(enc->channels,    in_channels,
                                                    enc->sample_rate, dec->sample_rate,
