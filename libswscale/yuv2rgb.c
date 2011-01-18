@@ -115,25 +115,19 @@ static int func_name(SwsContext *c, const uint8_t* src[], int srcStride[], int s
                      int srcSliceH, uint8_t* dst[], int dstStride[]) \
 {\
     int y;\
+    int vshift = c->srcFormat != PIX_FMT_YUV422P;\
 \
-    if (!alpha && c->srcFormat == PIX_FMT_YUV422P) {\
-        srcStride[1] *= 2;\
-        srcStride[2] *= 2;\
-    }\
-    for (y=0; y<srcSliceH; y+=2) {\
+    for (y=0; y<srcSliceH; y++) {\
         dst_type *dst_1 = (dst_type*)(dst[0] + (y+srcSliceY  )*dstStride[0]);\
-        dst_type *dst_2 = (dst_type*)(dst[0] + (y+srcSliceY+1)*dstStride[0]);\
         dst_type av_unused *r, *b;\
         dst_type *g;\
         const uint8_t *py_1 = src[0] + y*srcStride[0];\
-        const uint8_t *py_2 = py_1 + srcStride[0];\
-        const uint8_t *pu = src[1] + (y>>1)*srcStride[1];\
-        const uint8_t *pv = src[2] + (y>>1)*srcStride[2];\
-        const uint8_t av_unused *pa_1, *pa_2;\
+        const uint8_t *pu = src[1] + (y>>vshift)*srcStride[1];\
+        const uint8_t *pv = src[2] + (y>>vshift)*srcStride[2];\
+        const uint8_t av_unused *pa_1;\
         unsigned int h_size = c->dstW>>3;\
         if (alpha) {\
             pa_1 = src[3] + y*srcStride[3];\
-            pa_2 = pa_1 + srcStride[3];\
         }\
         while (h_size--) {\
             int av_unused U, V;\
@@ -143,9 +137,7 @@ static int func_name(SwsContext *c, const uint8_t* src[], int srcStride[], int s
             pu += 4;\
             pv += 4;\
             py_1 += 8;\
-            py_2 += 8;\
             dst_1 += dst_delta;\
-            dst_2 += dst_delta;\
         }\
         if (c->dstW & 4) {\
             int av_unused Y, U, V;\
@@ -163,160 +155,122 @@ static int func_name(SwsContext *c, const uint8_t* src[], int srcStride[], int s
 YUV2RGBFUNC(yuv2rgb_c_48, uint8_t, 0)
     LOADCHROMA(0);
     PUTRGB48(dst_1,py_1,0);
-    PUTRGB48(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTRGB48(dst_2,py_2,1);
     PUTRGB48(dst_1,py_1,1);
 
     LOADCHROMA(2);
     PUTRGB48(dst_1,py_1,2);
-    PUTRGB48(dst_2,py_2,2);
 
     LOADCHROMA(3);
-    PUTRGB48(dst_2,py_2,3);
     PUTRGB48(dst_1,py_1,3);
 ENDYUV2RGBLINE(48)
     LOADCHROMA(0);
     PUTRGB48(dst_1,py_1,0);
-    PUTRGB48(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTRGB48(dst_2,py_2,1);
     PUTRGB48(dst_1,py_1,1);
 ENDYUV2RGBFUNC()
 
 YUV2RGBFUNC(yuv2rgb_c_bgr48, uint8_t, 0)
     LOADCHROMA(0);
     PUTBGR48(dst_1,py_1,0);
-    PUTBGR48(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTBGR48(dst_2,py_2,1);
     PUTBGR48(dst_1,py_1,1);
 
     LOADCHROMA(2);
     PUTBGR48(dst_1,py_1,2);
-    PUTBGR48(dst_2,py_2,2);
 
     LOADCHROMA(3);
-    PUTBGR48(dst_2,py_2,3);
     PUTBGR48(dst_1,py_1,3);
 ENDYUV2RGBLINE(48)
     LOADCHROMA(0);
     PUTBGR48(dst_1,py_1,0);
-    PUTBGR48(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTBGR48(dst_2,py_2,1);
     PUTBGR48(dst_1,py_1,1);
 ENDYUV2RGBFUNC()
 
 YUV2RGBFUNC(yuv2rgb_c_32, uint32_t, 0)
     LOADCHROMA(0);
     PUTRGB(dst_1,py_1,0);
-    PUTRGB(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTRGB(dst_2,py_2,1);
     PUTRGB(dst_1,py_1,1);
 
     LOADCHROMA(2);
     PUTRGB(dst_1,py_1,2);
-    PUTRGB(dst_2,py_2,2);
 
     LOADCHROMA(3);
-    PUTRGB(dst_2,py_2,3);
     PUTRGB(dst_1,py_1,3);
 ENDYUV2RGBLINE(8)
     LOADCHROMA(0);
     PUTRGB(dst_1,py_1,0);
-    PUTRGB(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTRGB(dst_2,py_2,1);
     PUTRGB(dst_1,py_1,1);
 ENDYUV2RGBFUNC()
 
 YUV2RGBFUNC(yuva2rgba_c, uint32_t, 1)
     LOADCHROMA(0);
     PUTRGBA(dst_1,py_1,pa_1,0,24);
-    PUTRGBA(dst_2,py_2,pa_2,0,24);
 
     LOADCHROMA(1);
-    PUTRGBA(dst_2,py_2,pa_1,1,24);
-    PUTRGBA(dst_1,py_1,pa_2,1,24);
+    PUTRGBA(dst_1,py_1,pa_1,1,24);
 
     LOADCHROMA(2);
     PUTRGBA(dst_1,py_1,pa_1,2,24);
-    PUTRGBA(dst_2,py_2,pa_2,2,24);
 
     LOADCHROMA(3);
-    PUTRGBA(dst_2,py_2,pa_1,3,24);
-    PUTRGBA(dst_1,py_1,pa_2,3,24);
+    PUTRGBA(dst_1,py_1,pa_1,3,24);
     pa_1 += 8;\
-    pa_2 += 8;\
 ENDYUV2RGBLINE(8)
     LOADCHROMA(0);
     PUTRGBA(dst_1,py_1,pa_1,0,24);
-    PUTRGBA(dst_2,py_2,pa_2,0,24);
 
     LOADCHROMA(1);
-    PUTRGBA(dst_2,py_2,pa_1,1,24);
-    PUTRGBA(dst_1,py_1,pa_2,1,24);
+    PUTRGBA(dst_1,py_1,pa_1,1,24);
 ENDYUV2RGBFUNC()
 
 YUV2RGBFUNC(yuva2argb_c, uint32_t, 1)
     LOADCHROMA(0);
     PUTRGBA(dst_1,py_1,pa_1,0,0);
-    PUTRGBA(dst_2,py_2,pa_2,0,0);
 
     LOADCHROMA(1);
-    PUTRGBA(dst_2,py_2,pa_2,1,0);
     PUTRGBA(dst_1,py_1,pa_1,1,0);
 
     LOADCHROMA(2);
     PUTRGBA(dst_1,py_1,pa_1,2,0);
-    PUTRGBA(dst_2,py_2,pa_2,2,0);
 
     LOADCHROMA(3);
-    PUTRGBA(dst_2,py_2,pa_2,3,0);
     PUTRGBA(dst_1,py_1,pa_1,3,0);
     pa_1 += 8;\
-    pa_2 += 8;\
 ENDYUV2RGBLINE(8)
     LOADCHROMA(0);
     PUTRGBA(dst_1,py_1,pa_1,0,0);
-    PUTRGBA(dst_2,py_2,pa_2,0,0);
 
     LOADCHROMA(1);
-    PUTRGBA(dst_2,py_2,pa_2,1,0);
     PUTRGBA(dst_1,py_1,pa_1,1,0);
 ENDYUV2RGBFUNC()
 
 YUV2RGBFUNC(yuv2rgb_c_24_rgb, uint8_t, 0)
     LOADCHROMA(0);
     PUTRGB24(dst_1,py_1,0);
-    PUTRGB24(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTRGB24(dst_2,py_2,1);
     PUTRGB24(dst_1,py_1,1);
 
     LOADCHROMA(2);
     PUTRGB24(dst_1,py_1,2);
-    PUTRGB24(dst_2,py_2,2);
 
     LOADCHROMA(3);
-    PUTRGB24(dst_2,py_2,3);
     PUTRGB24(dst_1,py_1,3);
 ENDYUV2RGBLINE(24)
     LOADCHROMA(0);
     PUTRGB24(dst_1,py_1,0);
-    PUTRGB24(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTRGB24(dst_2,py_2,1);
     PUTRGB24(dst_1,py_1,1);
 ENDYUV2RGBFUNC()
 
@@ -324,50 +278,40 @@ ENDYUV2RGBFUNC()
 YUV2RGBFUNC(yuv2rgb_c_24_bgr, uint8_t, 0)
     LOADCHROMA(0);
     PUTBGR24(dst_1,py_1,0);
-    PUTBGR24(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTBGR24(dst_2,py_2,1);
     PUTBGR24(dst_1,py_1,1);
 
     LOADCHROMA(2);
     PUTBGR24(dst_1,py_1,2);
-    PUTBGR24(dst_2,py_2,2);
 
     LOADCHROMA(3);
-    PUTBGR24(dst_2,py_2,3);
     PUTBGR24(dst_1,py_1,3);
 ENDYUV2RGBLINE(24)
     LOADCHROMA(0);
     PUTBGR24(dst_1,py_1,0);
-    PUTBGR24(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTBGR24(dst_2,py_2,1);
     PUTBGR24(dst_1,py_1,1);
 ENDYUV2RGBFUNC()
 
 // This is exactly the same code as yuv2rgb_c_32 except for the types of
-// r, g, b, dst_1, dst_2
+// r, g, b, dst_1
 YUV2RGBFUNC(yuv2rgb_c_16, uint16_t, 0)
     LOADCHROMA(0);
     PUTRGB(dst_1,py_1,0);
-    PUTRGB(dst_2,py_2,0);
 
     LOADCHROMA(1);
-    PUTRGB(dst_2,py_2,1);
     PUTRGB(dst_1,py_1,1);
 
     LOADCHROMA(2);
     PUTRGB(dst_1,py_1,2);
-    PUTRGB(dst_2,py_2,2);
 
     LOADCHROMA(3);
-    PUTRGB(dst_2,py_2,3);
     PUTRGB(dst_1,py_1,3);
 CLOSEYUV2RGBFUNC(8)
 
-// r, g, b, dst_1, dst_2
+// r, g, b, dst_1
 YUV2RGBFUNC(yuv2rgb_c_12_ordered_dither, uint16_t, 0)
     const uint8_t *d16 = dither_4x4_16[y&3];
 #define PUTRGB12(dst,src,i,o)                                   \
@@ -378,22 +322,18 @@ YUV2RGBFUNC(yuv2rgb_c_12_ordered_dither, uint16_t, 0)
 
     LOADCHROMA(0);
     PUTRGB12(dst_1,py_1,0,0);
-    PUTRGB12(dst_2,py_2,0,0+8);
 
     LOADCHROMA(1);
-    PUTRGB12(dst_2,py_2,1,2+8);
     PUTRGB12(dst_1,py_1,1,2);
 
     LOADCHROMA(2);
     PUTRGB12(dst_1,py_1,2,4);
-    PUTRGB12(dst_2,py_2,2,4+8);
 
     LOADCHROMA(3);
-    PUTRGB12(dst_2,py_2,3,6+8);
     PUTRGB12(dst_1,py_1,3,6);
 CLOSEYUV2RGBFUNC(8)
 
-// r, g, b, dst_1, dst_2
+// r, g, b, dst_1
 YUV2RGBFUNC(yuv2rgb_c_8_ordered_dither, uint8_t, 0)
     const uint8_t *d32 = dither_8x8_32[y&7];
     const uint8_t *d64 = dither_8x8_73[y&7];
@@ -405,18 +345,14 @@ YUV2RGBFUNC(yuv2rgb_c_8_ordered_dither, uint8_t, 0)
 
     LOADCHROMA(0);
     PUTRGB8(dst_1,py_1,0,0);
-    PUTRGB8(dst_2,py_2,0,0+8);
 
     LOADCHROMA(1);
-    PUTRGB8(dst_2,py_2,1,2+8);
     PUTRGB8(dst_1,py_1,1,2);
 
     LOADCHROMA(2);
     PUTRGB8(dst_1,py_1,2,4);
-    PUTRGB8(dst_2,py_2,2,4+8);
 
     LOADCHROMA(3);
-    PUTRGB8(dst_2,py_2,3,6+8);
     PUTRGB8(dst_1,py_1,3,6);
 CLOSEYUV2RGBFUNC(8)
 
@@ -434,18 +370,14 @@ YUV2RGBFUNC(yuv2rgb_c_4_ordered_dither, uint8_t, 0)
 
     LOADCHROMA(0);
     PUTRGB4D(dst_1,py_1,0,0);
-    PUTRGB4D(dst_2,py_2,0,0+8);
 
     LOADCHROMA(1);
-    PUTRGB4D(dst_2,py_2,1,2+8);
     PUTRGB4D(dst_1,py_1,1,2);
 
     LOADCHROMA(2);
     PUTRGB4D(dst_1,py_1,2,4);
-    PUTRGB4D(dst_2,py_2,2,4+8);
 
     LOADCHROMA(3);
-    PUTRGB4D(dst_2,py_2,3,6+8);
     PUTRGB4D(dst_1,py_1,3,6);
 CLOSEYUV2RGBFUNC(4)
 
@@ -461,24 +393,20 @@ YUV2RGBFUNC(yuv2rgb_c_4b_ordered_dither, uint8_t, 0)
 
     LOADCHROMA(0);
     PUTRGB4DB(dst_1,py_1,0,0);
-    PUTRGB4DB(dst_2,py_2,0,0+8);
 
     LOADCHROMA(1);
-    PUTRGB4DB(dst_2,py_2,1,2+8);
     PUTRGB4DB(dst_1,py_1,1,2);
 
     LOADCHROMA(2);
     PUTRGB4DB(dst_1,py_1,2,4);
-    PUTRGB4DB(dst_2,py_2,2,4+8);
 
     LOADCHROMA(3);
-    PUTRGB4DB(dst_2,py_2,3,6+8);
     PUTRGB4DB(dst_1,py_1,3,6);
 CLOSEYUV2RGBFUNC(8)
 
 YUV2RGBFUNC(yuv2rgb_c_1_ordered_dither, uint8_t, 0)
         const uint8_t *d128 = dither_8x8_220[y&7];
-        char out_1 = 0, out_2 = 0;
+        char out_1 = 0;
         g= c->table_gU[128] + c->table_gV[128];
 
 #define PUTRGB1(out,src,i,o)    \
@@ -488,19 +416,14 @@ YUV2RGBFUNC(yuv2rgb_c_1_ordered_dither, uint8_t, 0)
     out+= out + g[Y+d128[1+o]];
 
     PUTRGB1(out_1,py_1,0,0);
-    PUTRGB1(out_2,py_2,0,0+8);
 
-    PUTRGB1(out_2,py_2,1,2+8);
     PUTRGB1(out_1,py_1,1,2);
 
     PUTRGB1(out_1,py_1,2,4);
-    PUTRGB1(out_2,py_2,2,4+8);
 
-    PUTRGB1(out_2,py_2,3,6+8);
     PUTRGB1(out_1,py_1,3,6);
 
     dst_1[0]= out_1;
-    dst_2[0]= out_2;
 CLOSEYUV2RGBFUNC(1)
 
 SwsFunc ff_yuv2rgb_get_func_ptr(SwsContext *c)
