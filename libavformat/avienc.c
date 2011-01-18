@@ -330,7 +330,9 @@ static int avi_write_header(AVFormatContext *s)
 
         if(   stream->codec_type == AVMEDIA_TYPE_VIDEO
            && s->streams[i]->sample_aspect_ratio.num>0
-           && s->streams[i]->sample_aspect_ratio.den>0){
+           && s->streams[i]->sample_aspect_ratio.den>0
+           && !(s->streams[i]->sample_aspect_ratio.num == 1 &&
+                s->streams[i]->sample_aspect_ratio.den == 1)){
             int vprp= ff_start_tag(pb, "vprp");
             AVRational dar = av_mul_q(s->streams[i]->sample_aspect_ratio,
                                       (AVRational){stream->width, stream->height});
