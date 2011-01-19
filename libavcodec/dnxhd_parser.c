@@ -26,7 +26,7 @@
 
 #include "parser.h"
 
-#define DNXHD_HEADER_PREFIX 0x0000028001
+#define DNXHD_HEADER_PREFIX 0x000002800100
 
 static int dnxhd_find_frame_end(ParseContext *pc,
                                 const uint8_t *buf, int buf_size)
@@ -38,7 +38,8 @@ static int dnxhd_find_frame_end(ParseContext *pc,
     if (!pic_found) {
         for (i = 0; i < buf_size; i++) {
             state = (state<<8) | buf[i];
-            if ((state & 0xffffffffffLL) == DNXHD_HEADER_PREFIX) {
+            if ((state & 0xffffffffff00LL) == DNXHD_HEADER_PREFIX &&
+                (state & 0x000000000003LL) < 3) { /* coding unit is progressive frame or field 1 */
                 i++;
                 pic_found = 1;
                 break;
@@ -51,10 +52,11 @@ static int dnxhd_find_frame_end(ParseContext *pc,
             return 0;
         for (; i < buf_size; i++) {
             state = (state<<8) | buf[i];
-            if ((state & 0xffffffffffLL) == DNXHD_HEADER_PREFIX) {
+            if ((state & 0xffffffffff00LL) == DNXHD_HEADER_PREFIX &&
+                (state & 0x000000000003LL) < 3) { /* next coding unit is progressive frame or field 1 */
                 pc->frame_start_found = 0;
                 pc->state64 = -1;
-                return i-4;
+                return i-5;
             }
         }
     }

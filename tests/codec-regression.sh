@@ -220,8 +220,7 @@ do_video_decoding "" "-s cif -pix_fmt yuv420p -sws_flags neighbor+bitexact"
 fi
 
 if [ -n "$do_dnxhd_1080i" ] ; then
-# FIXME: interlaced raw DNxHD decoding is broken
-do_video_encoding dnxhd-1080i.mov "-vcodec dnxhd -flags +ildct -s hd1080 -b 120M -pix_fmt yuv422p -vframes 5 -an"
+do_video_encoding dnxhd-1080i.dnxhd "-vcodec dnxhd -flags +ildct -s hd1080 -b 120M -pix_fmt yuv422p -vframes 5 -an"
 do_video_decoding "" "-s cif -pix_fmt yuv420p"
 fi
 
