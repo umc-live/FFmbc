@@ -1526,7 +1526,7 @@ static void do_video_stats(AVFormatContext *os, OutputStream *ost,
     if (enc->codec_type == AVMEDIA_TYPE_VIDEO) {
         frame_number = ost->frame_number;
         fprintf(vstats_file, "frame= %5d q= %2.1f ", frame_number, enc->coded_frame->quality/(float)FF_QP2LAMBDA);
-        if (enc->flags&CODEC_FLAG_PSNR)
+        if (enc->flags&CODEC_FLAG_PSNR && enc->codec_id != CODEC_ID_H264)
             fprintf(vstats_file, "PSNR= %6.2f ", psnr(enc->coded_frame->error[0]/(enc->width*enc->height*255.0*255.0)));
 
         fprintf(vstats_file,"f_size= %6d ", frame_size);
@@ -1605,7 +1605,7 @@ static void print_report(AVFormatContext **output_files,
                 for(j=0; j<32; j++)
                     snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "%X", (int)lrintf(log(qp_histogram[j]+1)/log(2)));
             }
-            if (enc->flags&CODEC_FLAG_PSNR){
+            if (enc->flags&CODEC_FLAG_PSNR && enc->codec_id != CODEC_ID_H264){
                 int j;
                 double error, error_sum=0;
                 double scale, scale_sum=0;
