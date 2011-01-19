@@ -1445,6 +1445,7 @@ static void do_video_out(AVFormatContext *s,
 
             write_frame(s, &pkt, ost->st->codec, ost->bitstream_filters);
             enc->coded_frame = old_frame;
+            video_size += avpicture_get_size(enc->pix_fmt, enc->width, enc->height);
         } else {
             AVFrame big_picture;
 
@@ -1531,11 +1532,9 @@ static void do_video_stats(AVFormatContext *os, OutputStream *ost,
         fprintf(vstats_file,"f_size= %6d ", frame_size);
         /* compute pts value */
         ti1 = ost->sync_opts * av_q2d(enc->time_base);
-        if (ti1 < 0.01)
-            ti1 = 0.01;
 
         bitrate = (frame_size * 8) / av_q2d(enc->time_base) / 1000.0;
-        avg_bitrate = (double)(video_size * 8) / ti1 / 1000.0;
+        avg_bitrate = ti1 ? video_size * 8 / ti1 / 1000.0 : 0;
         fprintf(vstats_file, "s_size= %8.0fkB time= %0.3f br= %7.1fkbits/s avg_br= %7.1fkbits/s ",
             (double)video_size / 1024, ti1, bitrate, avg_bitrate);
         fprintf(vstats_file, "type= %c\n", av_get_picture_type_char(enc->coded_frame->pict_type));
@@ -1574,8 +1573,10 @@ static void print_report(AVFormatContext **output_files,
     oc = output_files[0];
 
     total_size = avio_size(oc->pb);
-    if(total_size<0) // FIXME improve avio_size() so it works with non seekable output too
+    if(total_size<0) // FIXME improve url_fsize() so it works with non seekable output too
         total_size= avio_tell(oc->pb);
+    if(total_size<0)
+        total_size = 0;
 
     buf[0] = '\0';
     vid = 0;
@@ -1667,8 +1668,7 @@ static void print_report(AVFormatContext **output_files,
                 video_size/1024.0,
                 audio_size/1024.0,
                 extra_size/1024.0,
-                100.0*(total_size - raw)/raw
-        );
+                total_size ? 100.0*(total_size - raw)/raw : 0);
     }
 }
 
