@@ -721,6 +721,8 @@ static void choose_pixel_fmt(AVStream *st, AVCodec *codec)
 {
     if(codec && codec->pix_fmts){
         const enum PixelFormat *p= codec->pix_fmts;
+        enum PixelFormat pix_fmt = codec->pix_fmts[0];
+
         if(st->codec->strict_std_compliance <= FF_COMPLIANCE_UNOFFICIAL){
             if(st->codec->codec_id==CODEC_ID_MJPEG){
                 p= (const enum PixelFormat[]){PIX_FMT_YUVJ420P, PIX_FMT_YUVJ422P, PIX_FMT_YUV420P, PIX_FMT_YUV422P, PIX_FMT_NONE};
@@ -731,6 +733,10 @@ static void choose_pixel_fmt(AVStream *st, AVCodec *codec)
         for(; *p!=-1; p++){
             if(*p == st->codec->pix_fmt)
                 break;
+            if (*p == PIX_FMT_YUV422P &&
+                (st->codec->pix_fmt == PIX_FMT_YUV422P16 ||
+                 st->codec->pix_fmt == PIX_FMT_YUV422P10))
+                pix_fmt = PIX_FMT_YUV422P;
         }
         if (*p == -1) {
             if(st->codec->pix_fmt != PIX_FMT_NONE)
@@ -738,8 +744,8 @@ static void choose_pixel_fmt(AVStream *st, AVCodec *codec)
                         "Incompatible pixel format '%s' for codec '%s', auto-selecting format '%s'\n",
                         av_pix_fmt_descriptors[st->codec->pix_fmt].name,
                         codec->name,
-                        av_pix_fmt_descriptors[codec->pix_fmts[0]].name);
-            st->codec->pix_fmt = codec->pix_fmts[0];
+                        av_pix_fmt_descriptors[pix_fmt].name);
+            st->codec->pix_fmt = pix_fmt;
         }
     }
 }
