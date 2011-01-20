@@ -200,6 +200,16 @@ static int mov_write_stss_tag(AVIOContext *pb, MOVTrack *track, uint32_t flag)
 
 static int mov_write_amr_tag(AVIOContext *pb, MOVTrack *track)
 {
+    /* We must find out how many AMR blocks there are in one packet */
+    static uint16_t packed_size[16] =
+        {13, 14, 16, 18, 20, 21, 27, 32, 6, 0, 0, 0, 0, 0, 0, 0};
+    int len, frames_per_sample = 0;
+
+    for (len = 0; len < track->vosLen;) {
+        len += packed_size[(track->vosData[len] >> 3) & 0x0F];
+        frames_per_sample++;
+    }
+
     avio_wb32(pb, 0x11); /* size */
     if (track->mode == MODE_MOV) avio_wtag(pb, "samr");
     else                         avio_wtag(pb, "damr");
@@ -208,7 +218,8 @@ static int mov_write_amr_tag(AVIOContext *pb, MOVTrack *track)
 
     avio_wb16(pb, 0x81FF); /* Mode set (all modes for AMR_NB) */
     avio_w8(pb, 0x00); /* Mode change period (no restriction) */
-    avio_w8(pb, 0x01); /* Frames per sample */
+
+    avio_w8(pb, frames_per_sample); /* Frames per sample */
     return 0x11;
 }
 
@@ -2239,22 +2250,8 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     if (!s->pb->seekable) return 0; /* Can't handle that */
     if (!size) return 0; /* Discard 0 sized packets */
 
-    if (enc->codec_id == CODEC_ID_AMR_NB) {
-        /* We must find out how many AMR blocks there are in one packet */
-        static uint16_t packed_size[16] =
-            {13, 14, 16, 18, 20, 21, 27, 32, 6, 0, 0, 0, 0, 0, 0, 0};
-        int len = 0;
-
-        while (len < size && samplesInChunk < 100) {
-            len += packed_size[(pkt->data[len] >> 3) & 0x0F];
-            samplesInChunk++;
-        }
-        if(samplesInChunk > 1){
-            av_log(s, AV_LOG_ERROR, "fatal error, input is not a single packet, implement a AVParser for it\n");
-            return -1;
-        }
-    } else if (enc->codec_id == CODEC_ID_ADPCM_MS ||
-               enc->codec_id == CODEC_ID_ADPCM_IMA_WAV) {
+    if (enc->codec_id == CODEC_ID_ADPCM_MS ||
+        enc->codec_id == CODEC_ID_ADPCM_IMA_WAV) {
         samplesInChunk = enc->frame_size;
     } else if (trk->sampleSize)
         samplesInChunk = size/trk->sampleSize;
@@ -2281,6 +2278,7 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     if ((enc->codec_id == CODEC_ID_DNXHD ||
+         enc->codec_id == CODEC_ID_AMR_NB ||
          enc->codec_id == CODEC_ID_AC3) && !trk->vosLen) {
         /* copy frame to create needed atoms */
         trk->vosLen = size;
