@@ -418,7 +418,7 @@ const AVMetadataConv ff_id3v2_34_metadata_conv[] = {
     { "TCOM", "composer"},
     { "TCON", "genre"},
     { "TCOP", "copyright"},
-    { "TENC", "encoded_by"},
+    { "TENC", "encoder"},
     { "TIT2", "title"},
     { "TLAN", "language"},
     { "TPE1", "artist"},
@@ -434,8 +434,8 @@ const AVMetadataConv ff_id3v2_34_metadata_conv[] = {
 };
 
 const AVMetadataConv ff_id3v2_4_metadata_conv[] = {
-    { "TDRL", "date"},
     { "TDRC", "date"},
+    { "TDRL", "release_date"},
     { "TDEN", "creation_time"},
     { "TSOA", "album-sort"},
     { "TSOP", "artist-sort"},
@@ -448,7 +448,7 @@ const AVMetadataConv ff_id3v2_2_metadata_conv[] = {
     { "TCM",  "composer"},
     { "TCO",  "genre"},
     { "TT2",  "title"},
-    { "TEN",  "encoded_by"},
+    { "TEN",  "encoder"},
     { "TP1",  "artist"},
     { "TP2",  "album_artist"},
     { "TP3",  "performer"},

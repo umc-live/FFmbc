@@ -36,8 +36,23 @@
 #include "libavcodec/mpegaudiodecheader.h"
 #include "libavformat/avio_internal.h"
 #include "libavutil/dict.h"
+#include "libavutil/avstring.h"
 
 /* simple formats */
+
+static int len_put_str16(const char *str)
+{
+    const uint8_t *q = str;
+    int ret = 0;
+    uint32_t ch;
+
+    do {
+        uint16_t tmp;
+        GET_UTF8(ch, *q++, break;);
+        PUT_UTF16(ch, tmp, ret += 2;);
+    } while (ch);
+    return ret;
+}
 
 static void id3v2_put_size(AVFormatContext *s, int size)
 {
@@ -51,48 +66,6 @@ static int string_is_ascii(const uint8_t *str)
 {
     while (*str && *str < 128) str++;
     return !*str;
-}
-
-/**
- * Write a text frame with one (normal frames) or two (TXXX frames) strings
- * according to encoding (only UTF-8 or UTF-16+BOM supported).
- * @return number of bytes written or a negative error code.
- */
-static int id3v2_put_ttag(AVFormatContext *s, const char *str1, const char *str2,
-                          uint32_t tag, enum ID3v2Encoding enc)
-{
-    int len;
-    uint8_t *pb;
-    int (*put)(AVIOContext*, const char*);
-    AVIOContext *dyn_buf;
-    if (avio_open_dyn_buf(&dyn_buf) < 0)
-        return AVERROR(ENOMEM);
-
-    /* check if the strings are ASCII-only and use UTF16 only if
-     * they're not */
-    if (enc == ID3v2_ENCODING_UTF16BOM && string_is_ascii(str1) &&
-        (!str2 || string_is_ascii(str2)))
-        enc = ID3v2_ENCODING_ISO8859;
-
-    avio_w8(dyn_buf, enc);
-    if (enc == ID3v2_ENCODING_UTF16BOM) {
-        avio_wl16(dyn_buf, 0xFEFF);      /* BOM */
-        put = avio_put_str16le;
-    } else
-        put = avio_put_str;
-
-    put(dyn_buf, str1);
-    if (str2)
-        put(dyn_buf, str2);
-    len = avio_close_dyn_buf(dyn_buf, &pb);
-
-    avio_wb32(s->pb, tag);
-    id3v2_put_size(s, len);
-    avio_wb16(s->pb, 0);
-    avio_write(s->pb, pb, len);
-
-    av_freep(&pb);
-    return len + ID3v2_HEADER_SIZE;
 }
 
 #define VBR_NUM_BAGS 400
@@ -109,7 +82,39 @@ typedef struct MP3Context {
     uint64_t bag[VBR_NUM_BAGS];
 } MP3Context;
 
-static int id3v2_put_apic(AVFormatContext *s, AVDictionaryEntry *tag)
+static int id3v2_put_tag(AVFormatContext *s, const char *key, const char *value, int version)
+{
+    int len, encoding;
+
+    if (version == 4)
+        encoding = 3; // utf-8
+    else if (string_is_ascii(value))
+        encoding = 0; // iso-8859-1
+    else
+        encoding = 1; // utf-16be
+
+    if (encoding == 1)
+        len = 2+len_put_str16(value);
+    else
+        len = strlen(value)+1;
+
+    avio_wtag(s->pb, key);
+    if (version == 4)
+        id3v2_put_size(s, 1+len);
+    else
+        avio_wb32(s->pb, 1+len);
+    avio_wb16(s->pb, 0);
+    avio_w8(s->pb, encoding);
+    if (encoding == 1) {
+        avio_wb16(s->pb, 0xfffe); // BOM
+        avio_put_str16le(s->pb, value);
+    } else {
+        avio_write(s->pb, value, len);
+    }
+    return 4+4+2+1+len;
+}
+
+static int id3v2_put_apic(AVFormatContext *s, AVDictionaryEntry *tag, int version)
 {
     const char *mime = av_metadata_get_attribute(tag, "mime");
     int len;
@@ -119,7 +124,10 @@ static int id3v2_put_apic(AVFormatContext *s, AVDictionaryEntry *tag)
     }
     avio_wtag(s->pb, "APIC");
     len = 1+strlen(mime)+1+1+1+tag->len;
-    id3v2_put_size(s, len);
+    if (version == 4)
+        id3v2_put_size(s, len);
+    else
+        avio_wb32(s->pb, len);
     avio_wb16(s->pb, 0); // flags
     avio_w8(s->pb, 0); // encoding
     avio_put_str(s->pb, mime);
@@ -129,22 +137,45 @@ static int id3v2_put_apic(AVFormatContext *s, AVDictionaryEntry *tag)
     return 4+4+2+len;
 }
 
-static int id3v2_put_uslt(AVFormatContext *s, AVDictionaryEntry *tag)
+static int id3v2_put_uslt(AVFormatContext *s, AVDictionaryEntry *tag, int version)
 {
     const char *lang = av_metadata_get_attribute(tag, "language");
-    int len;
+    int data_len, len, encoding;
+
+    if (version == 4)
+        encoding = 3; // utf-8
+    else if (string_is_ascii(tag->value))
+        encoding = 0; // iso-8859-1
+    else
+        encoding = 1; // utf-16be
+
+    if (encoding == 1)
+        data_len = 2+2 + 2+len_put_str16(tag->value);
+    else
+        data_len = 1 + strlen(tag->value)+1;
+    len = 1+3+data_len;
+
     avio_wtag(s->pb, "USLT");
-    len = 1+3+1+tag->len;
-    id3v2_put_size(s, len);
+    if (version == 4)
+        id3v2_put_size(s, len);
+    else
+        avio_wb32(s->pb, len);
     avio_wb16(s->pb, 0); // flags
-    avio_w8(s->pb, 3); // encoding
+    avio_w8(s->pb, encoding);
     if (!lang)
         lang = "eng";
     avio_w8(s->pb, lang[0]);
     avio_w8(s->pb, lang[1]);
     avio_w8(s->pb, lang[2]);
-    avio_w8(s->pb, 0); // description
-    avio_write(s->pb, tag->value, tag->len);
+    if (encoding != 1) {
+        avio_w8(s->pb, 0); // description
+        avio_put_str(s->pb, tag->value);
+    } else {
+        avio_wb16(s->pb, 0xfffe); // BOM
+        avio_wb16(s->pb, 0); // description
+        avio_wb16(s->pb, 0xfffe);
+        avio_put_str16le(s->pb, tag->value);
+    }
     return 4+4+2+len;
 }
 
@@ -164,7 +195,7 @@ AVOutputFormat ff_mp2_muxer = {
 
 static const AVOption options[] = {
     { "id3v2_version", "Select ID3v2 version to write. Currently 3 and 4 are supported.",
-      offsetof(MP3Context, id3v2_version), FF_OPT_TYPE_INT, {.dbl = 4}, 3, 4, AV_OPT_FLAG_ENCODING_PARAM},
+      offsetof(MP3Context, id3v2_version), FF_OPT_TYPE_INT, {.dbl = 3}, 3, 4, AV_OPT_FLAG_ENCODING_PARAM},
     { NULL },
 };
 
@@ -175,23 +206,29 @@ static const AVClass mp3_muxer_class = {
     .version        = LIBAVUTIL_VERSION_INT,
 };
 
-static int id3v2_check_write_tag(AVFormatContext *s, AVDictionaryEntry *t, const char table[][4],
-                                 enum ID3v2Encoding enc)
+static int id3v2_check_write_tag(AVFormatContext *s, AVDictionaryEntry *t,
+                                 const char table[][4], int version)
 {
-    uint32_t tag;
+    MP3Context *mp3 = s->priv_data;
     int i;
 
     if (!strcmp(t->key, "APIC"))
-        return id3v2_put_apic(s, t);
+        return id3v2_put_apic(s, t, version);
     else if (!strcmp(t->key, "USLT"))
-        return id3v2_put_uslt(s, t);
+        return id3v2_put_uslt(s, t, version);
     else if (t->key[0] != 'T' || strlen(t->key) != 4)
-        return -1;
-    tag = AV_RB32(t->key);
-    for (i = 0; *table[i]; i++)
-        if (tag == AV_RB32(table[i]))
-            return id3v2_put_ttag(s, t->value, NULL, tag, enc);
-    return -1;
+        return 0;
+
+    if (!table) {
+        table = mp3->id3v2_version == 3 ?
+            ff_id3v2_3_tags : ff_id3v2_4_tags;
+    }
+
+    for (i = 0; *table[i]; i++) {
+        if (AV_RB32(t->key) == AV_RB32(table[i]))
+            return id3v2_put_tag(s, t->key, t->value, version);
+    }
+    return 0;
 }
 
 static const int64_t xing_offtbl[2][2] = {{32, 17}, {17,9}};
@@ -339,8 +376,7 @@ static int mp3_write_header(struct AVFormatContext *s)
 {
     MP3Context  *mp3 = s->priv_data;
     AVDictionaryEntry *t = NULL;
-    int totlen = 0, enc = mp3->id3v2_version == 3 ? ID3v2_ENCODING_UTF16BOM :
-                                                    ID3v2_ENCODING_UTF8;
+    int totlen = 0;
     int64_t size_pos, cur_pos;
 
     avio_wb32(s->pb, MKBETAG('I', 'D', '3', mp3->id3v2_version));
@@ -356,21 +392,9 @@ static int mp3_write_header(struct AVFormatContext *s)
         ff_metadata_conv(&s->metadata, ff_id3v2_4_metadata_conv, NULL);
 
     while ((t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX))) {
-        int ret;
-
-        if ((ret = id3v2_check_write_tag(s, t, ff_id3v2_tags, enc)) > 0) {
-            totlen += ret;
-            continue;
-        }
-        if ((ret = id3v2_check_write_tag(s, t, mp3->id3v2_version == 3 ?
-                                               ff_id3v2_3_tags : ff_id3v2_4_tags, enc)) > 0) {
-            totlen += ret;
-            continue;
-        }
-
-        /* unknown tag, write as TXXX frame */
-        if ((ret = id3v2_put_ttag(s, t->key, t->value, MKBETAG('T', 'X', 'X', 'X'), enc)) < 0)
-            return ret;
+        int ret = id3v2_check_write_tag(s, t, ff_id3v2_tags, mp3->id3v2_version);
+        if (ret <= 0)
+            ret = id3v2_check_write_tag(s, t, NULL, mp3->id3v2_version);
         totlen += ret;
     }
 
