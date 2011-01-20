@@ -2140,6 +2140,8 @@ static int has_codec_parameters(AVCodecContext *avctx)
     case AVMEDIA_TYPE_VIDEO:
         val = avctx->width && avctx->pix_fmt != PIX_FMT_NONE;
         break;
+    case AVMEDIA_TYPE_DATA:
+        return avctx->codec_id != CODEC_ID_PROBE;
     default:
         val = 1;
         break;
@@ -2366,9 +2368,8 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             if (ic->fps_probe_size >= 0)
                 fps_analyze_framecount = ic->fps_probe_size;
             /* variable fps and no guess at the real fps */
-            if(   tb_unreliable(st->codec) && !(st->r_frame_rate.num && st->avg_frame_rate.num)
-               && st->info->duration_count < fps_analyze_framecount
-               && st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+            if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+               (!st->r_frame_rate.num || st->codec->frame_number < 1))
                 break;
             if(st->parser && st->parser->parser->split && !st->codec->extradata)
                 break;
