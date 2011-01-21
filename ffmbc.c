@@ -143,9 +143,8 @@ static int nb_audio_channel_maps;
 /* first item specifies output metadata, second is input */
 static MetadataMap (*meta_data_maps)[2] = NULL;
 static int nb_meta_data_maps;
-static int metadata_global_autocopy   = 1;
-static int metadata_streams_autocopy  = 1;
-static int metadata_chapters_autocopy = 1;
+static int metadata_streams_autocopy  = 0;
+static int metadata_chapters_autocopy = 0;
 
 static ChapterMap *chapter_maps = NULL;
 static int nb_chapter_maps;
@@ -2837,14 +2836,6 @@ static int transcode(AVFormatContext **output_files,
         av_dict_copy(meta[0], *meta[1], AV_DICT_DONT_OVERWRITE);
     }
 
-    /* copy global metadata by default */
-    if (metadata_global_autocopy) {
-
-        for (i = 0; i < nb_output_files; i++)
-            av_dict_copy(&output_files[i]->metadata, input_files[0].ctx->metadata,
-                         AV_DICT_DONT_OVERWRITE);
-    }
-
     /* copy chapters according to chapter maps */
     for (i = 0; i < nb_chapter_maps; i++) {
         int infile  = chapter_maps[i].in_file;
@@ -2864,18 +2855,6 @@ static int transcode(AVFormatContext **output_files,
         }
         copy_chapters(infile, outfile);
     }
-
-    /* copy chapters from the first input file that has them*/
-    if (!nb_chapter_maps)
-        for (i = 0; i < nb_input_files; i++) {
-            if (!input_files[i].ctx->nb_chapters)
-                continue;
-
-            for (j = 0; j < nb_output_files; j++)
-                if ((ret = copy_chapters(i, j)) < 0)
-                    goto fail;
-            break;
-        }
 
     /* open files and write file headers */
     for(i=0;i<nb_output_files;i++) {
@@ -3591,13 +3570,6 @@ static int opt_map_metadata(const char *opt, const char *arg)
     m1 = &meta_data_maps[nb_meta_data_maps - 1][1];
     m1->file = strtol(p, &p, 0);
     parse_meta_type(p, &m1->type, &m1->index, &p);
-
-    if (m->type == 'g' || m1->type == 'g')
-        metadata_global_autocopy = 0;
-    if (m->type == 's' || m1->type == 's')
-        metadata_streams_autocopy = 0;
-    if (m->type == 'c' || m1->type == 'c')
-        metadata_chapters_autocopy = 0;
 
     return 0;
 }
@@ -4813,6 +4785,8 @@ static const OptionDef options[] = {
     { "map_chapters",  HAS_ARG | OPT_EXPERT, {(void*)opt_map_chapters},  "set chapters mapping", "outfile:infile" },
     { "t", HAS_ARG, {(void*)opt_recording_time}, "record or transcode \"duration\" seconds of audio/video", "duration" },
     { "map_audio_channel", HAS_ARG | OPT_EXPERT, {(void*)opt_map_audio_channel}, "set audio channel extraction on stream", "file.stream:channel:outfile.stream[:channel]" },
+    { "copy_chapters_metadata", OPT_BOOL, {(void*)&metadata_chapters_autocopy}, "copy chapters metadata"},
+    { "copy_streams_metadata", OPT_BOOL, {(void*)&metadata_streams_autocopy}, "copy streams metadata"},
     { "fs", HAS_ARG | OPT_INT64, {(void*)&limit_filesize}, "set the limit file size in bytes", "limit_size" }, //
     { "ss", HAS_ARG, {(void*)opt_start_time}, "set the start time offset", "time_off" },
     { "itsoffset", HAS_ARG, {(void*)opt_input_ts_offset}, "set the input ts offset", "time_off" },
