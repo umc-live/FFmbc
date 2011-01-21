@@ -2172,7 +2172,7 @@ static int try_decode_frame(AVStream *st, AVPacket *avpkt, AVDictionary **option
     }
 
     if(!has_codec_parameters(st->codec) || !has_decode_delay_been_guessed(st) ||
-       (!st->codec_info_nb_frames && st->codec->codec->capabilities & CODEC_CAP_CHANNEL_CONF)) {
+       st->codec->frame_number < 1){
         switch(st->codec->codec_type) {
         case AVMEDIA_TYPE_VIDEO:
             avcodec_get_frame_defaults(&picture);
@@ -2304,16 +2304,6 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
     for(i=0;i<ic->nb_streams;i++) {
         AVCodec *codec;
         st = ic->streams[i];
-        if (st->codec->codec_id == CODEC_ID_AAC && st->codec->extradata_size) {
-            // We need to discard these since they can be plain wrong for
-            // backwards compatible HE-AAC signaling.
-            // But when we have no extradata we need to keep them or we can't
-            // play anything at all.
-            st->codec->sample_rate = 0;
-            st->codec->frame_size = 0;
-            st->codec->channels = 0;
-        }
-
         if (st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE) {
             if(!st->codec->time_base.num)
                 st->codec->time_base= st->time_base;
@@ -2477,10 +2467,6 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
            decompress the frame. We try to avoid that in most cases as
            it takes longer and uses more memory. For MPEG-4, we need to
            decompress for QuickTime.
-
-           If CODEC_CAP_CHANNEL_CONF is set this will force decoding of at
-           least one frame of codec data, this makes sure the codec initializes
-           the channel configuration and does not only trust the values from the container.
         */
         try_decode_frame(st, pkt, (options && i < orig_nb_streams )? &options[i] : NULL);
 
