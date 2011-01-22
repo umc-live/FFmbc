@@ -571,7 +571,7 @@ static int mov_write_avcc_tag(AVIOContext *pb, MOVTrack *track)
 
     avio_wb32(pb, 0);
     avio_wtag(pb, "avcC");
-    ff_isom_write_avcc(pb, track->vosData, track->vosLen);
+    ff_isom_write_avcc(track->enc, pb);
     return updateSize(pb, pos);
 }
 
@@ -2265,10 +2265,11 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
         memcpy(trk->vosData, enc->extradata, trk->vosLen);
     }
 
-    if (enc->codec_id == CODEC_ID_H264 && trk->vosLen > 0 && *(uint8_t *)trk->vosData != 1) {
+    if (enc->codec_id == CODEC_ID_H264 &&
+        pkt->size > 4 && AV_RB32(pkt->data) == 0x00000001) {
         /* from x264 or from bytestream h264 */
         /* nal reformating needed */
-        size = ff_avc_parse_nal_units(pb, pkt->data, pkt->size);
+        size = ff_avc_parse_nal_units(enc, pb, pkt->data, pkt->size);
     } else if (enc->codec_id == CODEC_ID_AAC && pkt->size > 2 &&
                (AV_RB16(pkt->data) & 0xfff0) == 0xfff0) {
         av_log(s, AV_LOG_ERROR, "malformated aac bitstream, use -absf aac_adtstoasc\n");

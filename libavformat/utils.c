@@ -2308,13 +2308,6 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             if(!st->codec->time_base.num)
                 st->codec->time_base= st->time_base;
         }
-        //only for the split stuff
-        if (!st->parser && !(ic->flags & AVFMT_FLAG_NOPARSE)) {
-            st->parser = av_parser_init(st->codec->codec_id);
-            if(st->need_parsing == AVSTREAM_PARSE_HEADERS && st->parser){
-                st->parser->flags |= PARSER_FLAG_COMPLETE_FRAMES;
-            }
-        }
         assert(!st->codec->codec);
         codec = avcodec_find_decoder(st->codec->codec_id);
 
@@ -2360,8 +2353,6 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             /* variable fps and no guess at the real fps */
             if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
                (!st->r_frame_rate.num || st->codec->frame_number < 1))
-                break;
-            if(st->parser && st->parser->parser->split && !st->codec->extradata)
                 break;
             if(st->first_dts == AV_NOPTS_VALUE &&
                (st->codec->codec_type == AVMEDIA_TYPE_VIDEO ||
@@ -2453,7 +2444,9 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             if (last == AV_NOPTS_VALUE || st->info->duration_count <= 1)
                 st->info->last_dts = pkt->dts;
         }
-        if(st->parser && st->parser->parser->split && !st->codec->extradata){
+
+        /* FIXME change the decoder */
+        if(st->codec->codec_id == CODEC_ID_VC1 && !st->codec->extradata && st->parser){
             int i= st->parser->parser->split(st->codec, pkt->data, pkt->size);
             if(i){
                 st->codec->extradata_size= i;

@@ -313,7 +313,7 @@ static int flv_write_header(AVFormatContext *s)
                 avio_w8(pb, enc->codec_tag | FLV_FRAME_KEY); // flags
                 avio_w8(pb, 0); // AVC sequence header
                 avio_wb24(pb, 0); // composition time
-                ff_isom_write_avcc(pb, enc->extradata, enc->extradata_size);
+                ff_isom_write_avcc(enc, pb);
             }
             data_size = avio_tell(pb) - pos;
             avio_seek(pb, -data_size - 10, SEEK_CUR);
@@ -396,8 +396,8 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (enc->codec_id == CODEC_ID_H264) {
         /* check if extradata looks like mp4 formated */
-        if (enc->extradata_size > 0 && *(uint8_t*)enc->extradata != 1) {
-            if (ff_avc_parse_nal_units_buf(pkt->data, &data, &size) < 0)
+        if (pkt->size > 4 && AV_RB32(pkt->data) == 0x00000001) {
+            if (ff_avc_parse_nal_units_buf(enc, pkt->data, &data, &size) < 0)
                 return -1;
         }
         if (!flv->delay && pkt->dts < 0)

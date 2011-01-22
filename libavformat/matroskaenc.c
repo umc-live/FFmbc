@@ -466,7 +466,7 @@ static int mkv_write_codecprivate(AVFormatContext *s, AVIOContext *pb, AVCodecCo
         else if (codec->codec_id == CODEC_ID_FLAC)
             ret = ff_flac_write_header(dyn_cp, codec, 1);
         else if (codec->codec_id == CODEC_ID_H264)
-            ret = ff_isom_write_avcc(dyn_cp, codec->extradata, codec->extradata_size);
+            ret = ff_isom_write_avcc(codec, dyn_cp);
         else if (codec->extradata_size)
             avio_write(dyn_cp, codec->extradata, codec->extradata_size);
     } else if (codec->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -978,9 +978,10 @@ static void mkv_write_block(AVFormatContext *s, AVIOContext *pb,
     av_log(s, AV_LOG_DEBUG, "Writing block at offset %" PRIu64 ", size %d, "
            "pts %" PRId64 ", dts %" PRId64 ", duration %d, flags %d\n",
            avio_tell(pb), pkt->size, pkt->pts, pkt->dts, pkt->duration, flags);
-    if (codec->codec_id == CODEC_ID_H264 && codec->extradata_size > 0 &&
-        (AV_RB24(codec->extradata) == 1 || AV_RB32(codec->extradata) == 1))
-        ff_avc_parse_nal_units_buf(pkt->data, &data, &size);
+    if (codec->codec_id == CODEC_ID_H264 &&
+        pkt->size >= 4 && (AV_RB32(pkt->data) == 0x00000001 ||
+                           AV_RB24(pkt->data) == 0x000001))
+        ff_avc_parse_nal_units_buf(codec, pkt->data, &data, &size);
     else
         data = pkt->data;
     put_ebml_id(pb, blockid);

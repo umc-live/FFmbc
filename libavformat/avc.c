@@ -67,69 +67,107 @@ const uint8_t *ff_avc_find_startcode(const uint8_t *p, const uint8_t *end){
     return out;
 }
 
-int ff_avc_parse_nal_units(AVIOContext *pb, const uint8_t *buf_in, int size)
+int ff_avc_parse_nal_units(AVCodecContext *avctx, AVIOContext *pb, const uint8_t *buf_in, int size)
 {
     const uint8_t *p = buf_in;
     const uint8_t *end = p + size;
-    const uint8_t *nal_start, *nal_end;
+    const uint8_t *nal_start, *nal_next, *nal_end;
+    int sps_size = 0, pps_size = 0;
+    uint8_t *sps = NULL, *pps = NULL;
 
     size = 0;
     nal_start = ff_avc_find_startcode(p, end);
     while (nal_start < end) {
         while(!*(nal_start++));
-        nal_end = ff_avc_find_startcode(nal_start, end);
+        nal_next = ff_avc_find_startcode(nal_start, end);
+        for (nal_end = nal_next; nal_end > nal_start; nal_end--)
+            if (*nal_end)
+                break;
+        nal_end++;
+        switch (*nal_start & 0x1f) {
+        case 7: // sps
+            if (!avctx->extradata && !sps) {
+                sps = av_malloc(4 + nal_end - nal_start);
+                if (!sps)
+                    return AVERROR(ENOMEM);
+                AV_WB32(sps, 1);
+                memcpy(sps + 4, nal_start, nal_end - nal_start);
+                sps_size = 4 + nal_end - nal_start;
+                goto skip;
+            }
+            break;
+        case 8: // pps
+            if (!avctx->extradata && !pps) {
+                pps = av_malloc(4 + nal_end - nal_start);
+                if (!pps)
+                    return AVERROR(ENOMEM);
+                AV_WB32(pps, 1);
+                memcpy(pps + 4, nal_start, nal_end - nal_start);
+                pps_size = 4 + nal_end - nal_start;
+                goto skip;
+            }
+            break;
+        case 9:
+            goto skip;
+        }
         avio_wb32(pb, nal_end - nal_start);
         avio_write(pb, nal_start, nal_end - nal_start);
         size += 4 + nal_end - nal_start;
-        nal_start = nal_end;
+    skip:
+        nal_start = nal_next;
     }
+
+    if (!avctx->extradata && sps && pps) {
+        avctx->extradata = av_malloc(sps_size + pps_size);
+        if (!avctx->extradata)
+            return AVERROR(ENOMEM);
+        memcpy(avctx->extradata, sps, sps_size);
+        memcpy(avctx->extradata+sps_size, pps, pps_size);
+        avctx->extradata_size = sps_size + pps_size;
+    }
+
     return size;
 }
 
-int ff_avc_parse_nal_units_buf(const uint8_t *buf_in, uint8_t **buf, int *size)
+int ff_avc_parse_nal_units_buf(AVCodecContext *avctx, const uint8_t *buf_in, uint8_t **buf, int *size)
 {
     AVIOContext *pb;
     int ret = avio_open_dyn_buf(&pb);
     if(ret < 0)
         return ret;
 
-    ff_avc_parse_nal_units(pb, buf_in, *size);
+    ff_avc_parse_nal_units(avctx, pb, buf_in, *size);
 
     av_freep(buf);
     *size = avio_close_dyn_buf(pb, buf);
     return 0;
 }
 
-int ff_isom_write_avcc(AVIOContext *pb, const uint8_t *data, int len)
+int ff_isom_write_avcc(AVCodecContext *avctx, AVIOContext *pb)
 {
-    if (len > 6) {
+    if (avctx->extradata_size > 6) {
         /* check for h264 start code */
-        if (AV_RB32(data) == 0x00000001 ||
-            AV_RB24(data) == 0x000001) {
-            uint8_t *buf=NULL, *end, *start;
+        if (AV_RB32(avctx->extradata) == 0x00000001 ||
+            AV_RB24(avctx->extradata) == 0x000001) {
+            const uint8_t *p = avctx->extradata, *end = p + avctx->extradata_size, *nal_end;
             uint32_t sps_size=0, pps_size=0;
-            uint8_t *sps=0, *pps=0;
-
-            int ret = ff_avc_parse_nal_units_buf(data, &buf, &len);
-            if (ret < 0)
-                return ret;
-            start = buf;
-            end = buf + len;
+            const uint8_t *sps = 0, *pps = 0;
+            int nal_type;
 
             /* look for sps and pps */
-            while (buf < end) {
-                unsigned int size;
-                uint8_t nal_type;
-                size = AV_RB32(buf);
-                nal_type = buf[4] & 0x1f;
-                if (nal_type == 7) { /* SPS */
-                    sps = buf + 4;
-                    sps_size = size;
-                } else if (nal_type == 8) { /* PPS */
-                    pps = buf + 4;
-                    pps_size = size;
+            p = ff_avc_find_startcode(p, end);
+            while (p < end) {
+                while(!*(p++));
+                nal_end = ff_avc_find_startcode(p, end);
+                nal_type = *p & 0x1f;
+                if (nal_type == 7 && !sps) { /* SPS */
+                    sps = p;
+                    sps_size = nal_end - p;
+                } else if (nal_type == 8 && !pps) { /* PPS */
+                    pps = p;
+                    pps_size = nal_end - p;
                 }
-                buf += size + 4;
+                p = nal_end;
             }
             assert(sps);
             assert(pps);
@@ -146,9 +184,8 @@ int ff_isom_write_avcc(AVIOContext *pb, const uint8_t *data, int len)
             avio_w8(pb, 1); /* number of pps */
             avio_wb16(pb, pps_size);
             avio_write(pb, pps, pps_size);
-            av_free(start);
         } else {
-            avio_write(pb, data, len);
+            avio_write(pb, avctx->extradata, avctx->extradata_size);
         }
     }
     return 0;

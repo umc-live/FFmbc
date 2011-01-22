@@ -2453,10 +2453,16 @@ static int transcode(AVFormatContext **output_files,
         codec->chroma_sample_location = icodec->chroma_sample_location;
 
         if (ost->st->stream_copy) {
-            uint64_t extra_size = (uint64_t)icodec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE;
-
-            if (extra_size > INT_MAX)
-                goto fail;
+            if (icodec->extradata_size > 0) {
+                uint64_t extra_size = (uint64_t)icodec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE;
+                if (extra_size > INT_MAX)
+                    goto fail;
+                codec->extradata = av_mallocz(extra_size);
+                if (!codec->extradata)
+                    goto fail;
+                memcpy(codec->extradata, icodec->extradata, icodec->extradata_size);
+                codec->extradata_size = icodec->extradata_size;
+            }
 
             /* generate pts for source file */
             input_files[ist->file_index].ctx->flags |= AVFMT_FLAG_GENPTS;
@@ -2477,11 +2483,6 @@ static int transcode(AVFormatContext **output_files,
             codec->bit_rate = icodec->bit_rate;
             codec->rc_max_rate    = icodec->rc_max_rate;
             codec->rc_buffer_size = icodec->rc_buffer_size;
-            codec->extradata= av_mallocz(extra_size);
-            if (!codec->extradata)
-                goto fail;
-            memcpy(codec->extradata, icodec->extradata, icodec->extradata_size);
-            codec->extradata_size= icodec->extradata_size;
 
             codec->time_base = ist->st->time_base;
             if(!strcmp(os->oformat->name, "avi")) {
