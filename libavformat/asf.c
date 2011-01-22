@@ -155,6 +155,8 @@ const AVMetadataConv ff_asf_metadata_conv[] = {
     { "WM/Track"           , "track"       },
     { "WM/MediaStationCallSign", "service_provider" },
     { "WM/MediaStationName", "service_name" },
-//  { "Year"               , "date"        }, TODO: conversion year<->date
+    { "WM/Year"            , "year"        },
+    { "WM/Lyrics"          , "lyrics"      },
+    { "WM/Picture"         , "cover"       },
     { 0 }
 };

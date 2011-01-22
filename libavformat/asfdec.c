@@ -151,6 +151,28 @@ static int get_value(AVIOContext *pb, int type){
     }
 }
 
+static int asf_read_cover(AVFormatContext *s, int type, int len)
+{
+    AVDictionaryEntry *tag = NULL;
+    char mime[128];
+    char tmp[128];
+    uint8_t *data;
+    int data_len;
+
+    avio_r8(s->pb); // type
+    data_len = avio_rl32(s->pb);
+    avio_get_str16le(s->pb, data_len, mime, sizeof(mime));
+    avio_get_str16le(s->pb, data_len, tmp, sizeof(tmp));
+    if (!(data = av_malloc(data_len)))
+        return AVERROR(ENOMEM);
+    avio_read(s->pb, data, data_len);
+    if (av_dict_set_custom(&s->metadata, &tag, METADATA_BYTEARRAY, "cover",
+                           data, data_len, AV_DICT_DONT_STRDUP_VAL) < 0)
+        return -1;
+    av_metadata_set_attribute(tag, "mime", mime);
+    return 0;
+}
+
 static void get_tag(AVFormatContext *s, const char *key, int type, int len)
 {
     int64_t off = avio_tell(s->pb);
@@ -487,6 +509,8 @@ static int asf_read_ext_content_desc(AVFormatContext *s, int64_t size)
             asf->dar[0].num= get_value(s->pb, value_type);
         } else if(!strcmp(name, "AspectRatioY")){
             asf->dar[0].den= get_value(s->pb, value_type);
+        } else if(!strcmp(name, "WM/Picture")){
+            asf_read_cover(s, value_type, value_len);
         } else
             get_tag(s, name, value_type, value_len);
     }

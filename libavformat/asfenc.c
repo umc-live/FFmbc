@@ -385,9 +385,33 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size, int64_t data
         hpos = put_header(pb, &ff_asf_extended_content_header);
         avio_wl16(pb, metadata_count);
         while ((tag = av_dict_get(s->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-            put_str16(pb, tag->key);
-            avio_wl16(pb, 0);
-            put_str16(pb, tag->value);
+            if (!strcmp(tag->key, "WM/Picture")) {
+                const char *mime = av_metadata_get_attribute(tag, "mime");
+                int len;
+                if (!mime) {
+                    av_log(s, AV_LOG_ERROR, "error, no mime type set for cover\n");
+                    return 0;
+                }
+                len = 1 + 4 + (strlen(mime)+1)*2 + 2 + tag->len;
+                put_str16(pb, tag->key);
+                avio_wl16(pb, 1);
+                avio_wl16(pb, len);
+                avio_w8(pb, 3);
+                avio_wl32(pb, tag->len);
+                put_str16(pb, mime);
+                avio_wl16(pb, 0);
+                avio_write(pb, tag->value, tag->len);
+            } else if (!strncmp(tag->key, "WM/", 3)) {
+                put_str16(pb, tag->key);
+                if (tag->type == METADATA_BYTEARRAY) {
+                    avio_wl16(pb, 1);
+                    avio_wl16(pb, tag->len);
+                    avio_write(pb, tag->value, tag->len);
+                } else {
+                    avio_wl16(pb, 0);
+                    put_str16(pb, tag->value);
+                }
+            }
         }
         end_header(pb, hpos);
     }
