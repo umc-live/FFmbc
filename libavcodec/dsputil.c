@@ -2724,6 +2724,28 @@ static void ff_wmv2_idct_add_c(uint8_t *dest, int line_size, DCTELEM *block)
     ff_wmv2_idct_c(block);
     ff_add_pixels_clamped_c(block, dest, line_size);
 }
+
+static void ff_put_pixels_clamped_10(const DCTELEM *block, uint8_t *restrict pixels, int stride)
+{
+    int16_t *p = (int16_t*)pixels;
+    int i, j;
+
+    stride >>= 1;
+    for(i = 0; i < 8; i++) {
+        for (j = 0; j < 8; j++) {
+            p[j] = av_clip(block[j], 4, 1019);
+        }
+        p += stride;
+        block += 8;
+    }
+}
+
+static void ff_simple_idct_put_clamped_10(uint8_t *dest, int line_size, DCTELEM *block)
+{
+    ff_simple_idct_10(block);
+    ff_put_pixels_clamped_10(block, dest, line_size);
+}
+
 static void ff_jref_idct_put(uint8_t *dest, int line_size, DCTELEM *block)
 {
     j_rev_dct (block);
@@ -2853,7 +2875,10 @@ av_cold void dsputil_init(DSPContext* c, AVCodecContext *avctx)
         c->idct_permutation_type= FF_NO_IDCT_PERM;
     }else{
         if (avctx->bits_per_raw_sample == 10) {
-            c->idct_put              = ff_simple_idct_put_10;
+            if (avctx->codec_id == CODEC_ID_PRORES)
+                c->idct_put          = ff_simple_idct_put_clamped_10;
+            else
+                c->idct_put          = ff_simple_idct_put_10;
             c->idct_add              = ff_simple_idct_add_10;
             c->idct                  = ff_simple_idct_10;
             c->idct_permutation_type = FF_NO_IDCT_PERM;

@@ -64,6 +64,7 @@ DECLARE_ALIGNED(16, const xmm_reg,  ff_pw_64 ) = {0x0040004000400040ULL, 0x00400
 DECLARE_ALIGNED(8,  const uint64_t, ff_pw_96 ) = 0x0060006000600060ULL;
 DECLARE_ALIGNED(8,  const uint64_t, ff_pw_128) = 0x0080008000800080ULL;
 DECLARE_ALIGNED(8,  const uint64_t, ff_pw_255) = 0x00ff00ff00ff00ffULL;
+DECLARE_ALIGNED(16, const xmm_reg,  ff_pw_1019) = {0x03FB03FB03FB03FBULL, 0x03FB03FB03FB03FBULL};
 
 DECLARE_ALIGNED(16, const xmm_reg,  ff_pb_0  ) = {0x0000000000000000ULL, 0x0000000000000000ULL};
 DECLARE_ALIGNED(16, const xmm_reg,  ff_pb_1  ) = {0x0101010101010101ULL, 0x0101010101010101ULL};
@@ -445,6 +446,47 @@ static void put_pixels16_mmx(uint8_t *block, const uint8_t *pixels, int line_siz
          : "+g"(h), "+r" (pixels),  "+r" (block)
          : "r"((x86_reg)line_size)
          : "%"REG_a, "memory"
+        );
+}
+
+void ff_put_pixels_10_clamped_sse2(const DCTELEM *block, uint8_t *restrict pixels, int stride)
+{
+    __asm__ volatile(
+         "movdqa   0(%1), %%xmm0         \n\t"
+         "movdqa  16(%1), %%xmm1         \n\t"
+         "movdqa  32(%1), %%xmm2         \n\t"
+         "movdqa  48(%1), %%xmm3         \n\t"
+         "movdqa  64(%1), %%xmm4         \n\t"
+         "movdqa  80(%1), %%xmm5         \n\t"
+         "movdqa  96(%1), %%xmm6         \n\t"
+         "movdqa 112(%1), %%xmm7         \n\t"
+         "pminsw "MANGLE(ff_pw_1019)", %%xmm0 \n\t"
+         "pminsw "MANGLE(ff_pw_1019)", %%xmm1 \n\t"
+         "pminsw "MANGLE(ff_pw_1019)", %%xmm2 \n\t"
+         "pminsw "MANGLE(ff_pw_1019)", %%xmm3 \n\t"
+         "pminsw "MANGLE(ff_pw_1019)", %%xmm4 \n\t"
+         "pminsw "MANGLE(ff_pw_1019)", %%xmm5 \n\t"
+         "pminsw "MANGLE(ff_pw_1019)", %%xmm6 \n\t"
+         "pminsw "MANGLE(ff_pw_1019)", %%xmm7 \n\t"
+         "pmaxsw "MANGLE(ff_pw_4)", %%xmm0 \n\t"
+         "pmaxsw "MANGLE(ff_pw_4)", %%xmm1 \n\t"
+         "pmaxsw "MANGLE(ff_pw_4)", %%xmm2 \n\t"
+         "pmaxsw "MANGLE(ff_pw_4)", %%xmm3 \n\t"
+         "pmaxsw "MANGLE(ff_pw_4)", %%xmm4 \n\t"
+         "pmaxsw "MANGLE(ff_pw_4)", %%xmm5 \n\t"
+         "pmaxsw "MANGLE(ff_pw_4)", %%xmm6 \n\t"
+         "pmaxsw "MANGLE(ff_pw_4)", %%xmm7 \n\t"
+         "movdqu %%xmm0, (%0)           \n\t"
+         "movdqu %%xmm1, (%0,%2)        \n\t"
+         "movdqu %%xmm2, (%0,%2,2)      \n\t"
+         "movdqu %%xmm3, (%0,%3)        \n\t"
+         "lea (%0,%2,4), %0             \n\t"
+         "movdqu %%xmm4, (%0)           \n\t"
+         "movdqu %%xmm5, (%0,%2)        \n\t"
+         "movdqu %%xmm6, (%0,%2,2)      \n\t"
+         "movdqu %%xmm7, (%0,%3)        \n\t"
+         : "+r" (pixels), "+r" (block)
+         : "r"((x86_reg)stride), "r"((x86_reg)stride*3)
         );
 }
 
@@ -2417,6 +2459,16 @@ void dsputil_init_mmx(DSPContext* c, AVCodecContext *avctx)
                     c->idct_put= ff_idct_xvid_mmx_put;
                     c->idct_add= ff_idct_xvid_mmx_add;
                     c->idct    = ff_idct_xvid_mmx;
+                }
+            }
+        } else if (avctx->lowres == 0 && avctx->bits_per_raw_sample == 10) {
+            if(idct_algo==FF_IDCT_AUTO || idct_algo==FF_IDCT_XVIDMMX){
+                if(mm_flags & AV_CPU_FLAG_SSE2){
+                    if (avctx->codec_id == CODEC_ID_PRORES) {
+                        c->idct_put= ff_idct_10_xvid_put_clamped_sse2;
+                        c->idct    = ff_idct_10_xvid_sse2;
+                        c->idct_permutation_type= FF_SSE2_IDCT_PERM;
+                    }
                 }
             }
         }

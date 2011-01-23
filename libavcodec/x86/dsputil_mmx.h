@@ -191,6 +191,8 @@ void ff_add_pixels_clamped_mmx(const DCTELEM *block, uint8_t *pixels, int line_s
 void ff_put_pixels_clamped_mmx(const DCTELEM *block, uint8_t *pixels, int line_size);
 void ff_put_signed_pixels_clamped_mmx(const DCTELEM *block, uint8_t *pixels, int line_size);
 
+void ff_put_pixels_10_clamped_sse2(const DCTELEM *block, uint8_t *restrict pixels, int stride);
+
 void ff_put_cavs_qpel8_mc00_mmx2(uint8_t *dst, uint8_t *src, int stride);
 void ff_avg_cavs_qpel8_mc00_mmx2(uint8_t *dst, uint8_t *src, int stride);
 void ff_put_cavs_qpel16_mc00_mmx2(uint8_t *dst, uint8_t *src, int stride);
