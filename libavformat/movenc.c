@@ -1810,10 +1810,10 @@ static int mov_write_ilst_tag(AVFormatContext *s, AVIOContext *pb)
     mov_write_metadata(s, pb, "\251too", "encoder");
     mov_write_metadata(s, pb, "\251cmt", "comment");
     mov_write_metadata(s, pb, "\251gen", "genre");
-    mov_write_metadata(s, pb, "\251cpy", "copyright");
     mov_write_metadata(s, pb, "\251grp", "grouping");
     mov_write_metadata(s, pb, "\251lyr", "lyrics");
     mov_write_metadata(s, pb, "aART",    "album_artist");
+    mov_write_metadata(s, pb, "cprt",    "copyright");
     mov_write_metadata(s, pb, "desc",    "description");
     mov_write_metadata(s, pb, "ldes",    "synopsis");
     mov_write_metadata(s, pb, "tvsh",    "show");
@@ -1888,6 +1888,7 @@ static int mov_write_udta_tag(AVIOContext *pb, AVFormatContext *s)
             mov_write_3gp_metadata(s, pb_buf, "cprt", "copyright");
             mov_write_3gp_metadata(s, pb_buf, "yrrc", "year");
         } else if (mov->mode == MODE_MOV) { // the title field breaks gtkpod with mp4 and my suspicion is that stuff is not valid in mp4
+            mov_write_metadata(s, pb_buf, "\251ART", "artist");
             mov_write_metadata(s, pb_buf, "\251nam", "title");
             mov_write_metadata(s, pb_buf, "\251aut", "author");
             mov_write_metadata(s, pb_buf, "\251alb", "album");
