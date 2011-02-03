@@ -80,6 +80,7 @@ typedef struct DNXHDEncContext {
     uint8_t  *run_bits;
 
     /** Rate control */
+    unsigned qmax;
     unsigned slice_bits;
     unsigned qscale;
     unsigned lambda;

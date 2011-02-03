@@ -38,6 +38,7 @@
 
 static const AVOption options[]={
     {"nitris_compat", "encode with Avid Nitris compatibility", offsetof(DNXHDEncContext, nitris_compat), FF_OPT_TYPE_INT, {.dbl = 0}, 0, 1, VE},
+    {"qmax", "max video quantizer scale", offsetof(DNXHDEncContext, qmax), FF_OPT_TYPE_INT, {.dbl = 0}, 0, 1024, VE},
 {NULL}
 };
 static const AVClass class = { "dnxhd", av_default_item_name, options, LIBAVUTIL_VERSION_INT };
@@ -161,10 +162,13 @@ static int dnxhd_init_qmat(DNXHDEncContext *ctx, int lbias, int cbias)
     const uint8_t *luma_weight_table   = ctx->cid_table->luma_weight;
     const uint8_t *chroma_weight_table = ctx->cid_table->chroma_weight;
 
-    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->qmatrix_l,   (ctx->m.avctx->qmax+1) * 64 *     sizeof(int),      fail);
-    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->qmatrix_c,   (ctx->m.avctx->qmax+1) * 64 *     sizeof(int),      fail);
-    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->qmatrix_l16, (ctx->m.avctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
-    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->qmatrix_c16, (ctx->m.avctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
+    if (!ctx->qmax)
+        ctx->m.avctx->qmax = ctx->qmax = ctx->m.avctx->mb_decision == FF_MB_DECISION_RD ? 31 : 1024;
+
+    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->qmatrix_l,   (ctx->qmax+1) * 64 *     sizeof(int),      fail);
+    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->qmatrix_c,   (ctx->qmax+1) * 64 *     sizeof(int),      fail);
+    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->qmatrix_l16, (ctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
+    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->qmatrix_c16, (ctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
 
     if (ctx->cid_table->bit_depth == 8) {
         for (i = 1; i < 64; i++) {
@@ -206,7 +210,7 @@ static int dnxhd_init_qmat(DNXHDEncContext *ctx, int lbias, int cbias)
 
 static int dnxhd_init_rc(DNXHDEncContext *ctx)
 {
-    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->mb_rc, 8160*ctx->m.avctx->qmax*sizeof(RCEntry), fail);
+    FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->mb_rc, 8160*(ctx->qmax+1)*sizeof(RCEntry), fail);
     if (ctx->m.avctx->mb_decision != FF_MB_DECISION_RD)
         FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->mb_cmp, ctx->m.mb_num*sizeof(RCCMPEntry), fail);
 
@@ -655,7 +659,7 @@ static int dnxhd_encode_rdo(AVCodecContext *avctx, DNXHDEncContext *ctx)
     int last_lower = INT_MAX, last_higher = 0;
     int x, y, q;
 
-    for (q = 1; q < avctx->qmax; q++) {
+    for (q = 1; q <= ctx->qmax; q++) {
         ctx->qscale = q;
         avctx->execute2(avctx, dnxhd_calc_bits_thread, NULL, NULL, ctx->m.mb_height);
     }
@@ -674,7 +678,7 @@ static int dnxhd_encode_rdo(AVCodecContext *avctx, DNXHDEncContext *ctx)
                 unsigned min = UINT_MAX;
                 int qscale = 1;
                 int mb = y*ctx->m.mb_width+x;
-                for (q = 1; q < avctx->qmax; q++) {
+                for (q = 1; q <= ctx->qmax; q++) {
                     unsigned score = ctx->mb_rc[q][mb].bits*lambda+(ctx->mb_rc[q][mb].ssd<<LAMBDA_FRAC_BITS);
                     if (score < min) {
                         min = score;
@@ -773,7 +777,7 @@ static int dnxhd_find_qscale(DNXHDEncContext *ctx)
             else
                 qscale += up_step++;
             down_step = 1;
-            if (qscale >= ctx->m.avctx->qmax)
+            if (qscale > ctx->qmax)
                 return -1;
         }
     }
