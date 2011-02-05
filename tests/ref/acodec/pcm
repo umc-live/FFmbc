@@ -6,16 +6,16 @@ f443a8eeb1647ec1eeb8370c939e52d4 *./tests/data/acodec/pcm_mulaw.wav
 529256 ./tests/data/acodec/pcm_mulaw.wav
 1c3eeaa8814ebd4916780dff80ed6dc5 *./tests/data/pcm.acodec.out.wav
 stddev:  103.38 PSNR: 56.04 MAXDIFF:  644 bytes:  1058400/  1058400
-7e7e6871256853efd3634f5fba913939 *./tests/data/acodec/pcm_s8.mov
-530873 ./tests/data/acodec/pcm_s8.mov
+ff33e4e8ca8f5e39df50db44fdfae7de *./tests/data/acodec/pcm_s8.mov
+530865 ./tests/data/acodec/pcm_s8.mov
 652edf30f35ad89bf27bcc9d2f9c7b53 *./tests/data/pcm.acodec.out.wav
 stddev:  147.89 PSNR: 52.93 MAXDIFF:  255 bytes:  1058400/  1058400
 98cadb3502dbdc99e6e077c28b1a036c *./tests/data/acodec/pcm_u8.wav
 529244 ./tests/data/acodec/pcm_u8.wav
 652edf30f35ad89bf27bcc9d2f9c7b53 *./tests/data/pcm.acodec.out.wav
 stddev:  147.89 PSNR: 52.93 MAXDIFF:  255 bytes:  1058400/  1058400
-5f34fb0894c19877c5a839312a55c9b1 *./tests/data/acodec/pcm_s16be.mov
-1060073 ./tests/data/acodec/pcm_s16be.mov
+9f3100394d27404ee0a4cdc596b3127d *./tests/data/acodec/pcm_s16be.mov
+1060065 ./tests/data/acodec/pcm_s16be.mov
 95e54b261530a1bcf6de6fe3b21dc5f6 *./tests/data/pcm.acodec.out.wav
 stddev:    0.00 PSNR:999.99 MAXDIFF:    0 bytes:  1058400/  1058400
 95e54b261530a1bcf6de6fe3b21dc5f6 *./tests/data/acodec/pcm_s16le.wav
@@ -30,16 +30,16 @@ c4f51bf32fad2f7af8ea5beedb56168b *./tests/data/acodec/pcm_s16le.mkv
 1060638 ./tests/data/acodec/pcm_s16le.mkv
 95e54b261530a1bcf6de6fe3b21dc5f6 *./tests/data/pcm.acodec.out.wav
 stddev:    0.00 PSNR:999.99 MAXDIFF:    0 bytes:  1058400/  1058400
-1cb6740ec3304b5d863943d18e0a959f *./tests/data/acodec/pcm_s24be.mov
-1589273 ./tests/data/acodec/pcm_s24be.mov
+6b8c9ce01b6af2ab8f3f815784b4faf3 *./tests/data/acodec/pcm_s24be.mov
+1589265 ./tests/data/acodec/pcm_s24be.mov
 95e54b261530a1bcf6de6fe3b21dc5f6 *./tests/data/pcm.acodec.out.wav
 stddev:    0.00 PSNR:999.99 MAXDIFF:    0 bytes:  1058400/  1058400
 a85380fb79b0d4fff38e24ac1e34bb94 *./tests/data/acodec/pcm_s24le.wav
 1587668 ./tests/data/acodec/pcm_s24le.wav
 95e54b261530a1bcf6de6fe3b21dc5f6 *./tests/data/pcm.acodec.out.wav
 stddev:    0.00 PSNR:999.99 MAXDIFF:    0 bytes:  1058400/  1058400
-2738bcb7baba7c7912bf3a94f5396b35 *./tests/data/acodec/pcm_s32be.mov
-2118473 ./tests/data/acodec/pcm_s32be.mov
+6551ec79ab8f3145ebb3ee128b6b3ea6 *./tests/data/acodec/pcm_s32be.mov
+2118465 ./tests/data/acodec/pcm_s32be.mov
 95e54b261530a1bcf6de6fe3b21dc5f6 *./tests/data/pcm.acodec.out.wav
 stddev:    0.00 PSNR:999.99 MAXDIFF:    0 bytes:  1058400/  1058400
 da6ed80f4f40f0082577dea80827e014 *./tests/data/acodec/pcm_s32le.wav

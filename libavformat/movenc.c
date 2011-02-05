@@ -42,10 +42,16 @@
 #undef NDEBUG
 #include <assert.h>
 
+#define FAST_START_OPTION \
+    { "faststart", "Pre-allocate space for the header in front of the file: <size or 'auto' or 'no'>\n" \
+      "Files are automatically rewritten if size is < 20MB unless 'no' is specified.\n", \
+      offsetof(MOVMuxContext, faststart), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, AV_OPT_FLAG_ENCODING_PARAM} \
+
 static const AVOption options[] = {
     { "movflags", "MOV muxer flags", offsetof(MOVMuxContext, flags), FF_OPT_TYPE_FLAGS, {.dbl = 0}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "movflags" },
     { "rtphint", "Add RTP hint tracks", 0, FF_OPT_TYPE_CONST, {.dbl = FF_MOV_FLAG_RTP_HINT}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "movflags" },
     FF_RTP_FLAG_OPTS(MOVMuxContext, rtp_flags),
+    FAST_START_OPTION,
     { NULL },
 };
 
@@ -62,6 +68,7 @@ static const AVOption mov_options[] = {
     FF_RTP_FLAG_OPTS(MOVMuxContext, rtp_flags),
     { "timecode", "Set timecode value: 00:00:00[:;]00, use ';' before frame number for drop frame",
       offsetof(MOVMuxContext, timecode), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, AV_OPT_FLAG_ENCODING_PARAM},
+    FAST_START_OPTION,
     { NULL },
 };
 
@@ -84,13 +91,14 @@ static int64_t updateSize(AVIOContext *pb, int64_t pos)
 }
 
 /* Chunk offset atom */
-static int mov_write_stco_tag(AVIOContext *pb, MOVTrack *track)
+static int mov_write_stco_tag(AVIOContext *pb, MOVMuxContext *mov,
+                              MOVTrack *track)
 {
     int i;
     int mode64 = 0; //   use 32 bit size variant if possible
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
-    if (pos > UINT32_MAX) {
+    if (track->cluster[track->entry-1].pos+mov->stco_offset > UINT32_MAX) {
         mode64 = 1;
         avio_wtag(pb, "co64");
     } else
@@ -99,9 +107,9 @@ static int mov_write_stco_tag(AVIOContext *pb, MOVTrack *track)
     avio_wb32(pb, track->entry); /* entry count */
     for (i=0; i<track->entry; i++) {
         if(mode64 == 1)
-            avio_wb64(pb, track->cluster[i].pos);
+            avio_wb64(pb, track->cluster[i].pos+mov->stco_offset);
         else
-            avio_wb32(pb, track->cluster[i].pos);
+            avio_wb32(pb, track->cluster[i].pos+mov->stco_offset);
     }
     return updateSize(pb, pos);
 }
@@ -1181,7 +1189,7 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tra
     }
     mov_write_stsc_tag(pb, track);
     mov_write_stsz_tag(pb, track);
-    mov_write_stco_tag(pb, track);
+    mov_write_stco_tag(pb, s->priv_data, track);
     return updateSize(pb, pos);
 }
 
@@ -2099,15 +2107,23 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
     return updateSize(pb, pos);
 }
 
+static int mov_write_free_tag(AVIOContext *pb, MOVMuxContext *mov, unsigned size)
+{
+    if (size < 8)
+        return -1;
+    avio_wb32(pb, size);
+    avio_wtag(pb, mov->mode == MODE_MOV && size == 8 ? "wide" : "free");
+    size -= 8;
+    avio_fill(pb, 0, size);
+    return size;
+}
+
 static int mov_write_mdat_tag(AVIOContext *pb, MOVMuxContext *mov)
 {
-    avio_wb32(pb, 8);    // placeholder for extended size field (64 bit)
-    avio_wtag(pb, mov->mode == MODE_MOV ? "wide" : "free");
-
     mov->mdat_pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size placeholder*/
     avio_wtag(pb, "mdat");
-    return 0;
+    return 8;
 }
 
 /* TODO: This needs to be more general */
@@ -2587,6 +2603,22 @@ static int mov_write_header(AVFormatContext *s)
         av_set_pts_info(st, 64, 1, track->timescale);
     }
 
+    if (mov->faststart) {
+        if (!strcmp(mov->faststart, "auto"))
+            mov->overwrite = 1;
+        else if (!strcmp(mov->faststart, "no"))
+            mov->overwrite = -1;
+        else
+            mov->overwrite = atoi(mov->faststart);
+        if (mov->overwrite > 1) {
+            av_log(s, AV_LOG_INFO, "writing free atom of %d bytes\n", mov->overwrite);
+            mov->free_size = mov->overwrite;
+        }
+    }
+
+    mov->free_pos = avio_tell(pb);
+    mov->free_size += 8;
+    mov_write_free_tag(pb, mov, mov->free_size);
     mov_write_mdat_tag(pb, mov);
 
 #if FF_API_TIMESTAMP
@@ -2626,29 +2658,154 @@ static int mov_write_header(AVFormatContext *s)
     return -1;
 }
 
+static int mov_compute_moov_size(AVFormatContext *s)
+{
+    MOVMuxContext *mov = s->priv_data;
+    AVIOContext *pb;
+    uint8_t *buf;
+    int i, size;
+
+    avio_open_dyn_buf(&pb);
+    mov_write_moov_tag(pb, mov, s);
+    avio_flush(pb);
+    size = avio_close_dyn_buf(pb, &buf);
+    av_free(buf);
+
+    for (i = 0; i < mov->nb_streams; i++) {
+        MOVTrack *track = &mov->tracks[i];
+        if (track->entry > 0) {
+            if (track->cluster[track->entry-1].pos < UINT32_MAX &&
+                track->cluster[track->entry-1].pos +
+                size - mov->free_size > UINT32_MAX) {
+                size += track->entry*4;
+            }
+        }
+    }
+
+    return size;
+}
+
+static int mov_overwrite_file(AVFormatContext *s)
+{
+    MOVMuxContext *mov = s->priv_data;
+    AVIOContext *rpb, *pb = s->pb;
+    int64_t size, start_time, prev_time;
+    int moov_size, buf_size, rsize, wsize = 0;
+    uint8_t *rbuf, *wbuf;
+
+    if (avio_open(&rpb, s->filename, URL_RDONLY) < 0) {
+        av_log(s, AV_LOG_ERROR, "error reopening file '%s' for read\n", s->filename);
+        return AVERROR(EIO);
+    }
+
+    moov_size = mov_compute_moov_size(s);
+    buf_size = 1024*1024 + moov_size;
+
+    rbuf = av_malloc(buf_size);
+    if (!rbuf)
+        return AVERROR(ENOMEM);
+
+    wbuf = av_malloc(buf_size);
+    if (!wbuf)
+        return AVERROR(ENOMEM);
+
+    avio_seek(rpb, mov->mdat_pos, SEEK_SET);
+    avio_seek(pb,  mov->free_pos, SEEK_SET);
+
+    av_log(s, AV_LOG_INFO, "replacing header in front, copying %5.2fMB\n",
+           mov->mdat_size/(1024.0*1024));
+
+    size = mov->mdat_size;
+    rsize = avio_read(rpb, rbuf, FFMIN(buf_size, size));
+    size -= rsize;
+
+    mov->stco_offset = moov_size - mov->free_size;
+    mov_write_moov_tag(pb, mov, s);
+
+    prev_time = start_time = av_gettime();
+    while (size > 0) {
+        if (url_interrupt_cb())
+            break;
+        avio_write(pb, wbuf, wsize);
+        FFSWAP(uint8_t*, rbuf, wbuf);
+        wsize = rsize;
+        rsize = FFMIN(size, buf_size);
+        avio_read(rpb, rbuf, rsize);
+        size -= rsize;
+        if (av_gettime() - prev_time > 300000) {
+            int hours, mins, secs, us;
+            int64_t time_left;
+            double speed;
+            prev_time = av_gettime();
+            speed = (double)(mov->mdat_size - size) / (prev_time - start_time);
+            time_left = size / speed;
+            secs = time_left / AV_TIME_BASE;
+            us = time_left % AV_TIME_BASE;
+            mins = secs / 60;
+            secs %= 60;
+            hours = mins / 60;
+            mins %= 60;
+            av_log(s, AV_LOG_INFO,
+                   "left=%8.2fMB speed=%7.2fMB/s eta=%02d:%02d:%02d.%02d\r",
+                   size/(1024.0*1024), speed, hours, mins, secs,
+                   (100 * us) / AV_TIME_BASE);
+        }
+    }
+
+    avio_close(rpb);
+
+    avio_write(pb, wbuf, wsize);
+    avio_write(pb, rbuf, rsize);
+    av_free(rbuf);
+    av_free(wbuf);
+
+    return 0;
+}
+
 static int mov_write_trailer(AVFormatContext *s)
 {
     MOVMuxContext *mov = s->priv_data;
     AVIOContext *pb = s->pb;
     int res = 0;
     int i;
-
     int64_t moov_pos = avio_tell(pb);
 
     /* Write size of mdat tag */
     if (mov->mdat_size+8 <= UINT32_MAX) {
+        mov->mdat_size += 8;
         avio_seek(pb, mov->mdat_pos, SEEK_SET);
-        avio_wb32(pb, mov->mdat_size+8);
+        avio_wb32(pb, mov->mdat_size);
     } else {
         /* overwrite 'wide' placeholder atom */
-        avio_seek(pb, mov->mdat_pos - 8, SEEK_SET);
+        mov->mdat_size += 16;
+        mov->mdat_pos -= 8;
+        avio_seek(pb, mov->mdat_pos, SEEK_SET);
         avio_wb32(pb, 1); /* special value: real atom size will be 64 bit value after tag field */
         avio_wtag(pb, "mdat");
-        avio_wb64(pb, mov->mdat_size+16);
+        avio_wb64(pb, mov->mdat_size);
+        mov->free_size -= 8;
     }
-    avio_seek(pb, moov_pos, SEEK_SET);
 
-    mov_write_moov_tag(pb, mov, s);
+    avio_flush(pb);
+
+    if (mov->free_size > 8) {
+        int moov_size = mov_compute_moov_size(s);
+        if (moov_size > mov->free_size) {
+            av_log(s, AV_LOG_ERROR, "moov size is bigger than available space\n");
+            goto write_end;
+        }
+        avio_seek(pb, mov->free_pos, SEEK_SET);
+        mov_write_moov_tag(pb, mov, s);
+        mov_write_free_tag(pb, mov, mov->free_size - moov_size);
+    } else if (mov->overwrite > 0 ||
+               (mov->overwrite != -1 && moov_pos < 20000000)) {
+        if (mov_overwrite_file(s) < 0)
+            goto write_end;
+    } else {
+    write_end:
+        avio_seek(pb, moov_pos, SEEK_SET);
+        mov_write_moov_tag(pb, mov, s);
+    }
 
     if (mov->chapter_track)
         av_freep(&mov->tracks[mov->chapter_track].enc);
@@ -2686,6 +2843,7 @@ AVOutputFormat ff_f4v_muxer = {
     mov_write_trailer,
     .flags = AVFMT_GLOBALHEADER,
     .codec_tag = (const AVCodecTag* const []){codec_f4v_tags, 0},
+    .priv_class = &mov_muxer_class,
 };
 #endif
 #if CONFIG_MOV_MUXER
