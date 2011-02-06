@@ -125,6 +125,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
     unsigned int slice_type;
     int first_mb_in_slice;
     int state = -1;
+    int old_debug = avctx->debug;
     const uint8_t *ptr;
 
     /* set some sane default values */
@@ -139,6 +140,8 @@ static inline int parse_nal_units(AVCodecParserContext *s,
 
     if (!buf_size)
         return 0;
+
+    avctx->debug = !avctx->codec ^ 0;
 
     for(;;) {
         int src_length, dst_length, consumed, i, nalsize = 0;
@@ -166,6 +169,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
             break;
 
         init_get_bits(&h->s.gb, ptr, 8*dst_length);
+        //av_log(avctx, AV_LOG_DEBUG, "nal_unit_type:%d\n", h->nal_unit_type);
         switch(h->nal_unit_type) {
         case NAL_SPS:
             ff_h264_decode_seq_parameter_set(h);
@@ -191,23 +195,30 @@ static inline int parse_nal_units(AVCodecParserContext *s,
             first_mb_in_slice = get_ue_golomb(&h->s.gb);
             slice_type = get_ue_golomb_31(&h->s.gb);
             s->pict_type = golomb_to_pict_type[slice_type % 5];
+            pps_id= get_ue_golomb(&h->s.gb);
+            if (!avctx->codec) {
+                av_log(h->s.avctx, AV_LOG_DEBUG, "slice %s mb:%d %c%s%s pps:%u\n",
+                       (h->s.picture_structure==PICT_FRAME ? "F" : h->s.picture_structure==PICT_TOP_FIELD ? "T" : "B"),
+                       first_mb_in_slice,
+                       av_get_pict_type_char(s->pict_type), h->slice_type_fixed ? " fix" : "", h->nal_unit_type == NAL_IDR_SLICE ? " IDR" : "",
+                       pps_id);
+            }
             if (h->sei_recovery_frame_cnt >= 0) {
                 /* key frame, since recovery_frame_cnt is set */
                 s->key_frame = 1;
             }
-            pps_id= get_ue_golomb(&h->s.gb);
             if(pps_id>=MAX_PPS_COUNT) {
                 av_log(h->s.avctx, AV_LOG_ERROR, "pps_id out of range\n");
-                return -1;
+                goto error;
             }
             if(!h->pps_buffers[pps_id]) {
                 av_log(h->s.avctx, AV_LOG_ERROR, "non-existing PPS referenced\n");
-                return -1;
+                goto error;
             }
             h->pps= *h->pps_buffers[pps_id];
             if(!h->sps_buffers[h->pps.sps_id]) {
                 av_log(h->s.avctx, AV_LOG_ERROR, "non-existing SPS referenced\n");
-                return -1;
+                goto error;
             }
             h->sps = *h->sps_buffers[h->pps.sps_id];
             h->frame_num = get_bits(&h->s.gb, h->sps.log2_max_frame_num);
@@ -260,6 +271,8 @@ static inline int parse_nal_units(AVCodecParserContext *s,
 
             h->prev_frame_num = h->frame_num;
 
+            avctx->debug = old_debug;
+
             /* no need to evaluate the rest */
             if (h->s.picture_structure != PICT_FRAME)
                 return 1 + (h->s.picture_structure == c->first_field_structure);
@@ -274,6 +287,8 @@ static inline int parse_nal_units(AVCodecParserContext *s,
     }
     /* didn't find a picture! */
     av_log(h->s.avctx, AV_LOG_ERROR, "missing picture in access unit\n");
+ error:
+    avctx->debug = old_debug;
     return -1;
 }
 
@@ -318,7 +333,7 @@ static int h264_parse(AVCodecParserContext *s,
         s->frame_offset = s->next_frame_offset;
         s->next_frame_offset = s->cur_offset + next;
         s->fetch_timestamp = 1;
-        av_log(avctx, AV_LOG_ERROR, "error slice type, discarding\n");
+        av_log(avctx, AV_LOG_ERROR, "error fetching slice type, discarding\n");
         *poutbuf = NULL;
         *poutbuf_size = 0;
         return next;

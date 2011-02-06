@@ -46,6 +46,17 @@ void ff_h264_reset_sei(H264Context *h) {
 
 static int decode_picture_timing(H264Context *h){
     MpegEncContext * const s = &h->s;
+    int i;
+
+    for (i = 0; i < MAX_SPS_COUNT; i++) {
+        if (h->sps_buffers[i])
+            break;
+    }
+    if (i == MAX_SPS_COUNT) {
+        av_log(h->s.avctx, AV_LOG_ERROR, "non-existing SPS referenced in picture timing\n");
+        return -1;
+    }
+
     if(h->sps.nal_hrd_parameters_present_flag || h->sps.vcl_hrd_parameters_present_flag){
         h->sei_cpb_removal_delay = get_bits(&s->gb, h->sps.cpb_removal_delay_length);
         h->sei_dpb_output_delay = get_bits(&s->gb, h->sps.dpb_output_delay_length);
