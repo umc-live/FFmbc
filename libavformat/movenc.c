@@ -2734,17 +2734,10 @@ static int mov_overwrite_file(AVFormatContext *s)
         size -= rsize;
         if (av_gettime() - prev_time > 300000) {
             int hours, mins, secs, us;
-            int64_t time_left;
             double speed;
             prev_time = av_gettime();
             speed = (double)(mov->mdat_size - size) / (prev_time - start_time);
-            time_left = size / speed;
-            secs = time_left / AV_TIME_BASE;
-            us = time_left % AV_TIME_BASE;
-            mins = secs / 60;
-            secs %= 60;
-            hours = mins / 60;
-            mins %= 60;
+            break_time(size / speed, &hours, &mins, &secs, &us);
             av_log(s, AV_LOG_INFO,
                    "left=%8.2fMB speed=%7.2fMB/s eta=%02d:%02d:%02d.%02d\r",
                    size/(1024.0*1024), speed, hours, mins, secs,

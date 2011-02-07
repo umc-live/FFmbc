@@ -3489,6 +3489,16 @@ static void dump_stream_format(AVFormatContext *ic, int i, int index, int is_out
     dump_metadata(NULL, st->metadata, "    ");
 }
 
+void break_time(int64_t t, int *hours, int *mins, int *secs, int *us)
+{
+    *secs = t / AV_TIME_BASE;
+    *us = t % AV_TIME_BASE;
+    *mins = *secs / 60;
+    *secs %= 60;
+    *hours = *mins / 60;
+    *mins %= 60;
+}
+
 #if FF_API_DUMP_FORMAT
 void dump_format(AVFormatContext *ic,
                  int index,
@@ -3519,12 +3529,7 @@ void av_dump_format(AVFormatContext *ic,
         av_log(NULL, AV_LOG_INFO, "  Duration: ");
         if (ic->duration != AV_NOPTS_VALUE) {
             int hours, mins, secs, us;
-            secs = ic->duration / AV_TIME_BASE;
-            us = ic->duration % AV_TIME_BASE;
-            mins = secs / 60;
-            secs %= 60;
-            hours = mins / 60;
-            mins %= 60;
+            break_time(ic->duration, &hours, &mins, &secs, &us);
             av_log(NULL, AV_LOG_INFO, "%02d:%02d:%02d.%02d", hours, mins, secs,
                    (100 * us) / AV_TIME_BASE);
         } else {

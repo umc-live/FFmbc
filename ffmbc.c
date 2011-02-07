@@ -1548,10 +1548,10 @@ static void do_video_stats(AVFormatContext *os, OutputStream *ost,
 
 static void print_report(AVFormatContext **output_files,
                          OutputStream **ost_table, int nb_ostreams,
-                         int is_last_report)
+                         int is_last_report, int64_t duration)
 {
     char buf[1024];
-    OutputStream *ost;
+    OutputStream *ost, *vst = NULL;
     AVFormatContext *oc;
     int64_t total_size;
     AVCodecContext *enc;
@@ -1589,17 +1589,21 @@ static void print_report(AVFormatContext **output_files,
         float q = -1;
         ost = ost_table[i];
         enc = ost->st->codec;
-        if (!ost->st->stream_copy && enc->coded_frame)
-            q = enc->coded_frame->quality/(float)FF_QP2LAMBDA;
-        if (vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
-            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ", q);
+        if (vid && !ost->st->stream_copy && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
+            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
+                     !ost->st->stream_copy ?
+                     enc->coded_frame->quality/(float)FF_QP2LAMBDA : -1);
         }
         if (!vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
             float t = (av_gettime()-timer_start) / 1000000.0;
 
             frame_number = ost->frame_number;
-            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "frame=%5d fps=%3d q=%3.1f ",
-                     frame_number, (t>1)?(int)(frame_number/t+0.5) : 0, q);
+            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "frame=%5d fps=%3d ",
+                     frame_number, (t>1)?(int)(frame_number/t+0.5) : 0);
+            if (!ost->st->stream_copy) {
+                snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
+                         enc->coded_frame->quality/(float)FF_QP2LAMBDA);
+            }
             if(is_last_report)
                 snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "L");
             if(qp_hist){
@@ -1632,6 +1636,7 @@ static void print_report(AVFormatContext **output_files,
                 snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "*:%2.2f ", psnr(error_sum/scale_sum));
             }
             vid = 1;
+            vst = ost;
         }
         /* compute min output value */
         pts = FFMIN(pts, av_rescale_q(ost->st->pts.val,
@@ -1640,12 +1645,9 @@ static void print_report(AVFormatContext **output_files,
 
     if (verbose > 0 || is_last_report) {
         int hours, mins, secs, us;
-        secs = pts / AV_TIME_BASE;
-        us = pts % AV_TIME_BASE;
-        mins = secs / 60;
-        secs %= 60;
-        hours = mins / 60;
-        mins %= 60;
+        int64_t time_left;
+        double speed;
+        break_time(pts, &hours, &mins, &secs, &us);
 
         bitrate = pts ? total_size * 8 / (pts / 1000.0) : 0;
         snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
@@ -1655,6 +1657,24 @@ static void print_report(AVFormatContext **output_files,
                  (100 * us) / AV_TIME_BASE);
         snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
                  "bitrate=%6.1fkbits/s", bitrate);
+
+        if (!is_last_report) {
+            if (vst && max_frames[AVMEDIA_TYPE_VIDEO] != INT_MAX && vst->frame_number > 0) {
+                speed = (double)vst->frame_number / (av_gettime() - timer_start);
+                time_left = (max_frames[AVMEDIA_TYPE_VIDEO] - vst->frame_number) / speed;
+                goto eta;
+            } else if (duration > 0 && pts > 0) {
+                speed = (double)pts / (av_gettime() - timer_start);
+                time_left = (duration - pts) / speed;
+            eta:
+                break_time(time_left, &hours, &mins, &secs, &us);
+                snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
+                         " eta=%02d:%02d:%02d.%02d", hours, mins, secs,
+                         (100 * us) / AV_TIME_BASE);
+            } else {
+                snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), " eta=N/A");
+            }
+        }
 
         if (nb_frames_dup || nb_frames_drop)
           snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), " dup=%d drop=%d",
@@ -2920,6 +2940,7 @@ static int transcode(AVFormatContext **output_files,
         AVPacket pkt;
         double ipts_min;
         double opts_min;
+        int64_t duration;
 
     redo:
         ipts_min= 1e100;
@@ -3037,6 +3058,14 @@ static int transcode(AVFormatContext **output_files,
                 continue;
         }
 
+        // FIXME -shortest
+        if (recording_time != INT64_MAX)
+            duration = recording_time;
+        else if (is->duration > 0)
+            duration = is->duration;
+        else
+            duration = 0;
+
         no_packet_count=0;
         memset(no_packet, 0, sizeof(no_packet));
 
@@ -3108,7 +3137,7 @@ static int transcode(AVFormatContext **output_files,
         av_free_packet(&pkt);
 
         /* dump report by using the output first video and audio streams */
-        print_report(output_files, ost_table, nb_ostreams, 0);
+        print_report(output_files, ost_table, nb_ostreams, 0, duration);
     }
 
     /* at the end of stream, we must flush the decoder buffers */
@@ -3128,7 +3157,7 @@ static int transcode(AVFormatContext **output_files,
     }
 
     /* dump report by using the first video and audio streams */
-    print_report(output_files, ost_table, nb_ostreams, 1);
+    print_report(output_files, ost_table, nb_ostreams, 1, 0);
 
     /* close each encoder */
     for(i=0;i<nb_ostreams;i++) {

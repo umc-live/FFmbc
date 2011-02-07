@@ -1620,6 +1620,11 @@ int64_t parse_date(const char *datestr, int duration);
 #endif
 
 /**
+ * t in us.
+ */
+void break_time(int64_t t, int *hours, int *mins, int *secs, int *us);
+
+/**
  * Get the current time in microseconds.
  */
 int64_t av_gettime(void);
