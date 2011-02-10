@@ -1984,9 +1984,9 @@ static int output_packet(InputStream *ist, int ist_index,
                         else
                             opkt.pts= AV_NOPTS_VALUE;
 
-                        if (pkt->dts == AV_NOPTS_VALUE)
+                        if (pkt->dts == AV_NOPTS_VALUE && pkt->pts == AV_NOPTS_VALUE)
                             opkt.dts = av_rescale_q(ist->pts, AV_TIME_BASE_Q, ost->st->time_base);
-                        else
+                        else if (pkt->dts != AV_NOPTS_VALUE)
                             opkt.dts = av_rescale_q(pkt->dts, ist->st->time_base, ost->st->time_base);
                         opkt.dts -= ost_tb_start_time;
 
