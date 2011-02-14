@@ -3210,6 +3210,7 @@ static int transcode(AVFormatContext **output_files,
         for(i=0;i<nb_ostreams;i++) {
             ost = ost_table[i];
             if (ost) {
+                AVBitStreamFilterContext *bsfp;
                 if (ost->st->stream_copy)
                     av_freep(&ost->st->codec->extradata);
                 if (ost->logfile) {
@@ -3226,6 +3227,11 @@ static int transcode(AVFormatContext **output_files,
                     sws_freeContext(ost->img_resample_ctx);
                 if (ost->resample)
                     audio_resample_close(ost->resample);
+                for (bsfp = ost->bitstream_filters; bsfp;) {
+                    AVBitStreamFilterContext *tmp = bsfp;
+                    bsfp = bsfp->next;
+                    av_bitstream_filter_close(tmp);
+                }
                 if (ost->reformat_ctx)
                     av_audio_convert_free(ost->reformat_ctx);
                 av_dict_free(&ost->opts);
