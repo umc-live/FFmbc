@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/intreadwrite.h"
 #include "libavutil/intfloat_readwrite.h"
 #include "libavutil/dict.h"
 #include "avformat.h"
@@ -248,13 +249,17 @@ static int aiff_read_header(AVFormatContext *s,
             avio_skip(pb, size - 8);
             break;
         case MKTAG('w', 'a', 'v', 'e'):
-            if ((uint64_t)size > (1<<30))
+            if ((uint64_t)size > (1<<30) || size < 12)
                 return -1;
-            st->codec->extradata = av_mallocz(size + FF_INPUT_BUFFER_PADDING_SIZE);
-            if (!st->codec->extradata)
-                return AVERROR(ENOMEM);
-            st->codec->extradata_size = size;
-            avio_read(pb, st->codec->extradata, size);
+            avio_skip(pb, 12); // skip frma
+            size -= 12;
+            if (size > 12) {
+                st->codec->extradata = av_mallocz(size  + FF_INPUT_BUFFER_PADDING_SIZE);
+                if (!st->codec->extradata)
+                    return AVERROR(ENOMEM);
+                st->codec->extradata_size = size;
+                avio_read(pb, st->codec->extradata, size);
+            }
             break;
         case MKTAG('C','H','A','N'):
             if (size < 12)
@@ -274,9 +279,18 @@ static int aiff_read_header(AVFormatContext *s,
     }
 
 got_sound:
-    /* Now positioned, get the sound data start and end */
-    if (st->nb_frames)
-        s->file_size = st->nb_frames * st->codec->block_align;
+    if (st->codec->codec_id == CODEC_ID_QDM2) {
+        if (st->codec->extradata_size < 36 ||
+            AV_RB32(st->codec->extradata+4) != MKBETAG('Q','D','C','A')) {
+            av_log(s, AV_LOG_ERROR, "invalid extradata, expecting QDCA\n");
+            return -1;
+        }
+        st->codec->channels = AV_RB32(st->codec->extradata+12);
+        st->codec->sample_rate = AV_RB32(st->codec->extradata+16);
+        st->codec->bit_rate = AV_RB32(st->codec->extradata+20);
+        st->codec->block_align = AV_RB32(st->codec->extradata+32);
+        st->codec->frame_size = AV_RB32(st->codec->extradata+24);
+    }
 
     av_set_pts_info(st, 64, 1, st->codec->sample_rate);
     st->start_time = 0;

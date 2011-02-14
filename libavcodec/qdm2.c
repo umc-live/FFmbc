@@ -1708,7 +1708,7 @@ static av_cold int qdm2_decode_init(AVCodecContext *avctx)
     QDM2Context *s = avctx->priv_data;
     uint8_t *extradata;
     int extradata_size;
-    int tmp_val, tmp, size;
+    int tmp_val, tmp;
 
     /* extradata parsing
 
@@ -1744,8 +1744,8 @@ static av_cold int qdm2_decode_init(AVCodecContext *avctx)
     32  zero ?
     */
 
-    if (!avctx->extradata || (avctx->extradata_size < 48)) {
-        av_log(avctx, AV_LOG_ERROR, "extradata missing or truncated\n");
+    if (!avctx->extradata) {
+        av_log(avctx, AV_LOG_ERROR, "extradata missing\n");
         return -1;
     }
 
@@ -1753,42 +1753,17 @@ static av_cold int qdm2_decode_init(AVCodecContext *avctx)
     extradata_size = avctx->extradata_size;
 
     while (extradata_size > 7) {
-        if (!memcmp(extradata, "frmaQDM", 7))
+        if (!memcmp(extradata, "QDCA", 4))
             break;
         extradata++;
         extradata_size--;
     }
 
-    if (extradata_size < 12) {
-        av_log(avctx, AV_LOG_ERROR, "not enough extradata (%i)\n",
-               extradata_size);
+    if (extradata_size < 32) {
+        av_log(avctx, AV_LOG_ERROR, "extradata truncated\n");
         return -1;
     }
 
-    if (memcmp(extradata, "frmaQDM", 7)) {
-        av_log(avctx, AV_LOG_ERROR, "invalid headers, QDM? not found\n");
-        return -1;
-    }
-
-    if (extradata[7] == 'C') {
-//        s->is_qdmc = 1;
-        av_log(avctx, AV_LOG_ERROR, "stream is QDMC version 1, which is not supported\n");
-        return -1;
-    }
-
-    extradata += 8;
-    extradata_size -= 8;
-
-    size = AV_RB32(extradata);
-
-    if(size > extradata_size){
-        av_log(avctx, AV_LOG_ERROR, "extradata size too small, %i < %i\n",
-               extradata_size, size);
-        return -1;
-    }
-
-    extradata += 4;
-    av_log(avctx, AV_LOG_DEBUG, "size: %d\n", size);
     if (AV_RB32(extradata) != MKBETAG('Q','D','C','A')) {
         av_log(avctx, AV_LOG_ERROR, "invalid extradata, expecting QDCA\n");
         return -1;
@@ -1819,6 +1794,8 @@ static av_cold int qdm2_decode_init(AVCodecContext *avctx)
     // something like max decodable tones
     s->group_order = av_log2(s->group_size) + 1;
     s->frame_size = s->group_size / 16; // 16 iterations per super block
+
+    avctx->frame_size = s->group_size;
 
     s->sub_sampling = s->fft_order - 7;
     s->frequency_range = 255 / (1 << (2 - s->sub_sampling));

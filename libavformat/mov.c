@@ -963,33 +963,6 @@ static int mov_read_fiel(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
-static int mov_read_wave(MOVContext *c, AVIOContext *pb, MOVAtom atom)
-{
-    AVStream *st;
-
-    if (c->fc->nb_streams < 1)
-        return 0;
-    st = c->fc->streams[c->fc->nb_streams-1];
-
-    if((uint64_t)atom.size > (1<<30))
-        return -1;
-
-    if (st->codec->codec_id == CODEC_ID_QDM2 || st->codec->codec_id == CODEC_ID_QDMC) {
-        // pass all frma atom to codec, needed at least for QDMC and QDM2
-        av_free(st->codec->extradata);
-        st->codec->extradata = av_mallocz(atom.size + FF_INPUT_BUFFER_PADDING_SIZE);
-        if (!st->codec->extradata)
-            return AVERROR(ENOMEM);
-        st->codec->extradata_size = atom.size;
-        avio_read(pb, st->codec->extradata, atom.size);
-    } else if (atom.size > 8) { /* to read frma, esds atoms */
-        if (mov_read_default(c, pb, atom) < 0)
-            return -1;
-    } else
-        avio_skip(pb, atom.size);
-    return 0;
-}
-
 /**
  * This function reads atom content and puts data in extradata without tag
  * nor size unlike mov_read_extradata.
@@ -1453,6 +1426,7 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
         st->codec->codec_type = AVMEDIA_TYPE_AUDIO; /* force type after stsd for m1a hdlr */
         st->need_parsing = AVSTREAM_PARSE_FULL;
         break;
+    case CODEC_ID_QDM2:
     case CODEC_ID_GSM:
     case CODEC_ID_ADPCM_MS:
     case CODEC_ID_ADPCM_IMA_WAV:
@@ -2475,6 +2449,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('m','v','e','x'), mov_read_default },
 { MKTAG('m','v','h','d'), mov_read_mvhd },
 { MKTAG('S','M','I',' '), mov_read_smi }, /* Sorenson extension ??? */
+{ MKTAG('Q','D','C','A'), mov_read_extradata },
 { MKTAG('a','l','a','c'), mov_read_extradata }, /* alac specific atom */
 { MKTAG('a','v','c','C'), mov_read_glbl },
 { MKTAG('p','a','s','p'), mov_read_pasp },
@@ -2498,7 +2473,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('t','r','e','x'), mov_read_trex },
 { MKTAG('t','r','u','n'), mov_read_trun },
 { MKTAG('u','d','t','a'), mov_read_default },
-{ MKTAG('w','a','v','e'), mov_read_wave },
+{ MKTAG('w','a','v','e'), mov_read_default },
 { MKTAG('e','s','d','s'), mov_read_esds },
 { MKTAG('d','a','c','3'), mov_read_dac3 }, /* AC-3 info */
 { MKTAG('w','i','d','e'), mov_read_wide }, /* place holder */
