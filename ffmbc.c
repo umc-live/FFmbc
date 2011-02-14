@@ -1883,6 +1883,7 @@ static int output_packet(InputStream *ist, int ist_index,
            encode packets and output them */
         if (start_time == 0 || ist->pts >= start_time)
             for(i=0;i<nb_ostreams;i++) {
+                AVFrame oframe, *oframe_ptr = &picture;
                 int frame_size;
 
                 ost = ost_table[i];
@@ -1900,15 +1901,17 @@ static int output_packet(InputStream *ist, int ist_index,
                 }
 
                 frame_available = ist->st->codec->codec_type != AVMEDIA_TYPE_VIDEO ||
-                    !ost->output_video_filter || avfilter_poll_frame(ost->output_video_filter->inputs[0]);
+                    !ost->output_video_filter || avfilter_poll_frame(ost->output_video_filter->inputs[0], 0);
                 while (frame_available) {
                     if (ist->st->codec->codec_type == AVMEDIA_TYPE_VIDEO && ost->output_video_filter) {
                         AVRational ist_pts_tb = ost->output_video_filter->inputs[0]->time_base;
                         if (av_vsink_buffer_get_video_buffer_ref(ost->output_video_filter, &ost->picref, 0) < 0)
                             goto cont;
                         if (ost->picref) {
-                            avfilter_fill_frame_from_video_buffer_ref(&picture, ost->picref);
+                            avcodec_get_frame_defaults(&oframe);
+                            avfilter_fill_frame_from_video_buffer_ref(&oframe, ost->picref);
                             ist->pts = av_rescale_q(ost->picref->pts, ist_pts_tb, AV_TIME_BASE_Q);
+                            oframe_ptr = &oframe;
                         }
                     }
 #endif
@@ -1924,7 +1927,7 @@ static int output_packet(InputStream *ist, int ist_index,
                             do_audio_out(os, ost, ist, decoded_data_buf, decoded_data_size);
                             break;
                         case AVMEDIA_TYPE_VIDEO:
-                            do_video_out(os, ost, ist, &picture, &frame_size,
+                            do_video_out(os, ost, ist, oframe_ptr, &frame_size,
                                          same_quality ? quality : ost->st->codec->global_quality);
                             if (vstats_filename && frame_size)
                                 do_video_stats(os, ost, frame_size);
@@ -2018,7 +2021,7 @@ static int output_packet(InputStream *ist, int ist_index,
 #if CONFIG_AVFILTER
                     cont:
                     frame_available = (ist->st->codec->codec_type == AVMEDIA_TYPE_VIDEO) &&
-                                       ost->output_video_filter && avfilter_poll_frame(ost->output_video_filter->inputs[0]);
+                        ost->output_video_filter && avfilter_poll_frame(ost->output_video_filter->inputs[0], 0);
                     avfilter_unref_buffer(ost->picref);
                 }
 #endif
@@ -2043,6 +2046,26 @@ static int output_packet(InputStream *ist, int ist_index,
             if (j < ost->nb_source_indexes) {
                 AVCodecContext *enc= ost->st->codec;
                 os = output_files[ost->file_index];
+
+                if (ost->st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+                    ost->output_video_filter) {
+                    while (avfilter_poll_frame(ost->output_video_filter->inputs[0], 1)) {
+                        AVFrame frame;
+                        int frame_size;
+                        AVRational ist_pts_tb = ost->output_video_filter->inputs[0]->time_base;
+                        if (av_vsink_buffer_get_video_buffer_ref(ost->output_video_filter, &ost->picref, 0) < 0)
+                            goto cont;
+                        if (ost->picref) {
+                            avfilter_fill_frame_from_video_buffer_ref(&frame, ost->picref);
+                            ist->pts = av_rescale_q(ost->picref->pts, ist_pts_tb, AV_TIME_BASE_Q);
+                            do_video_out(os, ost, ist, &frame, &frame_size,
+                                         same_quality ? quality : ost->st->codec->global_quality);
+                            if (vstats_filename && frame_size)
+                                do_video_stats(os, ost, frame_size);
+                            avfilter_unref_buffer(ost->picref);
+                        }
+                    }
+                }
 
                 if(ost->st->codec->codec_type == AVMEDIA_TYPE_AUDIO && enc->frame_size <=1)
                     continue;

@@ -42,6 +42,7 @@ typedef struct {
     int parity;
 
     int frame_pending;
+    int flush;
 
     /**
      *  0: deinterlace all frames
@@ -136,12 +137,20 @@ static void filter(AVFilterContext *ctx, AVFilterBufferRef *dstpic,
                    int parity, int tff)
 {
     YADIFContext *yadif = ctx->priv;
+    AVFilterBufferRef *p = yadif->prev;
+    AVFilterBufferRef *c = yadif->cur;
+    AVFilterBufferRef *n = yadif->next;
     int y, i;
+
+    if (!p)
+        p = c;
+    if (!n)
+        n = c;
 
     for (i = 0; i < yadif->csp->nb_components; i++) {
         int w = dstpic->video->w;
         int h = dstpic->video->h;
-        int refs = yadif->cur->linesize[i];
+        int refs = c->linesize[i];
         int df = (yadif->csp->comp[i].depth_minus1+1) / 8;
 
         if (i) {
@@ -152,15 +161,15 @@ static void filter(AVFilterContext *ctx, AVFilterBufferRef *dstpic,
 
         for (y = 0; y < h; y++) {
             if ((y ^ parity) & 1) {
-                uint8_t *prev = &yadif->prev->data[i][y*refs];
-                uint8_t *cur  = &yadif->cur ->data[i][y*refs];
-                uint8_t *next = &yadif->next->data[i][y*refs];
+                uint8_t *prev = &p->data[i][y*refs];
+                uint8_t *cur  = &c->data[i][y*refs];
+                uint8_t *next = &n->data[i][y*refs];
                 uint8_t *dst  = &dstpic->data[i][y*dstpic->linesize[i]];
                 int     mode  = y==1 || y+2==h ? 2 : yadif->mode;
                 yadif->filter_line(dst, prev, cur, next, w, y+1<h ? refs : -refs, y ? -refs : refs, parity ^ tff, mode);
             } else {
                 memcpy(&dstpic->data[i][y*dstpic->linesize[i]],
-                       &yadif->cur->data[i][y*refs], w*df);
+                       &c->data[i][y*refs], w*df);
             }
         }
     }
@@ -212,13 +221,16 @@ static void return_frame(AVFilterContext *ctx, int is_second)
     filter(ctx, yadif->out, tff ^ !is_second, tff);
 
     if (is_second) {
-        if (yadif->next->pts != AV_NOPTS_VALUE &&
-            yadif->cur->pts != AV_NOPTS_VALUE) {
-            yadif->out->pts =
-                (yadif->next->pts&yadif->cur->pts) +
-                ((yadif->next->pts^yadif->cur->pts)>>1);
-        } else {
-            yadif->out->pts = AV_NOPTS_VALUE;
+        yadif->out->pts = AV_NOPTS_VALUE;
+        if (yadif->cur->pts != AV_NOPTS_VALUE) {
+            if (yadif->next && yadif->next->pts != AV_NOPTS_VALUE) {
+                yadif->out->pts = (yadif->next->pts&yadif->cur->pts) +
+                    ((yadif->next->pts^yadif->cur->pts)>>1);
+            } else if (yadif->prev->pts != AV_NOPTS_VALUE) {
+                yadif->out->pts = yadif->cur->pts - yadif->prev->pts +
+                    (yadif->cur->pts&yadif->prev->pts) +
+                    ((yadif->cur->pts^yadif->prev->pts)>>1);
+            }
         }
         avfilter_start_frame(ctx->outputs[0], yadif->out);
     }
@@ -253,9 +265,6 @@ static void start_frame(AVFilterLink *link, AVFilterBufferRef *picref)
         return;
     }
 
-    if (!yadif->prev)
-        yadif->prev = avfilter_ref_buffer(yadif->cur, AV_PERM_READ);
-
     yadif->out = avfilter_get_video_buffer(ctx->outputs[0], AV_PERM_WRITE | AV_PERM_PRESERVE |
                                        AV_PERM_REUSE, link->w, link->h);
 
@@ -285,23 +294,28 @@ static int request_frame(AVFilterLink *link)
 {
     AVFilterContext *ctx = link->src;
     YADIFContext *yadif = ctx->priv;
+    int ret;
 
     if (yadif->frame_pending) {
         return_frame(ctx, 1);
         return 0;
     }
 
-    do {
-        int ret;
+    if (yadif->flush) {
+        if (!yadif->next)
+            return-1;
+        start_frame(link->src->inputs[0], NULL);
+        end_frame(link->src->inputs[0]);
+        return 0;
+    }
 
-        if ((ret = avfilter_request_frame(link->src->inputs[0])))
-            return ret;
-    } while (!yadif->cur);
+    if ((ret = avfilter_request_frame(link->src->inputs[0])))
+        return ret;
 
     return 0;
 }
 
-static int poll_frame(AVFilterLink *link)
+static int poll_frame(AVFilterLink *link, int flush)
 {
     YADIFContext *yadif = link->src->priv;
     int ret, val;
@@ -309,12 +323,18 @@ static int poll_frame(AVFilterLink *link)
     if (yadif->frame_pending)
         return 1;
 
-    val = avfilter_poll_frame(link->src->inputs[0]);
+    val = avfilter_poll_frame(link->src->inputs[0], flush);
 
     if (val==1 && !yadif->next) { //FIXME change API to not requre this red tape
         if ((ret = avfilter_request_frame(link->src->inputs[0])) < 0)
             return ret;
-        val = avfilter_poll_frame(link->src->inputs[0]);
+        val = avfilter_poll_frame(link->src->inputs[0], flush);
+        assert(yadif->next);
+    }
+
+    if (val == 0 && flush && yadif->next) {
+        yadif->flush = 1;
+        val = 1;
     }
     assert(yadif->next || !val);
 

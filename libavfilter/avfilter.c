@@ -481,18 +481,20 @@ int avfilter_request_frame(AVFilterLink *link)
     else return -1;
 }
 
-int avfilter_poll_frame(AVFilterLink *link)
+int avfilter_poll_frame(AVFilterLink *link, int flush)
 {
     int i, min = INT_MAX;
 
+    FF_DPRINTF_START(NULL, poll_frame); ff_dlog_link(NULL, link, 1);
+
     if (link->srcpad->poll_frame)
-        return link->srcpad->poll_frame(link);
+        return link->srcpad->poll_frame(link, flush);
 
     for (i = 0; i < link->src->input_count; i++) {
         int val;
         if (!link->src->inputs[i])
             return -1;
-        val = avfilter_poll_frame(link->src->inputs[i]);
+        val = avfilter_poll_frame(link->src->inputs[i], flush);
         min = FFMIN(min, val);
     }
 

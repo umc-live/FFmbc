@@ -269,17 +269,17 @@ static av_cold void uninit(AVFilterContext *ctx)
     if (tinterlace->next) avfilter_unref_buffer(tinterlace->next);
 }
 
-static int poll_frame(AVFilterLink *link)
+static int poll_frame(AVFilterLink *link, int flush)
 {
     TInterlaceContext *tinterlace = link->src->priv;
     int ret, val;
 
-    val = avfilter_poll_frame(link->src->inputs[0]);
+    val = avfilter_poll_frame(link->src->inputs[0], flush);
 
     if (val==1 && !tinterlace->next) { //FIXME change API to not requre this red tape
         if ((ret = avfilter_request_frame(link->src->inputs[0])) < 0)
             return ret;
-        val = avfilter_poll_frame(link->src->inputs[0]);
+        val = avfilter_poll_frame(link->src->inputs[0], flush);
     }
     assert(tinterlace->next);
 

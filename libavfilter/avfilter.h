@@ -424,7 +424,7 @@ struct AVFilterPad {
      *
      * Output video pads only.
      */
-    int (*poll_frame)(AVFilterLink *link);
+    int (*poll_frame)(AVFilterLink *link, int flush);
 
     /**
      * Frame request callback. A call to this should result in at least one
@@ -754,10 +754,11 @@ int avfilter_request_frame(AVFilterLink *link);
  * Poll a frame from the filter chain.
  *
  * @param  link the input link
+ * @param  flush flush the remaining frames
  * @return the number of immediately available frames, a negative
  * number in case of error
  */
-int avfilter_poll_frame(AVFilterLink *link);
+int avfilter_poll_frame(AVFilterLink *link, int flush);
 
 /**
  * Notifie the next filter of the start of a frame.

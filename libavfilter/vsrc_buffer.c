@@ -201,7 +201,7 @@ static int request_frame(AVFilterLink *link)
     return 0;
 }
 
-static int poll_frame(AVFilterLink *link)
+static int poll_frame(AVFilterLink *link, int flush)
 {
     BufferSourceContext *c = link->src->priv;
     return !!(c->picref);

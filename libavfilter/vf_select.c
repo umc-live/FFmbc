@@ -289,14 +289,14 @@ static int request_frame(AVFilterLink *outlink)
     return 0;
 }
 
-static int poll_frame(AVFilterLink *outlink)
+static int poll_frame(AVFilterLink *outlink, int flush)
 {
     SelectContext *select = outlink->src->priv;
     AVFilterLink *inlink = outlink->src->inputs[0];
     int count, ret;
 
     if (!av_fifo_size(select->pending_frames)) {
-        if ((count = avfilter_poll_frame(inlink)) <= 0)
+        if ((count = avfilter_poll_frame(inlink, flush)) <= 0)
             return count;
         /* request frame from input, and apply select condition to it */
         select->cache_frames = 1;
