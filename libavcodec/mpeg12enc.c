@@ -133,6 +133,49 @@ static av_cold int encode_init(AVCodecContext *avctx)
 {
     MpegEncContext *s = avctx->priv_data;
 
+    if(avctx->profile == FF_PROFILE_UNKNOWN){
+        if(avctx->level != FF_LEVEL_UNKNOWN){
+            av_log(avctx, AV_LOG_ERROR, "Set profile and level\n");
+            return -1;
+        }
+        avctx->profile = avctx->pix_fmt == PIX_FMT_YUV420P ? 4 : 0; /* Main or 4:2:2 */
+    }
+
+    if(avctx->level == FF_LEVEL_UNKNOWN){
+        if(avctx->profile == 0){ /* 4:2:2 */
+            if(avctx->width <= 720 && avctx->height <= 608) avctx->level = 5; /* Main */
+            else                                            avctx->level = 2; /* High */
+        }else{
+            if(avctx->profile != 1 && avctx->pix_fmt != PIX_FMT_YUV420P){
+                av_log(avctx, AV_LOG_ERROR, "Only High(1) and 4:2:2(0) profiles support 4:2:2 color sampling\n");
+                return -1;
+            }
+            if(avctx->width <= 720 && avctx->height <= 576) avctx->level = 8; /* Main */
+            else if(avctx->width <= 1440)                   avctx->level = 6; /* High 1440 */
+            else                                            avctx->level = 4; /* High */
+        }
+    }
+
+    if (avctx->rc_max_rate && !avctx->rc_buffer_size) {
+        int max = 0;
+        if (avctx->profile == 0) {
+            max = avctx->level == 5 ? 9437184 : 47185920;
+        } else if (avctx->profile == 4) {
+            switch (avctx->level) {
+            case 8: max = 1835008; break;
+            case 6: max = 7340032; break;
+            case 4: max = 9781248; break;
+            }
+        } else {
+            switch (avctx->level) {
+            case 8: max = 2441216; break;
+            case 6: max = 9781248; break;
+            case 4: max = 12222464; break;
+            }
+        }
+        avctx->rc_buffer_size = FFMIN(max, avctx->rc_max_rate*65535LL/90000);
+    }
+
     if(MPV_encode_init(avctx) < 0)
         return -1;
 
@@ -142,29 +185,6 @@ static av_cold int encode_init(AVCodecContext *avctx)
             return -1;
         }else{
             av_log(avctx, AV_LOG_INFO, "MPEG1/2 does not support %d/%d fps, there may be AV sync issues\n", avctx->time_base.den, avctx->time_base.num);
-        }
-    }
-
-    if(avctx->profile == FF_PROFILE_UNKNOWN){
-        if(avctx->level != FF_LEVEL_UNKNOWN){
-            av_log(avctx, AV_LOG_ERROR, "Set profile and level\n");
-            return -1;
-        }
-        avctx->profile = s->chroma_format == CHROMA_420 ? 4 : 0; /* Main or 4:2:2 */
-    }
-
-    if(avctx->level == FF_LEVEL_UNKNOWN){
-        if(avctx->profile == 0){ /* 4:2:2 */
-            if(avctx->width <= 720 && avctx->height <= 608) avctx->level = 5; /* Main */
-            else                                            avctx->level = 2; /* High */
-        }else{
-            if(avctx->profile != 1 && s->chroma_format != CHROMA_420){
-                av_log(avctx, AV_LOG_ERROR, "Only High(1) and 4:2:2(0) profiles support 4:2:2 color sampling\n");
-                return -1;
-            }
-            if(avctx->width <= 720 && avctx->height <= 576) avctx->level = 8; /* Main */
-            else if(avctx->width <= 1440)                   avctx->level = 6; /* High 1440 */
-            else                                            avctx->level = 4; /* High */
         }
     }
 
