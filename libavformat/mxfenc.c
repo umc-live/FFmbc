@@ -80,6 +80,7 @@ typedef struct {
     int temporal_reordering;
     AVRational aspect_ratio; ///< display aspect ratio
     int closed_gop;          ///< gop is closed, used in mpeg-2 frame parsing
+    int audio_channels;      ///< at least 4 in d10 mxf
 } MXFStreamContext;
 
 typedef struct {
@@ -892,6 +893,7 @@ static void mxf_write_mpegvideo_desc(AVFormatContext *s, AVStream *st)
 
 static void mxf_write_generic_sound_common(AVFormatContext *s, AVStream *st, const UID key, unsigned size)
 {
+    MXFStreamContext *sc = st->priv_data;
     AVIOContext *pb = s->pb;
 
     mxf_write_generic_desc(s, st, key, size+5+12+8+8);
@@ -906,7 +908,7 @@ static void mxf_write_generic_sound_common(AVFormatContext *s, AVStream *st, con
     avio_wb32(pb, 1);
 
     mxf_write_local_tag(pb, 4, 0x3D07);
-    avio_wb32(pb, st->codec->channels);
+    avio_wb32(pb, sc->audio_channels);
 
     mxf_write_local_tag(pb, 4, 0x3D01);
     avio_wb32(pb, av_get_bits_per_sample(st->codec->codec_id));
@@ -1503,6 +1505,7 @@ static int mxf_write_header(AVFormatContext *s)
                 return -1;
             }
             av_set_pts_info(st, 64, 1, st->codec->sample_rate);
+            sc->audio_channels = st->codec->channels;
             if (s->oformat == &ff_mxf_d10_muxer) {
                 if (st->index != 1) {
                     av_log(s, AV_LOG_ERROR, "MXF D-10 only support one audio track\n");
@@ -1511,6 +1514,14 @@ static int mxf_write_header(AVFormatContext *s)
                 if (st->codec->codec_id != CODEC_ID_PCM_S16LE &&
                     st->codec->codec_id != CODEC_ID_PCM_S24LE) {
                     av_log(s, AV_LOG_ERROR, "MXF D-10 only support 16 or 24 bits le audio\n");
+                }
+                if (st->codec->channels <= 4)
+                    sc->audio_channels = 4;
+                else if (st->codec->channels <= 8)
+                    sc->audio_channels = 8;
+                else {
+                    av_log(s, AV_LOG_ERROR, "MXF D-10 only support <= 8 audio channels\n");
+                    return -1;
                 }
                 sc->index = ((MXFStreamContext*)s->streams[0]->priv_data)->index + 1;
             } else
@@ -1674,6 +1685,7 @@ static void mxf_write_d10_video_packet(AVFormatContext *s, AVStream *st, AVPacke
 static void mxf_write_d10_audio_packet(AVFormatContext *s, AVStream *st, AVPacket *pkt)
 {
     MXFContext *mxf = s->priv_data;
+    MXFStreamContext *sc = st->priv_data;
     AVIOContext *pb = s->pb;
     int frame_size = pkt->size / st->codec->block_align;
     uint8_t *samples = pkt->data;
@@ -1684,7 +1696,7 @@ static void mxf_write_d10_audio_packet(AVFormatContext *s, AVStream *st, AVPacke
 
     avio_w8(pb, (frame_size == 1920 ? 0 : (mxf->edit_units_count-1) % 5 + 1));
     avio_wl16(pb, frame_size);
-    avio_w8(pb, (1<<st->codec->channels)-1);
+    avio_w8(pb, (1<<sc->audio_channels)-1);
 
     while (samples < end) {
         for (i = 0; i < st->codec->channels; i++) {
