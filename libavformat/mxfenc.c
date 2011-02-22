@@ -512,7 +512,7 @@ static void mxf_write_identification(AVFormatContext *s)
 {
     MXFContext *mxf = s->priv_data;
     AVIOContext *pb = s->pb;
-    const char *company = "FFmpeg";
+    const char *company = "FFmbc";
     const char *product = "OP1a Muxer";
     const char *version;
     int length;
