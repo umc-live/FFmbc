@@ -2235,7 +2235,7 @@ static const AVRational frame_rate_tab[] = {
     {    0,    0},
 };
 
-static void validate_audio_target(OutputStream *ost)
+static void validate_audio_target(AVFormatContext *s, OutputStream *ost)
 {
     int sample_rate;
     if (!strcmp(ost->target, "vcd") || !strcmp(ost->target, "svcd"))
@@ -2247,6 +2247,13 @@ static void validate_audio_target(OutputStream *ost)
                 "%d sample rate\n", ost->target, sample_rate);
         fprintf(stderr, "Resample with \"-ar %d\"\n", sample_rate);
         ffmpeg_exit(1);
+    }
+    if (!strcmp(s->oformat->name, "mxf")) {
+        if (ost->st->codec->channels != 1) {
+            fprintf(stderr, "Error, target %s only supports "
+                    "mono audio tracks\n", ost->target);
+            ffmpeg_exit(1);
+        }
     }
 }
 
@@ -2316,7 +2323,7 @@ static int auto_scale_pad(OutputStream *ost, int width, int scale_height, int pa
     return 0;
 }
 
-static void validate_video_target(OutputStream *ost)
+static void validate_video_target(AVFormatContext *s, OutputStream *ost)
 {
     enum { NTSC_FILM, FILM, PAL, NTSC, HD50P, HD60P, UNKNOWN } norm = UNKNOWN;
     int frame_rate = (int)(ost->st->codec->time_base.den * 1000.0
@@ -2385,6 +2392,45 @@ static void validate_video_target(OutputStream *ost)
                 fprintf(stderr, "Error, target %s only supports 720x608(pal) "
                         "or 720x512(ntsc) resolutions\n", ost->target);
                 ffmpeg_exit(1);
+            }
+        }
+    } else if (!strcmp(ost->target, "xdcamhd422")) {
+        if ((norm == HD50P || norm == HD60P) &&
+            (ost->st->codec->width != 1280 || ost->st->codec->height != 720)) {
+            fprintf(stderr, "Error, target %s only supports 1280x720 resolution with "
+                    "this frame rate\n", ost->target);
+            ffmpeg_exit(1);
+        }
+        if (!((ost->st->codec->width == 1920 && ost->st->codec->height == 1080) ||
+              (ost->st->codec->width == 1280 && ost->st->codec->height == 720))) {
+            fprintf(stderr, "Error, target %s only supports 1920x1080 "
+                    "or 1280x720 resolutions\n", ost->target);
+            ffmpeg_exit(1);
+        }
+        if (!strcmp(s->oformat->name, "mov")) {
+            if (ost->st->codec->height == 720) {
+                if (norm == FILM || norm == NTSC_FILM)
+                    ost->st->codec->codec_tag = AV_RL32("xd54");
+                else if (norm == PAL)
+                    ost->st->codec->codec_tag = AV_RL32("xd55");
+                else if (norm == HD60P)
+                    ost->st->codec->codec_tag = AV_RL32("xd59");
+                else
+                    ost->st->codec->codec_tag = AV_RL32("xd5a");
+            } else {
+                if (ost->st->codec->interlaced) {
+                    if (norm == NTSC)
+                        ost->st->codec->codec_tag = AV_RL32("xd5b");
+                    else
+                        ost->st->codec->codec_tag = AV_RL32("xd5c");
+                } else {
+                    if (norm == FILM || norm == NTSC_FILM)
+                        ost->st->codec->codec_tag = AV_RL32("xd5d");
+                    else if (norm == PAL)
+                        ost->st->codec->codec_tag = AV_RL32("xd5e");
+                    else if (norm == NTSC)
+                        ost->st->codec->codec_tag = AV_RL32("xd5f");
+                }
             }
         }
     }
@@ -2719,7 +2765,7 @@ static int transcode(AVFormatContext **output_files,
                 if(codec->codec_id == CODEC_ID_AC3)
                     codec->block_align= 0;
                 if (ost->target)
-                    validate_audio_target(ost);
+                    validate_audio_target(os, ost);
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 codec->pix_fmt = icodec->pix_fmt;
@@ -2734,7 +2780,7 @@ static int transcode(AVFormatContext **output_files,
                         ist->st->codec->sample_aspect_ratio : (AVRational){0, 1};
                 }
                 if (ost->target)
-                    validate_video_target(ost);
+                    validate_video_target(os, ost);
                 break;
             case AVMEDIA_TYPE_SUBTITLE:
                 codec->width = icodec->width;
@@ -2793,7 +2839,7 @@ static int transcode(AVFormatContext **output_files,
                     codec->channel_layout = 0;
 
                 if (ost->target)
-                    validate_audio_target(ost);
+                    validate_audio_target(os, ost);
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 if (codec->pix_fmt == PIX_FMT_NONE)
@@ -2864,7 +2910,7 @@ static int transcode(AVFormatContext **output_files,
                 }
 #endif
                 if (ost->target)
-                    validate_video_target(ost);
+                    validate_video_target(os, ost);
                 break;
             case AVMEDIA_TYPE_SUBTITLE:
                 ost->encoding_needed = 1;
@@ -4963,6 +5009,26 @@ static int opt_target(const char *opt, const char *arg)
         }
 
         audio_sample_rate = 48000;
+    } else if(!strcmp(arg, "xdcamhd422")) {
+        opt_codec("vcodec", "mpeg2video");
+        opt_codec("acodec", "pcm_s16le");
+        opt_default("flags2", "+ivlc+non_linear_q");
+        opt_default("bf", "2");
+        opt_default("g", norm == NTSC ? "15" : "12");
+        opt_frame_pix_fmt("pix_fmt", "yuv422p");
+
+        opt_qscale("qscale", "1");
+        opt_default("qmin", "1");
+        opt_default("b", "50000000");
+        opt_default("maxrate", "50000000");
+        opt_default("minrate", "50000000");
+        opt_default("bufsize", "17825792");
+        opt_default("rc_init_occupancy", "17825792");
+        opt_default("sc_threshold", "1000000000");
+
+        intra_dc_precision = 10;
+
+        audio_sample_rate = 48000;
     } else {
         fprintf(stderr, "Unknown target: %s\n", arg);
         return AVERROR(EINVAL);
@@ -5081,7 +5147,7 @@ static const OptionDef options[] = {
     { "loop_input", OPT_BOOL | OPT_EXPERT, {(void*)&loop_input}, "deprecated, use -loop" },
     { "loop_output", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&loop_output}, "deprecated, use -loop", "" },
     { "v", HAS_ARG, {(void*)opt_verbose}, "set ffmpeg verbosity level", "number" },
-    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dv\", \"dv50\", \"imx30\", \"imx50\")", "type" },
+    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dv\", \"dv50\", \"imx30\", \"imx50\", \"xdcamhd422\")", "type" },
     { "threads",  HAS_ARG | OPT_EXPERT, {(void*)opt_thread_count}, "thread count", "count" },
     { "vsync", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&video_sync_method}, "video sync method", "" },
     { "async", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&audio_sync_method}, "audio sync method", "" },
