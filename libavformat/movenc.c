@@ -1401,7 +1401,12 @@ static int mov_write_tkhd_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
     (version == 1) ? avio_wb32(pb, 104) : avio_wb32(pb, 92); /* size */
     avio_wtag(pb, "tkhd");
     avio_w8(pb, version);
-    avio_wb24(pb, 0xf); /* flags (track enabled) */
+    if (track->mode == MODE_MOV)
+        avio_wb24(pb, 0xf); /* flags (track enabled) */
+    else if (track->tag == AV_RL32("rtp "))
+        avio_wb24(pb, 0x0);
+    else
+        avio_wb24(pb, 0x7);
     if (version == 1) {
         avio_wb64(pb, track->time);
         avio_wb64(pb, track->time);
