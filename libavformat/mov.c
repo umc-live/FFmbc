@@ -640,21 +640,16 @@ static int mov_read_pasp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     const int num = avio_rb32(pb);
     const int den = avio_rb32(pb);
     AVStream *st;
+    MOVStreamContext *sc;
 
-    if (c->fc->nb_streams < 1)
+    if (c->fc->nb_streams < 1 || num < 0 || den < 0)
         return 0;
     st = c->fc->streams[c->fc->nb_streams-1];
+    sc = st->priv_data;
 
-    if ((st->sample_aspect_ratio.den != 1 || st->sample_aspect_ratio.num) && // default
-        (den != st->sample_aspect_ratio.den || num != st->sample_aspect_ratio.num)) {
-        av_log(c->fc, AV_LOG_WARNING,
-               "sample aspect ratio already set to %d:%d, ignoring 'pasp' atom (%d:%d)\n",
-               st->sample_aspect_ratio.num, st->sample_aspect_ratio.den,
-               num, den);
-    } else if (den != 0) {
-        st->sample_aspect_ratio.num = num;
-        st->sample_aspect_ratio.den = den;
-    }
+    av_reduce(&sc->pixel_aspect.num, &sc->pixel_aspect.den,
+              num, den, INT_MAX);
+
     return 0;
 }
 
@@ -1922,18 +1917,25 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         sc->pb = c->fc->pb;
 
     if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
-        if (!st->sample_aspect_ratio.num &&
-            (st->codec->width != sc->width || st->codec->height != sc->height)) {
-            st->sample_aspect_ratio = av_d2q(((double)st->codec->height * sc->width) /
-                                             ((double)st->codec->width * sc->height), INT_MAX);
-        }
-
         av_reduce(&st->avg_frame_rate.num, &st->avg_frame_rate.den,
                   sc->time_scale*st->nb_frames, st->duration, INT_MAX);
 
         if (sc->stts_count == 1 || (sc->stts_count == 2 && sc->stts_data[1].count == 1))
             av_reduce(&st->r_frame_rate.num, &st->r_frame_rate.den,
                       sc->time_scale, sc->stts_data[0].duration, INT_MAX);
+
+        // tkhd with matrix will set it
+        if (!st->sample_aspect_ratio.num) {
+            if (sc->width != st->codec->width || sc->height != st->codec->height) {
+                // tkhd width/height is different than stsd
+                st->sample_aspect_ratio =
+                    av_div_q((AVRational){sc->width, sc->height},
+                             (AVRational){st->codec->width, st->codec->height});
+            } else if (sc->pixel_aspect.den && sc->pixel_aspect.num) {
+                // pasp
+                st->sample_aspect_ratio = sc->pixel_aspect;
+            }
+        }
     }
 
     /* Do not need those anymore. */
@@ -2369,6 +2371,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('s','t','s','z'), mov_read_stsz }, /* sample size */
 { MKTAG('s','t','t','s'), mov_read_stts },
 { MKTAG('s','t','z','2'), mov_read_stsz }, /* compact sample size */
+{ MKTAG('t','a','p','t'), mov_read_default },
 { MKTAG('t','k','h','d'), mov_read_tkhd }, /* track header */
 { MKTAG('t','f','h','d'), mov_read_tfhd }, /* track fragment header */
 { MKTAG('t','r','a','k'), mov_read_trak },
