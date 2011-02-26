@@ -102,6 +102,8 @@ static int movie_init(AVFilterContext *ctx)
     if ((ret = avformat_find_stream_info(movie->format_ctx, NULL)) < 0)
         av_log(ctx, AV_LOG_WARNING, "Failed to find stream info\n");
 
+    dump_format(movie->format_ctx, 0, movie->file_name, 0);
+
     // if seeking requested, we execute it
     if (movie->seek_point > 0) {
         timestamp = movie->seek_point;
