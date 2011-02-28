@@ -46,7 +46,6 @@ do_video_decoding "-idct int"
 do_video_encoding mpeg2i.mpg "-qscale 10 -vcodec mpeg2video -f mpeg1video -bff"
 do_video_decoding
 fi
-
 if [ -n "$do_mpeg2thread" ] ; then
 # mpeg2 encoding interlaced
 do_video_encoding mpeg2thread.mpg "-qscale 10 -vcodec mpeg2video -f mpeg1video -bf 2 -bff -threads 2"
@@ -250,7 +249,7 @@ do_video_decoding "" "-pix_fmt yuv420p -sws_flags area+accurate_rnd+bitexact"
 fi
 
 if [ -n "$do_roq" ] ; then
-do_video_encoding roqav.roq "-vframes 5"
+do_video_encoding roqav.roq "" "-vframes 5 -r 30"
 do_video_decoding "" "-pix_fmt yuv420p"
 fi
 

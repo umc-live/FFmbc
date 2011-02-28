@@ -354,6 +354,8 @@ typedef struct InputStream {
                                 is not defined */
     int64_t       pts;       /* current pts */
     double ts_scale;
+    int64_t       dts;       /* current dts */
+    int dts_is_reordered_pts;/* set this to 1 if format is avi/wmv/raw, ie format has no pts */
     int is_start;            /* is 1 at the start and after a discontinuity */
     int showed_multi_packet_warning;
     int is_past_recording_time;
@@ -1355,17 +1357,19 @@ static void do_video_out(AVFormatContext *s,
     *frame_size = 0;
 
     if (video_sync_method && video_sync_method != 3) {
-        double vdelta = sync_ipts - ost->sync_opts;
-        //FIXME set to 0.5 after we fix some dts/pts bugs like in avidec.c
-        if (vdelta < -1.1)
+        double vdelta;
+        if (ist->dts_is_reordered_pts && ist->st->codec->has_b_frames > 0)
+            sync_ipts -= ist->st->codec->has_b_frames;
+        vdelta = sync_ipts - ost->sync_opts;
+        if (vdelta <= -0.6)
             nb_frames = 0;
         else if (video_sync_method == 2 || (video_sync_method<0 && (s->oformat->flags & AVFMT_VARIABLE_FPS))){
             if(vdelta<=-0.6){
                 nb_frames=0;
             }else if(vdelta>0.6)
                 ost->sync_opts= lrintf(sync_ipts);
-        }else if (vdelta > 1.1)
-            nb_frames = lrintf(vdelta);
+        }else if (vdelta > 0.6)
+            nb_frames += lrintf(vdelta);
         if (verbose>3)
             fprintf(stderr, "vdelta:%f, ost->sync_opts:%"PRId64", ost->sync_ipts:%f nb_frames:%d\n",
                     vdelta, ost->sync_opts, get_sync_ipts(ost), nb_frames);
@@ -1378,8 +1382,11 @@ static void do_video_out(AVFormatContext *s,
             if (verbose>2)
                 fprintf(stderr, "*** %d dup!\n", nb_frames-1);
         }
-    } else if (!video_sync_method)
+    } else if (!video_sync_method) {
+        if (ist->dts_is_reordered_pts && ist->st->codec->has_b_frames > 0)
+            sync_ipts -= ist->st->codec->has_b_frames;
         ost->sync_opts= lrintf(sync_ipts);
+    }
 
     nb_frames= FFMIN(nb_frames, max_frames[AVMEDIA_TYPE_VIDEO] - ost->frame_number);
     if (nb_frames <= 0)
@@ -1997,7 +2004,13 @@ static int output_packet(InputStream *ist, int ist_index,
                         opkt.dts -= ost_tb_start_time;
 
                         opkt.duration = av_rescale_q(pkt->duration, ist->st->time_base, ost->st->time_base);
-                        opkt.flags= pkt->flags;
+                        opkt.flags = pkt->flags;
+                        if (ist->dts_is_reordered_pts && ist->st->codec->has_b_frames > 0) {
+                            if (opkt.pts != AV_NOPTS_VALUE)
+                                opkt.pts -= ist->st->codec->has_b_frames*opkt.duration;
+                            if (opkt.dts != AV_NOPTS_VALUE)
+                                opkt.dts -= ist->st->codec->has_b_frames*opkt.duration;
+                        }
 
                         //FIXME remove the following 2 lines they shall be replaced by the bitstream filters
                         if(   ost->st->codec->codec_id != CODEC_ID_H264
@@ -3038,9 +3051,20 @@ static int transcode(AVFormatContext **output_files,
         AVStream *st;
         ist = &input_streams[i];
         st= ist->st;
+        is = input_files[ist->file_index].ctx;
         ist->pts = 0;
-        ist->next_pts = AV_NOPTS_VALUE;
+        ist->dts = ist->next_pts = AV_NOPTS_VALUE;
         ist->is_start = 1;
+        if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+            strcmp(is->iformat->name, "mpeg") &&
+            strcmp(is->iformat->name, "mpegts") &&
+            strcmp(is->iformat->name, "ffm") &&
+            strcmp(is->iformat->name, "nut") &&
+            strcmp(is->iformat->name, "h264") &&
+            strncmp(is->iformat->name, "matroska", 8) &&
+            strncmp(is->iformat->name, "mov", 3)) {
+            ist->dts_is_reordered_pts = 1;
+        }
     }
 
     /* set meta data information from input file if required */
@@ -3329,12 +3353,12 @@ static int transcode(AVFormatContext **output_files,
                 pkt.dts *= ist->ts_scale;
         }
 
-//        fprintf(stderr, "next:%"PRId64" dts:%"PRId64" off:%"PRId64" %d\n", ist->next_pts, pkt.dts, input_files[ist->file_index].ts_offset, ist->st->codec->codec_type);
-        if (pkt.dts != AV_NOPTS_VALUE && ist->next_pts != AV_NOPTS_VALUE
+        //fprintf(stderr, "st:%d prevdts:%"PRId64" dts:%"PRId64" off:%"PRId64" %d\n", pkt.stream_index, ist->dts, pkt.dts, input_files_ts_offset[ist->file_index], ist->st->codec->codec_type);
+        if (pkt.dts != AV_NOPTS_VALUE && ist->dts != AV_NOPTS_VALUE
             && (is->iformat->flags & AVFMT_TS_DISCONT)) {
             int64_t pkt_dts= av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
-            int64_t delta= pkt_dts - ist->next_pts;
-            if((FFABS(delta) > 1LL*dts_delta_threshold*AV_TIME_BASE || pkt_dts+1<ist->pts)&& !copy_ts){
+            int64_t delta = pkt_dts - av_rescale_q(ist->dts, ist->st->time_base, AV_TIME_BASE_Q);
+            if(FFABS(delta) > dts_delta_threshold*AV_TIME_BASE && !copy_ts){
                 input_files[ist->file_index].ts_offset -= delta;
                 if (verbose > 2)
                     fprintf(stderr, "timestamp discontinuity %"PRId64", new offset= %"PRId64"\n",
@@ -3344,6 +3368,7 @@ static int transcode(AVFormatContext **output_files,
                     pkt.pts-= av_rescale_q(delta, AV_TIME_BASE_Q, ist->st->time_base);
             }
         }
+        ist->dts = pkt.dts;
 
         /* finish if recording time exhausted */
         if (recording_time != INT64_MAX &&

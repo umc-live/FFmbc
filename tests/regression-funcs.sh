@@ -101,7 +101,7 @@ do_video_decoding()
 do_video_encoding()
 {
     file=${outfile}$1
-    do_ffmpeg $file $DEC_OPTS -f image2 -vcodec pgmyuv -i $raw_src $ENC_OPTS $2
+    do_ffmpeg $file $DEC_OPTS $3 -f image2 -vcodec pgmyuv -i $raw_src $ENC_OPTS $2
 }
 
 do_audio_encoding()
