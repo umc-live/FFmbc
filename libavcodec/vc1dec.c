@@ -3435,14 +3435,11 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
           return -1;
 
         count = avctx->extradata_size*8 - get_bits_count(&gb);
-        if (count>0)
-        {
-            av_log(avctx, AV_LOG_INFO, "Extra data: %i bits left, value: %X\n",
+        if (count>0) {
+            av_log(avctx, AV_LOG_DEBUG, "Extra data: %i bits left, value: %X\n",
                    count, get_bits(&gb, count));
-        }
-        else if (count < 0)
-        {
-            av_log(avctx, AV_LOG_INFO, "Read %i bits in overflow\n", -count);
+        } else if (count < 0) {
+            av_log(avctx, AV_LOG_DEBUG, "Read %i bits in overflow\n", -count);
         }
     } else { // VC1/WVC1/WVP2
         const uint8_t *start = avctx->extradata;
