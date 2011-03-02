@@ -890,71 +890,6 @@ static int is_intra_only(AVCodecContext *enc){
     return 0;
 }
 
-static void update_initial_timestamps(AVFormatContext *s, int stream_index,
-                                      int64_t dts, int64_t pts)
-{
-    AVStream *st= s->streams[stream_index];
-    AVPacketList *pktl= s->packet_buffer;
-
-    if(st->first_dts != AV_NOPTS_VALUE || dts == AV_NOPTS_VALUE || st->cur_dts == AV_NOPTS_VALUE)
-        return;
-
-    st->first_dts= dts - st->cur_dts;
-    st->cur_dts= dts;
-
-    for(; pktl; pktl= pktl->next){
-        if(pktl->pkt.stream_index != stream_index)
-            continue;
-        //FIXME think more about this check
-        if(pktl->pkt.pts != AV_NOPTS_VALUE && pktl->pkt.pts == pktl->pkt.dts)
-            pktl->pkt.pts += st->first_dts;
-
-        if(pktl->pkt.dts != AV_NOPTS_VALUE)
-            pktl->pkt.dts += st->first_dts;
-
-        if(st->start_time == AV_NOPTS_VALUE && pktl->pkt.pts != AV_NOPTS_VALUE)
-            st->start_time= pktl->pkt.pts;
-    }
-    if (st->start_time == AV_NOPTS_VALUE)
-        st->start_time = pts;
-}
-
-static void update_initial_durations(AVFormatContext *s, AVStream *st, AVPacket *pkt)
-{
-    AVPacketList *pktl= s->packet_buffer;
-    int64_t cur_dts= 0;
-
-    if(st->first_dts != AV_NOPTS_VALUE){
-        cur_dts= st->first_dts;
-        for(; pktl; pktl= pktl->next){
-            if(pktl->pkt.stream_index == pkt->stream_index){
-                if(pktl->pkt.pts != pktl->pkt.dts || pktl->pkt.dts != AV_NOPTS_VALUE || pktl->pkt.duration)
-                    break;
-                cur_dts -= pkt->duration;
-            }
-        }
-        pktl= s->packet_buffer;
-        st->first_dts = cur_dts;
-    }else if(st->cur_dts)
-        return;
-
-    for(; pktl; pktl= pktl->next){
-        if(pktl->pkt.stream_index != pkt->stream_index)
-            continue;
-        if(pktl->pkt.pts == pktl->pkt.dts && pktl->pkt.dts == AV_NOPTS_VALUE
-           && !pktl->pkt.duration){
-            pktl->pkt.dts= cur_dts;
-            if(!st->codec->has_b_frames)
-                pktl->pkt.pts= cur_dts;
-            cur_dts += pkt->duration;
-            pktl->pkt.duration= pkt->duration;
-        }else
-            break;
-    }
-    if(st->first_dts == AV_NOPTS_VALUE)
-        st->cur_dts= cur_dts;
-}
-
 static void compute_pkt_fields(AVFormatContext *s, AVStream *st,
                                AVCodecParserContext *pc, AVPacket *pkt)
 {
@@ -1004,8 +939,6 @@ static void compute_pkt_fields(AVFormatContext *s, AVStream *st,
         if (den && num) {
             pkt->duration = av_rescale(1, num * (int64_t)st->time_base.den,
                                        den * (int64_t)st->time_base.num);
-            if(pkt->duration != 0 && s->packet_buffer)
-                update_initial_durations(s, st, pkt);
         }
     }
 
@@ -1053,7 +986,6 @@ static void compute_pkt_fields(AVFormatContext *s, AVStream *st,
             /* PTS = presentation timestamp */
             if (pkt->dts == AV_NOPTS_VALUE)
                 pkt->dts = st->last_IP_pts;
-            update_initial_timestamps(s, pkt->stream_index, pkt->dts, pkt->pts);
             if (pkt->dts == AV_NOPTS_VALUE)
                 pkt->dts = st->cur_dts;
 
@@ -1080,7 +1012,6 @@ static void compute_pkt_fields(AVFormatContext *s, AVStream *st,
             /* presentation is not delayed : PTS and DTS are the same */
             if(pkt->pts == AV_NOPTS_VALUE)
                 pkt->pts = pkt->dts;
-            update_initial_timestamps(s, pkt->stream_index, pkt->pts, pkt->pts);
             if(pkt->pts == AV_NOPTS_VALUE)
                 pkt->pts = st->cur_dts;
             pkt->dts = pkt->pts;
@@ -1095,9 +1026,6 @@ static void compute_pkt_fields(AVFormatContext *s, AVStream *st,
             FFSWAP(int64_t, st->pts_buffer[i], st->pts_buffer[i+1]);
         if(pkt->dts == AV_NOPTS_VALUE)
             pkt->dts= st->pts_buffer[0];
-        if(st->codec->codec_id == CODEC_ID_H264){ //we skiped it above so we try here
-            update_initial_timestamps(s, pkt->stream_index, pkt->dts, pkt->pts); // this should happen on the first packet
-        }
         if(pkt->dts > st->cur_dts)
             st->cur_dts = pkt->dts;
     }
@@ -1891,14 +1819,18 @@ static void update_stream_timings(AVFormatContext *ic)
     duration = INT64_MIN;
     for(i = 0;i < ic->nb_streams; i++) {
         st = ic->streams[i];
-        if (st->start_time != AV_NOPTS_VALUE && st->time_base.den) {
-            start_time1= av_rescale_q(st->start_time, st->time_base, AV_TIME_BASE_Q);
+        if ((st->start_time != AV_NOPTS_VALUE || st->first_dts != AV_NOPTS_VALUE) &&
+            st->time_base.den) {
+            if (st->start_time != AV_NOPTS_VALUE)
+                start_time1 = av_rescale_q(st->start_time, st->time_base, AV_TIME_BASE_Q);
+            else
+                start_time1 = av_rescale_q(st->first_dts, st->time_base, AV_TIME_BASE_Q);
             if (st->codec->codec_id == CODEC_ID_DVB_TELETEXT) {
                 if (start_time1 < start_time_text)
                     start_time_text = start_time1;
             } else
-            if (start_time1 < start_time)
-                start_time = start_time1;
+                if (start_time1 < start_time)
+                    start_time = start_time1;
             if (st->duration != AV_NOPTS_VALUE) {
                 end_time1 = start_time1
                           + av_rescale_q(st->duration, st->time_base, AV_TIME_BASE_Q);
@@ -2104,22 +2036,14 @@ static void estimate_timings(AVFormatContext *ic, int64_t old_offset)
     }
     update_stream_timings(ic);
 
-#if 0
     {
         int i;
-        AVStream av_unused *st;
-        for(i = 0;i < ic->nb_streams; i++) {
-            st = ic->streams[i];
-        printf("%d: start_time: %0.3f duration: %0.3f\n",
-               i, (double)st->start_time / AV_TIME_BASE,
-               (double)st->duration / AV_TIME_BASE);
+        for (i = 0; i < ic->nb_streams; i++) {
+            AVStream *st = ic->streams[i];
+            av_log(ic, AV_LOG_DEBUG, "%d: start_time: %"PRId64" duration: %"PRId64"\n",
+                   i, st->start_time, st->duration);
         }
-        printf("stream: start_time: %0.3f duration: %0.3f bitrate=%"PRId64" kb/s\n",
-               (double)ic->start_time / AV_TIME_BASE,
-               (double)ic->duration / AV_TIME_BASE,
-               ic->bit_rate / 1000);
     }
-#endif
 }
 
 static int has_codec_parameters(AVCodecContext *avctx)
@@ -2407,6 +2331,11 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
         read_size += pkt->size;
 
         st = ic->streams[pkt->stream_index];
+        if (st->codec_info_nb_frames == 0) {
+            st->first_dts = pkt->dts;
+            if (st->start_time == AV_NOPTS_VALUE)
+                st->start_time = pkt->pts;
+        }
         if (pkt->pts != AV_NOPTS_VALUE && st->start_time != AV_NOPTS_VALUE &&
             st->start_time - pkt->pts < 1ULL<<(st->pts_wrap_bits-1) &&
             pkt->pts < st->start_time && st->codec_info_nb_frames < 10) {
