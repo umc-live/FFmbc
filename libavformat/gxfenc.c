@@ -44,6 +44,7 @@ typedef struct GXFStreamContext {
     int p_per_gop;
     int b_per_i_or_p; ///< number of B frames per I frame or P frame
     int first_gop_closed;
+    int aspect_ratio; ///< display aspect ratio: 0 => 4:3, 1 => 16:9
     unsigned order;   ///< interleaving order
 } GXFStreamContext;
 
@@ -189,10 +190,11 @@ static int gxf_write_mpeg_auxiliary(AVIOContext *pb, AVStream *st)
         starting_line = 23; // default PAL
 
     size = snprintf(buffer, 1024, "Ver 1\nBr %.6f\nIpg 1\nPpi %d\nBpiop %d\n"
-                    "Pix 0\nCf %d\nCg %d\nSl %d\nnl16 %d\nVi 1\nf1 1\n",
+                    "Pix 0\nCf %d\nCg %d\nSl %d\nnl16 %d\nVi 1\nf1 1\nar %d\n",
                     (float)st->codec->bit_rate, sc->p_per_gop, sc->b_per_i_or_p,
                     st->codec->pix_fmt == PIX_FMT_YUV422P ? 2 : 1, sc->first_gop_closed == 1,
-                    starting_line, (st->codec->height + 15) / 16);
+                    starting_line, (st->codec->height + 15) / 16,
+                    sc->aspect_ratio);
     avio_w8(pb, TRACK_MPG_AUX);
     avio_w8(pb, size + 1);
     avio_write(pb, (uint8_t *)buffer, size + 1);
@@ -244,6 +246,11 @@ static int gxf_write_track_description(AVFormatContext *s, GXFStreamContext *sc,
         case 6:     /* DV50 */
             avio_w8(pb, TRACK_AUX);
             avio_w8(pb, 8);
+            if (sc->aspect_ratio)
+                if (sc->track_type == 5)
+                    track_aux_data |= 0x10; /* 16:9 */
+                else
+                    track_aux_data |= 0x01; /* 16:9 */
             if (s->streams[index]->codec->pix_fmt == PIX_FMT_YUV420P)
                 track_aux_data |= 0x01;     /* DVCAM */
             track_aux_data |= 0x40000000;   /* aux data is valid */
@@ -485,6 +492,7 @@ static int gxf_write_umf_track_description(AVFormatContext *s)
 
 static int gxf_write_umf_media_mpeg(AVIOContext *pb, AVStream *st)
 {
+    int mpeg_flags = 0;
     GXFStreamContext *sc = st->priv_data;
 
     if (st->codec->pix_fmt == PIX_FMT_YUV422P)
@@ -497,11 +505,16 @@ static int gxf_write_umf_media_mpeg(AVIOContext *pb, AVStream *st)
     avio_wl32(pb, sc->p_per_gop);
     avio_wl32(pb, sc->b_per_i_or_p);
     if (st->codec->codec_id == CODEC_ID_MPEG2VIDEO)
-        avio_wl32(pb, 2);
+        mpeg_flags = 2;
     else if (st->codec->codec_id == CODEC_ID_MPEG1VIDEO)
-        avio_wl32(pb, 1);
+        mpeg_flags = 1;
+
+    if (sc->aspect_ratio)
+        mpeg_flags |= 0x0080; /* 16:9 */
     else
-        avio_wl32(pb, 0);
+        mpeg_flags |= 0x0040; /* 4:3 */
+
+    avio_wl32(pb, mpeg_flags);
     avio_wl32(pb, 0); /* reserved */
     return 32;
 }
@@ -524,6 +537,10 @@ static int gxf_write_umf_media_dv(AVIOContext *pb, GXFStreamContext *sc, AVStrea
     int dv_umf_data = 0;
     int i;
 
+    if (sc->aspect_ratio)
+        dv_umf_data |= 0x80; /* 16:9 */
+    else
+        dv_umf_data |= 0x40; /* 4:3 */
     if (st->codec->pix_fmt == PIX_FMT_YUV420P)
         dv_umf_data |= 0x20; /* DVCAM */
     avio_wl32(pb, dv_umf_data);
@@ -660,8 +677,9 @@ static int gxf_write_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     GXFContext *gxf = s->priv_data;
     GXFStreamContext *vsc = NULL;
+    AVRational display_aspect_ratio;
     uint8_t tracks[255] = {0};
-    int i, media_info = 0;
+    int i, sans_vbi_height, media_info = 0;
 
     if (!pb->seekable) {
         av_log(s, AV_LOG_ERROR, "gxf muxer does not support streamed output, patch welcome");
@@ -705,6 +723,19 @@ static int gxf_write_header(AVFormatContext *s)
                 av_log(s, AV_LOG_ERROR, "video stream must be the first track\n");
                 return -1;
             }
+
+            if (st->codec->height == 608 || st->codec->height == 512) // VBI
+                sans_vbi_height = st->codec->height - 32;
+            else
+                sans_vbi_height = st->codec->height;
+
+            av_reduce(&display_aspect_ratio.num, &display_aspect_ratio.den,
+                st->codec->width*st->sample_aspect_ratio.num,
+                sans_vbi_height*st->sample_aspect_ratio.den,
+                1024*1024);
+
+            sc->aspect_ratio = (fabs(av_q2d(display_aspect_ratio)) >= 1.777);
+
             /* FIXME check from time_base ? */
             if (st->codec->height == 480 || st->codec->height == 512) { /* NTSC or NTSC+VBI */
                 sc->frame_rate_index = 5;
