@@ -290,6 +290,8 @@ typedef struct OutputStream {
     //double sync_ipts;        /* dts from the AVPacket of the demuxer in second units */
     struct InputStream *sync_ist; /* input stream to sync against */
     int64_t sync_opts;       /* output frame counter, could be changed to some true timestamp */ //FIXME look at frame_number
+    AVFrame prev_frame;
+    int free_prev_frame;
     AVBitStreamFilterContext *bitstream_filters;
     AVCodec *enc;
 
@@ -331,6 +333,7 @@ typedef struct OutputStream {
     AVFilterContext *output_video_filter;
     AVFilterContext *input_video_filter;
     AVFilterBufferRef *picref;
+    AVFilterBufferRef *prev_picref;
     char *avfilter;
     AVFilterGraph *graph;
 #endif
@@ -360,6 +363,7 @@ typedef struct InputStream {
     int showed_multi_packet_warning;
     int is_past_recording_time;
     AVDictionary *opts;
+    uint8_t *pkt_data_to_free;
 } InputStream;
 
 typedef struct InputFile {
@@ -1335,26 +1339,126 @@ static void do_subtitle_out(AVFormatContext *s,
 static int bit_buffer_size= 1024*256;
 static uint8_t *bit_buffer= NULL;
 
+static void encode_frame(AVFormatContext *s,
+                         OutputStream *ost, InputStream *ist, int nb_frames,
+                         AVFrame *frame, int *frame_size, int quality)
+{
+    AVCodecContext *enc = ost->st->codec;
+    int i, ret;
+
+    /* duplicates frame if needed */
+    for (i = 0; i < nb_frames; i++) {
+        AVPacket pkt;
+        av_init_packet(&pkt);
+        pkt.stream_index = ost->index;
+
+        if (s->oformat->flags & AVFMT_RAWPICTURE) {
+            /* raw pictures are written as AVPicture structure to
+               avoid any copies. We support temorarily the older
+               method. */
+            pkt.data = (uint8_t *)frame;
+            pkt.size = sizeof(AVPicture);
+            pkt.pts = av_rescale_q(ost->sync_opts, enc->time_base, ost->st->time_base);
+            pkt.flags |= AV_PKT_FLAG_KEY;
+
+            write_frame(s, &pkt, ost->st->codec, ost->bitstream_filters);
+            video_size += avpicture_get_size(enc->pix_fmt, enc->width, enc->height);
+        } else {
+            /* handles sameq here. This is not correct because it may
+               not be a global option */
+            frame->quality = quality;
+            frame->pict_type = 0;
+            frame->pts = ost->sync_opts;
+
+            if (ost->forced_kf_index < ost->forced_kf_count &&
+                frame->pts >= ost->forced_kf_pts[ost->forced_kf_index]) {
+                frame->pict_type = FF_I_TYPE;
+                ost->forced_kf_index++;
+            }
+            ret = avcodec_encode_video(enc,
+                                       bit_buffer, bit_buffer_size,
+                                       frame);
+            if (ret < 0) {
+                fprintf(stderr, "Video encoding failed\n");
+                ffmpeg_exit(1);
+            }
+
+            if (ret > 0) {
+                pkt.data = bit_buffer;
+                pkt.size = ret;
+                if (enc->coded_frame->pts != AV_NOPTS_VALUE)
+                    pkt.pts = av_rescale_q(enc->coded_frame->pts, enc->time_base, ost->st->time_base);
+
+                if (enc->coded_frame->key_frame)
+                    pkt.flags |= AV_PKT_FLAG_KEY;
+                write_frame(s, &pkt, ost->st->codec, ost->bitstream_filters);
+                *frame_size = ret;
+                video_size += ret;
+                if (ost->logfile && enc->stats_out) {
+                    fprintf(ost->logfile, "%s", enc->stats_out);
+                }
+            }
+        }
+        ost->sync_opts++;
+        ost->frame_number++;
+    }
+}
+
+static double psnr(double d){
+    return -10.0*log(d)/log(10.0);
+}
+
+static void do_video_stats(OutputStream *ost, int frame_size)
+{
+    AVCodecContext *enc;
+    int frame_number;
+    double ti1, bitrate, avg_bitrate;
+
+    /* this is executed just the first time do_video_stats is called */
+    if (!vstats_file) {
+        vstats_file = fopen(vstats_filename, "w");
+        if (!vstats_file) {
+            perror("fopen");
+            ffmpeg_exit(1);
+        }
+    }
+
+    enc = ost->st->codec;
+    if (enc->codec_type == AVMEDIA_TYPE_VIDEO) {
+        frame_number = ost->frame_number;
+        fprintf(vstats_file, "frame= %5d q= %2.1f ", frame_number, enc->coded_frame->quality/(float)FF_QP2LAMBDA);
+        if (enc->flags&CODEC_FLAG_PSNR && enc->codec_id != CODEC_ID_H264)
+            fprintf(vstats_file, "PSNR= %6.2f ", psnr(enc->coded_frame->error[0]/(enc->width*enc->height*255.0*255.0)));
+
+        fprintf(vstats_file,"f_size= %6d ", frame_size);
+        /* compute pts value */
+        ti1 = ost->sync_opts * av_q2d(enc->time_base);
+
+        bitrate = (frame_size * 8) / av_q2d(enc->time_base) / 1000.0;
+        avg_bitrate = ti1 ? video_size * 8 / ti1 / 1000.0 : 0;
+        fprintf(vstats_file, "s_size= %8.0fkB time= %0.3f br= %7.1fkbits/s avg_br= %7.1fkbits/s ",
+            (double)video_size / 1024, ti1, bitrate, avg_bitrate);
+        fprintf(vstats_file,"type= %c\n", av_get_picture_type_char(enc->coded_frame->pict_type));
+    }
+}
+
 static void do_video_out(AVFormatContext *s,
                          OutputStream *ost,
                          InputStream *ist,
                          AVFrame *in_picture,
-                         int *frame_size, float quality)
+                         float quality)
 {
-    int nb_frames, i, ret, av_unused resample_changed;
+    int nb_frames, av_unused resample_changed;
+    int frame_size = 0;
     AVFrame *final_picture, *formatted_picture;
-    AVCodecContext *enc, *dec;
+    AVFrame frame;
+    AVCodecContext *enc = ost->st->codec;
     double sync_ipts;
-
-    enc = ost->st->codec;
-    dec = ist->st->codec;
 
     sync_ipts = get_sync_ipts(ost) / av_q2d(enc->time_base);
 
     /* by default, we output a single frame */
     nb_frames = 1;
-
-    *frame_size = 0;
 
     if (video_sync_method && video_sync_method != 3) {
         double vdelta;
@@ -1442,117 +1546,29 @@ static void do_video_out(AVFormatContext *s,
     }
 #endif
 
-    /* duplicates frame if needed */
-    for(i=0;i<nb_frames;i++) {
-        AVPacket pkt;
-        av_init_packet(&pkt);
-        pkt.stream_index= ost->index;
+    /* better than nothing: use input picture interlaced
+       settings */
+    frame = *final_picture;
+    frame.interlaced_frame = ost->st->codec->interlaced > 0;
+    frame.top_field_first = ost->st->codec->interlaced == 1;
 
-        if (s->oformat->flags & AVFMT_RAWPICTURE) {
-            /* raw pictures are written as AVPicture structure to
-               avoid any copies. We support temorarily the older
-               method. */
-            AVFrame* old_frame = enc->coded_frame;
-            enc->coded_frame = dec->coded_frame; //FIXME/XXX remove this hack
-            pkt.data= (uint8_t *)final_picture;
-            pkt.size=  sizeof(AVPicture);
-            pkt.pts= av_rescale_q(ost->sync_opts, enc->time_base, ost->st->time_base);
-            pkt.flags |= AV_PKT_FLAG_KEY;
-
-            write_frame(s, &pkt, ost->st->codec, ost->bitstream_filters);
-            enc->coded_frame = old_frame;
-            video_size += avpicture_get_size(enc->pix_fmt, enc->width, enc->height);
-        } else {
-            AVFrame big_picture;
-
-            big_picture= *final_picture;
-            big_picture.interlaced_frame = ost->st->codec->interlaced > 0;
-            big_picture.top_field_first = ost->st->codec->interlaced == 1;
-
-            /* handles sameq here. This is not correct because it may
-               not be a global option */
-            big_picture.quality = quality;
-            big_picture.pict_type = 0;
-//            big_picture.pts = AV_NOPTS_VALUE;
-            big_picture.pts= ost->sync_opts;
-//            big_picture.pts= av_rescale(ost->sync_opts, AV_TIME_BASE*(int64_t)enc->time_base.num, enc->time_base.den);
-//av_log(NULL, AV_LOG_DEBUG, "%"PRId64" -> encoder\n", ost->sync_opts);
-            if (ost->forced_kf_index < ost->forced_kf_count &&
-                big_picture.pts >= ost->forced_kf_pts[ost->forced_kf_index]) {
-                big_picture.pict_type = AV_PICTURE_TYPE_I;
-                ost->forced_kf_index++;
-            }
-            ret = avcodec_encode_video(enc,
-                                       bit_buffer, bit_buffer_size,
-                                       &big_picture);
-            if (ret < 0) {
-                fprintf(stderr, "Video encoding failed\n");
-                ffmpeg_exit(1);
-            }
-
-            if(ret>0){
-                pkt.data= bit_buffer;
-                pkt.size= ret;
-                if(enc->coded_frame->pts != AV_NOPTS_VALUE)
-                    pkt.pts= av_rescale_q(enc->coded_frame->pts, enc->time_base, ost->st->time_base);
-/*av_log(NULL, AV_LOG_DEBUG, "encoder -> %"PRId64"/%"PRId64"\n",
-   pkt.pts != AV_NOPTS_VALUE ? av_rescale(pkt.pts, enc->time_base.den, AV_TIME_BASE*(int64_t)enc->time_base.num) : -1,
-   pkt.dts != AV_NOPTS_VALUE ? av_rescale(pkt.dts, enc->time_base.den, AV_TIME_BASE*(int64_t)enc->time_base.num) : -1);*/
-
-                if(enc->coded_frame->key_frame)
-                    pkt.flags |= AV_PKT_FLAG_KEY;
-                write_frame(s, &pkt, ost->st->codec, ost->bitstream_filters);
-                *frame_size = ret;
-                video_size += ret;
-                //fprintf(stderr,"\nFrame: %3d size: %5d type: %d",
-                //        enc->frame_number-1, ret, enc->pict_type);
-                /* if two pass, output log */
-                if (ost->logfile && enc->stats_out) {
-                    fprintf(ost->logfile, "%s", enc->stats_out);
-                }
-            }
-        }
-        ost->sync_opts++;
-        ost->frame_number++;
-    }
-}
-
-static double psnr(double d){
-    return -10.0*log(d)/log(10.0);
-}
-
-static void do_video_stats(AVFormatContext *os, OutputStream *ost,
-                           int frame_size)
-{
-    AVCodecContext *enc;
-    int frame_number;
-    double ti1, bitrate, avg_bitrate;
-
-    /* this is executed just the first time do_video_stats is called */
-    if (!vstats_file) {
-        vstats_file = fopen(vstats_filename, "w");
-        if (!vstats_file) {
-            perror("fopen");
-            ffmpeg_exit(1);
-        }
+    if (nb_frames > 1) { // dup frames
+        encode_frame(s, ost, ist, nb_frames - 1,
+                     ost->prev_frame.data[0] ? &ost->prev_frame :
+                     &frame, &frame_size, quality);
+        if (vstats_filename && frame_size)
+            do_video_stats(ost, frame_size);
     }
 
-    enc = ost->st->codec;
-    if (enc->codec_type == AVMEDIA_TYPE_VIDEO) {
-        frame_number = ost->frame_number;
-        fprintf(vstats_file, "frame= %5d q= %2.1f ", frame_number, enc->coded_frame->quality/(float)FF_QP2LAMBDA);
-        if (enc->flags&CODEC_FLAG_PSNR && enc->codec_id != CODEC_ID_H264)
-            fprintf(vstats_file, "PSNR= %6.2f ", psnr(enc->coded_frame->error[0]/(enc->width*enc->height*255.0*255.0)));
-
-        fprintf(vstats_file,"f_size= %6d ", frame_size);
-        /* compute pts value */
-        ti1 = ost->sync_opts * av_q2d(enc->time_base);
-
-        bitrate = (frame_size * 8) / av_q2d(enc->time_base) / 1000.0;
-        avg_bitrate = ti1 ? video_size * 8 / ti1 / 1000.0 : 0;
-        fprintf(vstats_file, "s_size= %8.0fkB time= %0.3f br= %7.1fkbits/s avg_br= %7.1fkbits/s ",
-            (double)video_size / 1024, ti1, bitrate, avg_bitrate);
-        fprintf(vstats_file, "type= %c\n", av_get_picture_type_char(enc->coded_frame->pict_type));
+    encode_frame(s, ost, ist, 1, &frame, &frame_size, quality);
+    if (vstats_filename && frame_size)
+        do_video_stats(ost, frame_size);
+    if (ist->st->codec->codec->capabilities & CODEC_CAP_DR1 || ost->picref) {
+        ost->prev_frame = frame;
+        if (ost->prev_picref)
+            avfilter_unref_buffer(ost->prev_picref);
+        ost->prev_picref = ost->picref;
+        ost->picref = NULL;
     }
 }
 
@@ -1896,7 +1912,6 @@ static int output_packet(InputStream *ist, int ist_index,
         if (start_time == 0 || ist->pts >= start_time)
             for(i=0;i<nb_ostreams;i++) {
                 AVFrame oframe, *oframe_ptr = &picture;
-                int frame_size;
 
                 ost = ost_table[i];
                 for(j=0;j<ost->nb_source_indexes;j++) {
@@ -1939,10 +1954,8 @@ static int output_packet(InputStream *ist, int ist_index,
                             do_audio_out(os, ost, ist, decoded_data_buf, decoded_data_size);
                             break;
                         case AVMEDIA_TYPE_VIDEO:
-                            do_video_out(os, ost, ist, oframe_ptr, &frame_size,
-                                         same_quality ? quality : ost->st->codec->global_quality);
-                            if (vstats_filename && frame_size)
-                                do_video_stats(os, ost, frame_size);
+                            do_video_out(os, ost, ist, oframe_ptr, same_quality ?
+                                         quality : ost->st->codec->global_quality);
                             break;
                         case AVMEDIA_TYPE_SUBTITLE:
                             do_subtitle_out(os, ost, ist, &subtitle,
@@ -2069,17 +2082,14 @@ static int output_packet(InputStream *ist, int ist_index,
                     ost->output_video_filter) {
                     while (avfilter_poll_frame(ost->output_video_filter->inputs[0], 1)) {
                         AVFrame frame;
-                        int frame_size;
                         AVRational ist_pts_tb = ost->output_video_filter->inputs[0]->time_base;
                         if (av_vsink_buffer_get_video_buffer_ref(ost->output_video_filter, &ost->picref, 0) < 0)
                             goto cont;
                         if (ost->picref) {
                             avfilter_fill_frame_from_video_buffer_ref(&frame, ost->picref);
                             ist->pts = av_rescale_q(ost->picref->pts, ist_pts_tb, AV_TIME_BASE_Q);
-                            do_video_out(os, ost, ist, &frame, &frame_size,
-                                         same_quality ? quality : ost->st->codec->global_quality);
-                            if (vstats_filename && frame_size)
-                                do_video_stats(os, ost, frame_size);
+                            do_video_out(os, ost, ist, &frame, same_quality ?
+                                         quality : ost->st->codec->global_quality);
                             avfilter_unref_buffer(ost->picref);
                         }
                     }
@@ -2463,7 +2473,7 @@ static int transcode(AVFormatContext **output_files,
     AVFormatContext *is, *os;
     AVCodecContext *codec, *icodec;
     OutputStream *ost, **ost_table = NULL;
-    InputStream *ist;
+    InputStream *ist = NULL;
     int key;
     int want_sdp = 1;
     uint8_t no_packet[MAX_FILES]={0};
@@ -3394,6 +3404,12 @@ static int transcode(AVFormatContext **output_files,
         }
 
     discard_packet:
+        if (ist && ist->st->codec->codec_id == CODEC_ID_RAWVIDEO) {
+            if (ist->pkt_data_to_free)
+                av_free(ist->pkt_data_to_free);
+            ist->pkt_data_to_free = pkt.data;
+            pkt.destruct = NULL;
+        }
         av_free_packet(&pkt);
 
         /* dump report by using the output first video and audio streams */
@@ -3460,6 +3476,10 @@ static int transcode(AVFormatContext **output_files,
                                              initialized but set to zero */
                 av_freep(&ost->st->codec->subtitle_header);
                 av_free(ost->resample_frame.data[0]);
+                if (ost->prev_picref)
+                    avfilter_unref_buffer(ost->prev_picref);
+                if (ost->free_prev_frame)
+                    av_free(ost->prev_frame.data[0]);
                 av_free(ost->forced_kf_pts);
                 av_free(ost->audiomerge.buf);
                 if (ost->video_resample)
