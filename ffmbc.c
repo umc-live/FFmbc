@@ -1615,10 +1615,9 @@ static void print_report(AVFormatContext **output_files,
         float q = -1;
         ost = ost_table[i];
         enc = ost->st->codec;
-        if (vid && !ost->st->stream_copy && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (vid && enc->coded_frame && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
             snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
-                     !ost->st->stream_copy ?
-                     enc->coded_frame->quality/(float)FF_QP2LAMBDA : -1);
+                     enc->coded_frame->quality/(float)FF_QP2LAMBDA);
         }
         if (!vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
             float t = (av_gettime()-timer_start) / 1000000.0;
@@ -1626,7 +1625,7 @@ static void print_report(AVFormatContext **output_files,
             frame_number = ost->frame_number;
             snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "frame=%5d fps=%3d ",
                      frame_number, (t>1)?(int)(frame_number/t+0.5) : 0);
-            if (!ost->st->stream_copy) {
+            if (enc->coded_frame) {
                 snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
                          enc->coded_frame->quality/(float)FF_QP2LAMBDA);
             }
@@ -1965,9 +1964,8 @@ static int output_packet(InputStream *ist, int ist_index,
                             abort();
                         }
                     } else {
-                        AVFrame avframe; //FIXME/XXX remove this
-                        AVPicture pict;
                         AVPacket opkt;
+                        AVPicture pict;
                         int64_t ost_tb_start_time= av_rescale_q(start_time, AV_TIME_BASE_Q, ost->st->time_base);
 
                         av_init_packet(&opkt);
@@ -1985,10 +1983,6 @@ static int output_packet(InputStream *ist, int ist_index,
 
                         /* no reencoding needed : output the packet directly */
                         /* force the input stream PTS */
-
-                        avcodec_get_frame_defaults(&avframe);
-                        ost->st->codec->coded_frame= &avframe;
-                        avframe.key_frame = pkt->flags & AV_PKT_FLAG_KEY;
 
                         if(ost->st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
                             audio_size += data_size;
