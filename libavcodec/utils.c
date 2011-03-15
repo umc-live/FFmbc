@@ -1151,7 +1151,9 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
             snprintf(buf + strlen(buf), buf_size - strlen(buf),
                      ", vbr, lossless");
         } else if (!strcmp(codec_name, "libx264")) {
-            if (enc->crf > 0)
+            if (enc->bit_rate > 0)
+                goto bitrate;
+            else if (enc->crf > 0)
                 snprintf(buf + strlen(buf), buf_size - strlen(buf),
                          ", vbr, crf %.2f", enc->crf);
             else if (enc->cqp == 0)
@@ -1160,8 +1162,6 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
             else if (enc->cqp > 0)
                 snprintf(buf + strlen(buf), buf_size - strlen(buf),
                          ", vbr, qp %d", enc->cqp);
-            else
-                goto bitrate;
         } else if (encoder_supports_global_quality(enc) && enc->global_quality > 0) {
             if (enc->codec_type == AVMEDIA_TYPE_VIDEO)
                 snprintf(buf + strlen(buf), buf_size - strlen(buf),

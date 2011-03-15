@@ -43,6 +43,50 @@ typedef struct X264Context {
     char *stats;
     char *weightp;
     char *x264opts;
+    char *keyint;
+    char *keyint_min;
+    char *intra_refresh;
+    char *crf;
+    char *crf_max;
+    unsigned bitrate;
+    char *qp;
+    char *bframes;
+    char *b_adapt;
+    char *b_pyramid;
+    char *bframe_bias;
+    char min_keyint;
+    char *scenecut;
+    char *deblock;
+    char *qcomp;
+    char *qblur;
+    char *cplxblur;
+    char *partitions;
+    char *qpmin;
+    char *qpmax;
+    char *qpstep;
+    char *refs;
+    int cabac;
+    char *me;
+    char *directpred;
+    char *weightb;
+    char *aq_mode;
+    char *aq_strength;
+    char *rc_lookahead;
+    char *threads;
+    int psy;
+    char *psy_rd;
+    char *me_range;
+    char *subme;
+    char *mixed_refs;
+    char *chroma_me;
+    char *dct8x8;
+    char *aud;
+    char *ipratio;
+    char *pbratio;
+    char *chroma_qp_offset;
+    unsigned vbv_maxrate;
+    unsigned vbv_bufsize;
+    char *vbv_init;
 } X264Context;
 
 static void X264_log(void *p, int level, const char *fmt, va_list args)
@@ -158,31 +202,6 @@ static av_cold int X264_close(AVCodecContext *avctx)
     return 0;
 }
 
-/**
- * Detect default settings and use default profile to avoid libx264 failure.
- */
-static void check_default_settings(AVCodecContext *avctx)
-{
-    X264Context *x4 = avctx->priv_data;
-
-    int score = 0;
-    score += x4->params.analyse.i_me_range == 0;
-    score += x4->params.rc.i_qp_step == 3;
-    score += x4->params.i_keyint_max == 12;
-    score += x4->params.rc.i_qp_min == 2;
-    score += x4->params.rc.i_qp_max == 31;
-    score += x4->params.rc.f_qcompress == 0.5;
-    score += fabs(x4->params.rc.f_ip_factor - 1.25) < 0.01;
-    score += fabs(x4->params.rc.f_pb_factor - 1.25) < 0.01;
-    score += x4->params.analyse.inter == 0 && x4->params.analyse.i_subpel_refine == 8;
-    if (score >= 5) {
-        av_log(avctx, AV_LOG_ERROR, "Default settings detected, using medium profile\n");
-        x4->preset = av_strdup("medium");
-        if (avctx->bit_rate == 200*1000)
-            avctx->crf = 23;
-    }
-}
-
 #define OPT_STR(opt, param)                                                   \
     do {                                                                      \
         int ret;                                                              \
@@ -204,132 +223,135 @@ static av_cold int X264_init(AVCodecContext *avctx)
     x4->sei_size = 0;
     x264_param_default(&x4->params);
 
-    x4->params.i_keyint_max         = avctx->gop_size;
-
-    x4->params.i_bframe          = avctx->max_b_frames;
-    x4->params.b_cabac           = avctx->coder_type == FF_CODER_TYPE_AC;
-    x4->params.i_bframe_adaptive = avctx->b_frame_strategy;
-    x4->params.i_bframe_bias     = avctx->bframebias;
-    x4->params.i_bframe_pyramid  = avctx->flags2 & CODEC_FLAG2_BPYRAMID ? X264_B_PYRAMID_NORMAL : X264_B_PYRAMID_NONE;
-
-    x4->params.i_keyint_min = avctx->keyint_min;
-    if (x4->params.i_keyint_min > x4->params.i_keyint_max)
-        x4->params.i_keyint_min = x4->params.i_keyint_max;
-
-    x4->params.i_scenecut_threshold        = avctx->scenechange_threshold;
-
-    x4->params.b_deblocking_filter         = avctx->flags & CODEC_FLAG_LOOP_FILTER;
-    x4->params.i_deblocking_filter_alphac0 = avctx->deblockalpha;
-    x4->params.i_deblocking_filter_beta    = avctx->deblockbeta;
-
-    x4->params.rc.i_qp_min                 = avctx->qmin;
-    x4->params.rc.i_qp_max                 = avctx->qmax;
-    x4->params.rc.i_qp_step                = avctx->max_qdiff;
-
-    x4->params.rc.f_qcompress       = avctx->qcompress; /* 0.0 => cbr, 1.0 => constant qp */
-    x4->params.rc.f_qblur           = avctx->qblur;     /* temporally blur quants */
-    x4->params.rc.f_complexity_blur = avctx->complexityblur;
-
-    x4->params.i_frame_reference    = avctx->refs;
-
-    x4->params.analyse.inter    = 0;
-    if (avctx->partitions) {
-        if (avctx->partitions & X264_PART_I4X4)
-            x4->params.analyse.inter |= X264_ANALYSE_I4x4;
-        if (avctx->partitions & X264_PART_I8X8)
-            x4->params.analyse.inter |= X264_ANALYSE_I8x8;
-        if (avctx->partitions & X264_PART_P8X8)
-            x4->params.analyse.inter |= X264_ANALYSE_PSUB16x16;
-        if (avctx->partitions & X264_PART_P4X4)
-            x4->params.analyse.inter |= X264_ANALYSE_PSUB8x8;
-        if (avctx->partitions & X264_PART_B8X8)
-            x4->params.analyse.inter |= X264_ANALYSE_BSUB16x16;
-    }
-
-    x4->params.analyse.i_direct_mv_pred  = avctx->directpred;
-
-    x4->params.analyse.b_weighted_bipred = avctx->flags2 & CODEC_FLAG2_WPRED;
-
-    if (avctx->me_method == ME_EPZS)
-        x4->params.analyse.i_me_method = X264_ME_DIA;
-    else if (avctx->me_method == ME_HEX)
-        x4->params.analyse.i_me_method = X264_ME_HEX;
-    else if (avctx->me_method == ME_UMH)
-        x4->params.analyse.i_me_method = X264_ME_UMH;
-    else if (avctx->me_method == ME_FULL)
-        x4->params.analyse.i_me_method = X264_ME_ESA;
-    else if (avctx->me_method == ME_TESA)
-        x4->params.analyse.i_me_method = X264_ME_TESA;
-    else x4->params.analyse.i_me_method = X264_ME_HEX;
-
-    x4->params.rc.i_aq_mode               = avctx->aq_mode;
-    x4->params.rc.f_aq_strength           = avctx->aq_strength;
-    x4->params.rc.i_lookahead             = avctx->rc_lookahead;
-
-    x4->params.analyse.b_psy              = avctx->flags2 & CODEC_FLAG2_PSY;
-    x4->params.analyse.f_psy_rd           = avctx->psy_rd;
-    x4->params.analyse.f_psy_trellis      = avctx->psy_trellis;
-
-    x4->params.analyse.i_me_range         = avctx->me_range;
-    x4->params.analyse.i_subpel_refine    = avctx->me_subpel_quality;
-
-    x4->params.analyse.b_mixed_references = avctx->flags2 & CODEC_FLAG2_MIXED_REFS;
-    x4->params.analyse.b_chroma_me        = avctx->me_cmp & FF_CMP_CHROMA;
-    x4->params.analyse.b_transform_8x8    = avctx->flags2 & CODEC_FLAG2_8X8DCT;
-    x4->params.analyse.b_fast_pskip       = avctx->flags2 & CODEC_FLAG2_FASTPSKIP;
-
-    x4->params.analyse.i_trellis          = avctx->trellis;
-    x4->params.analyse.i_noise_reduction  = avctx->noise_reduction;
-
-    x4->params.rc.b_mb_tree               = !!(avctx->flags2 & CODEC_FLAG2_MBTREE);
-    x4->params.rc.f_ip_factor             = 1 / fabs(avctx->i_quant_factor);
-    x4->params.rc.f_pb_factor             = avctx->b_quant_factor;
-    x4->params.analyse.i_chroma_qp_offset = avctx->chromaoffset;
-
-    if (!x4->preset)
-        check_default_settings(avctx);
-
     if (x4->preset || x4->tune) {
         if (x264_param_default_preset(&x4->params, x4->preset, x4->tune) < 0)
             return -1;
     }
 
-    x4->params.pf_log               = X264_log;
-    x4->params.p_log_private        = avctx;
-    x4->params.i_log_level          = X264_LOG_DEBUG;
+    x4->params.pf_log = X264_log;
+    x4->params.p_log_private = avctx;
+
+    if (avctx->gop_size == 0)
+        x4->params.i_keyint_max = 0;
+    OPT_STR("keyint", x4->keyint);
+    OPT_STR("intra-refresh", x4->intra_refresh);
+
+    if (x4->bitrate) {
+        x4->params.rc.i_bitrate = x4->bitrate / 1000;
+        x4->params.rc.i_rc_method = X264_RC_ABR;
+    }
+
+    OPT_STR("qp", x4->qp);
+    OPT_STR("crf", x4->crf);
+    OPT_STR("crf-max", x4->crf_max);
+
+    if (x4->vbv_bufsize)
+        x4->params.rc.i_vbv_buffer_size = x4->vbv_bufsize / 1000;
+    else
+        x4->params.rc.i_vbv_buffer_size = avctx->rc_buffer_size / 1000;
+    if (x4->vbv_maxrate)
+        x4->params.rc.i_vbv_max_bitrate = x4->vbv_maxrate / 1000;
+    else
+        x4->params.rc.i_vbv_max_bitrate = avctx->rc_max_rate / 1000;
+
+    OPT_STR("vbv-init", x4->vbv_init);
+    x4->params.rc.b_stat_write = avctx->flags & CODEC_FLAG_PASS1;
+    x4->params.rc.b_stat_read = avctx->flags & CODEC_FLAG_PASS2;
+
+    x4->params.b_cabac = x4->cabac;
+
+    OPT_STR("bframes", x4->bframes);
+    OPT_STR("b-adapt", x4->b_adapt);
+    OPT_STR("b-bias", x4->bframe_bias);
+    OPT_STR("b-pyramid", x4->b_pyramid);
+    if (avctx->flags2 & CODEC_FLAG2_BPYRAMID)
+        x4->params.i_bframe_pyramid = X264_B_PYRAMID_NORMAL;
+    OPT_STR("keyint-min", x4->keyint_min);
+    OPT_STR("scenecut", x4->scenecut);
+    OPT_STR("deblock", x4->deblock);
+    if (avctx->flags & CODEC_FLAG_LOOP_FILTER)
+        x4->params.b_deblocking_filter = 1;
+
+    OPT_STR("qpmin", x4->qpmin);
+    OPT_STR("qpmax", x4->qpmax);
+    OPT_STR("qpstep", x4->qpstep);
+    OPT_STR("qcomp", x4->qcomp);
+    OPT_STR("qblur", x4->qblur);
+    OPT_STR("cplxblur", x4->cplxblur);
+
+    OPT_STR("ref", x4->refs);
+
+    x4->params.i_width              = avctx->width;
+    x4->params.i_height             = avctx->height;
+    x4->params.vui.i_sar_width      = avctx->sample_aspect_ratio.num;
+    x4->params.vui.i_sar_height     = avctx->sample_aspect_ratio.den;
+    x4->params.i_fps_num = x4->params.i_timebase_den = avctx->time_base.den;
+    x4->params.i_fps_den = x4->params.i_timebase_num = avctx->time_base.num;
+
+    if (x4->partitions) {
+        char *p, *partitions = av_strdup(x4->partitions);
+        while ((p = strstr(partitions, "part")))
+            strcpy(p, p+4);
+        OPT_STR("partitions", partitions);
+    }
+
+    OPT_STR("direct-pred", x4->directpred);
+
+    OPT_STR("weightb", x4->weightb);
+    if (avctx->flags2 & CODEC_FLAG2_WPRED)
+        x4->params.analyse.b_weighted_bipred = 1;
 
     OPT_STR("weightp", x4->weightp);
 
-    x4->params.b_intra_refresh      = avctx->flags2 & CODEC_FLAG2_INTRA_REFRESH;
-    x4->params.rc.i_bitrate         = avctx->bit_rate       / 1000;
-    x4->params.rc.i_vbv_buffer_size = avctx->rc_buffer_size / 1000;
-    x4->params.rc.i_vbv_max_bitrate = avctx->rc_max_rate    / 1000;
-    x4->params.rc.b_stat_write      = avctx->flags & CODEC_FLAG_PASS1;
-    if (avctx->flags & CODEC_FLAG_PASS2) {
-        x4->params.rc.b_stat_read = 1;
-    } else {
-        if (avctx->crf) {
-            x4->params.rc.i_rc_method   = X264_RC_CRF;
-            x4->params.rc.f_rf_constant = avctx->crf;
-            x4->params.rc.f_rf_constant_max = avctx->crf_max;
-        } else if (avctx->cqp > -1) {
-            x4->params.rc.i_rc_method   = X264_RC_CQP;
-            x4->params.rc.i_qp_constant = avctx->cqp;
-        }
-    }
+    OPT_STR("me", x4->me);
+    OPT_STR("me-range", x4->me_range);
+    OPT_STR("subme", x4->subme);
 
-    OPT_STR("stats", x4->stats);
+    x4->params.analyse.b_psy = x4->psy;
+    OPT_STR("psy-rd", x4->psy_rd);
+    OPT_STR("aq-mode", x4->aq_mode);
+    OPT_STR("aq-strength", x4->aq_strength);
 
-    // if neither crf nor cqp modes are selected we have to enable the RC
-    // we do it this way because we cannot check if the bitrate has been set
-    if (!(avctx->crf || (avctx->cqp > -1)))
-        x4->params.rc.i_rc_method = X264_RC_ABR;
+    OPT_STR("rc-lookahead", x4->rc_lookahead);
 
-    if (avctx->rc_buffer_size && avctx->rc_initial_buffer_occupancy &&
-        (avctx->rc_initial_buffer_occupancy <= avctx->rc_buffer_size)) {
-        x4->params.rc.f_vbv_buffer_init =
-            (float)avctx->rc_initial_buffer_occupancy / avctx->rc_buffer_size;
-    }
+    OPT_STR("mixed-refs", x4->mixed_refs);
+    if (avctx->flags2 & CODEC_FLAG2_MIXED_REFS)
+        x4->params.analyse.b_mixed_references = 1;
+    OPT_STR("chroma-me", x4->chroma_me);
+    if (avctx->me_cmp & FF_CMP_CHROMA)
+        x4->params.analyse.b_chroma_me = 1;
+    OPT_STR("8x8dct", x4->dct8x8);
+    if (avctx->flags2 & CODEC_FLAG2_8X8DCT)
+        x4->params.analyse.b_transform_8x8 = 1;
+    OPT_STR("aud", x4->aud);
+    if (avctx->flags2 & CODEC_FLAG2_AUD)
+        x4->params.b_aud = 1;
+
+    x4->params.analyse.i_trellis = avctx->trellis;
+    x4->params.analyse.i_noise_reduction = avctx->noise_reduction;
+
+    OPT_STR("ipratio", x4->ipratio);
+    OPT_STR("pbratio", x4->pbratio);
+
+    OPT_STR("chroma-qp-offset", x4->chroma_qp_offset);
+
+    x4->params.i_log_level    = X264_LOG_DEBUG;
+
+    OPT_STR("threads", x4->threads);
+
+    x4->params.analyse.b_psnr = avctx->flags & CODEC_FLAG_PSNR;
+    x4->params.analyse.b_ssim = avctx->flags2 & CODEC_FLAG2_SSIM;
+
+    x4->params.b_interlaced   = avctx->flags & CODEC_FLAG_INTERLACED_DCT;
+
+//    x4->params.b_open_gop     = !(avctx->flags & CODEC_FLAG_CLOSED_GOP);
+
+    x4->params.i_slice_count  = avctx->slices;
+
+    x4->params.vui.b_fullrange = avctx->pix_fmt == PIX_FMT_YUVJ420P;
+
+    if (avctx->flags & CODEC_FLAG_GLOBAL_HEADER)
+        x4->params.b_repeat_headers = 0;
 
     OPT_STR("level", x4->level);
 
@@ -351,36 +373,16 @@ static av_cold int X264_init(AVCodecContext *avctx)
         if (x264_param_apply_profile(&x4->params, x4->profile) < 0)
             return -1;
 
-    x4->params.i_width          = avctx->width;
-    x4->params.i_height         = avctx->height;
-    x4->params.vui.i_sar_width  = avctx->sample_aspect_ratio.num;
-    x4->params.vui.i_sar_height = avctx->sample_aspect_ratio.den;
-    x4->params.i_fps_num = x4->params.i_timebase_den = avctx->time_base.den;
-    x4->params.i_fps_den = x4->params.i_timebase_num = avctx->time_base.num;
-
-    x4->params.analyse.b_psnr = avctx->flags & CODEC_FLAG_PSNR;
-    x4->params.analyse.b_ssim = avctx->flags2 & CODEC_FLAG2_SSIM;
-
-    x4->params.b_aud          = avctx->flags2 & CODEC_FLAG2_AUD;
-
-    x4->params.i_threads      = avctx->thread_count;
-
-    x4->params.b_interlaced   = avctx->flags & CODEC_FLAG_INTERLACED_DCT;
-
-//    x4->params.b_open_gop     = !(avctx->flags & CODEC_FLAG_CLOSED_GOP);
-
-    x4->params.i_slice_count  = avctx->slices;
-
-    x4->params.vui.b_fullrange = avctx->pix_fmt == PIX_FMT_YUVJ420P;
-
-    if (avctx->flags & CODEC_FLAG_GLOBAL_HEADER)
-        x4->params.b_repeat_headers = 0;
-
     // update AVCodecContext with x264 parameters
     avctx->has_b_frames = x4->params.i_bframe ?
         x4->params.i_bframe_pyramid ? 2 : 1 : 0;
     avctx->bit_rate = x4->params.rc.i_bitrate*1000;
-    avctx->crf = x4->params.rc.f_rf_constant;
+    if (x4->params.rc.i_rc_method == X264_RC_CRF)
+        avctx->crf = x4->params.rc.f_rf_constant;
+    else if (x4->params.rc.i_rc_method == X264_RC_CQP)
+        avctx->cqp = x4->params.rc.i_qp_constant;
+    avctx->qmin = x4->params.rc.i_qp_min;
+    avctx->qmax = x4->params.rc.i_qp_max;
 
     x4->enc = x264_encoder_open(&x4->params);
     if (!x4->enc)
@@ -417,6 +419,53 @@ static const AVOption options[] = {
     {"passlogfile", "Filename for 2 pass stats", OFFSET(stats), FF_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VE},
     {"wpredp", "Weighted prediction for P-frames", OFFSET(weightp), FF_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VE},
     {"x264opts", "x264 options", OFFSET(x264opts), FF_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VE},
+    {"g", "Maximum GOP size", OFFSET(keyint), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"intra_refresh", "Use Periodic Intra Refresh instead of IDR frames", OFFSET(intra_refresh), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"crf", "Quality-based VBR", OFFSET(crf), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"crf_max", "With CRF+VBV, limit RF to this value", OFFSET(crf_max), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"cqp", "Force constant QP (0=lossless)", OFFSET(qp), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"qscale", "Force constant QP (0=lossless)", OFFSET(qp), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"b", "Set bitrate (in bits/s)", OFFSET(bitrate), FF_OPT_TYPE_INT, {.dbl = 0}, 0, INT_MAX, VE},
+    {"bf", "Number of B-frames between I and P", OFFSET(bframes), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"b_strategy", "Adaptive B-frame decision method, higher values may lower threading efficiency: 0: Disabled, 1: Fast", OFFSET(b_adapt), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"b_adapt", "Adaptive B-frame decision method, higher values may lower threading efficiency: 0: Disabled, 1: Fast", OFFSET(b_adapt), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"b_pyramid", "Keep some B-frames as reference: none: Disabled, strict: Strictly hierarchical pyramid, normal: Non-strict (not Blu-ray compatible)", OFFSET(b_pyramid), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"bframebias", "Influences how often B-frames are used", OFFSET(bframe_bias), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"keyint_min", "Minimum GOP size", OFFSET(keyint_min), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"sc_threshold", "Scene change threshold", OFFSET(scenecut), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"deblock", "Loop filter parameters <alpha:beta>", OFFSET(deblock), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"qmin", "Set min QP", OFFSET(qpmin), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"qmax", "Set max QP", OFFSET(qpmax), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"qdiff", "Set max QP step", OFFSET(qpstep), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"qcomp", "QP curve compression <float>", OFFSET(qcomp), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"qblur", "Reduce fluctuations in QP (after curve compression) <float>", OFFSET(qblur), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"complexityblur", "Reduce fluctuations in QP (before curve compression) <float>", OFFSET(cplxblur), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"partitions", "Partitions to consider: p8x8, p4x4, b8x8, i8x8, i4x4, none, all", OFFSET(partitions), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"refs", "Number of reference frames", OFFSET(refs), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"coder", "0: cavlc, 1: cabac", OFFSET(cabac), FF_OPT_TYPE_INT, {.dbl = 1}, 0, 1, VE},
+    {"me_method", "Integer pixel motion estimation method", OFFSET(me), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"me", "Integer pixel motion estimation method", OFFSET(me), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"directpred", "Direct MV prediction mode: none, spatial, temporal, auto", OFFSET(directpred), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"weightb", "Weighted prediction for B-frames", OFFSET(weightb), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"aq_mode", "AQ method: 0: Disabled, 1: Variance AQ (complexity mask), 2: Auto-variance AQ (experimental)", OFFSET(aq_mode), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"aq_strength", "Reduces blocking and blurring in flat and textured areas", OFFSET(aq_strength), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"rc_lookahead", "Number of frames for frametype lookahead", OFFSET(rc_lookahead), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"threads", "Force a specific number of threads", OFFSET(threads), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"psy", "Psychovisual Optimization: 0: Disabled", OFFSET(psy), FF_OPT_TYPE_INT, {.dbl = 1}, 0, 1, VE},
+    {"psy_rd", "Strength of psychovisual optimization <rd:trellis>: RD (requires subme>=6), Trellis (requires trellis)", OFFSET(psy_rd), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"me_range", "Maximum motion vector search range", OFFSET(me_range), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"subq", "Subpixel motion estimation and mode decision", OFFSET(subme), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"subme", "Subpixel motion estimation and mode decision", OFFSET(subme), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"mixed_refs", "Decide references on a per partition basis", OFFSET(mixed_refs), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"chroma_me", "Use chroma in motion estimation", OFFSET(chroma_me), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"8x8dct", "Use adaptive spatial transform size", OFFSET(dct8x8), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"aud", "Use access unit delimiters", OFFSET(aud), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"ipratio", "QP factor between I and P", OFFSET(ipratio), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"pbratio", "QP factor between P and B", OFFSET(pbratio), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"chromaoffset", "QP difference between chroma and luma", OFFSET(chroma_qp_offset), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"vbv_maxrate", "Max local bitrate (bit/s)", OFFSET(vbv_maxrate), FF_OPT_TYPE_INT, {.dbl = 0}, 0, INT_MAX, VE},
+    {"vbv_bufsize", "Set size of the VBV buffer (bits)", OFFSET(vbv_bufsize), FF_OPT_TYPE_INT, {.dbl = 0}, 0, INT_MAX, VE},
+    {"vbv_init", "Initial VBV buffer occupancy <float>", OFFSET(vbv_init), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
     { NULL },
 };
 

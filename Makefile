@@ -36,8 +36,6 @@ FFLIBS-$(CONFIG_SWSCALE)  += swscale
 
 FFLIBS := avutil
 
-DATA_FILES := $(wildcard $(SRC_PATH)/ffpresets/*.ffpreset)
-
 SKIPHEADERS = cmdutils_common_opts.h
 
 include $(SRC_PATH)/common.mak
@@ -104,7 +102,7 @@ version.h .version:
 -include .version
 
 ifdef PROGS
-install: install-progs install-data
+install: install-progs
 endif
 
 install: install-libs install-headers
@@ -118,17 +116,10 @@ install-progs: install-progs-yes $(PROGS)
 	$(Q)mkdir -p "$(BINDIR)"
 	$(INSTALL) -c -m 755 $(PROGS) "$(BINDIR)"
 
-install-data: $(DATA_FILES)
-	$(Q)mkdir -p "$(DATADIR)"
-	$(INSTALL) -m 644 $(DATA_FILES) "$(DATADIR)"
-
-uninstall: uninstall-libs uninstall-headers uninstall-progs uninstall-data
+uninstall: uninstall-libs uninstall-headers uninstall-progs
 
 uninstall-progs:
 	$(RM) $(addprefix "$(BINDIR)/", $(ALLPROGS))
-
-uninstall-data:
-	$(RM) -r "$(DATADIR)"
 
 clean::
 	$(RM) $(ALLPROGS) $(ALLPROGS_G)
