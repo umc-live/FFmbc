@@ -3635,17 +3635,29 @@ static int opt_cover_file(const char *opt, const char *arg)
     return 0;
 }
 
-static int opt_metadata(const char *opt, const char *arg)
+static int opt_metadata(const char *opt, char *arg)
 {
-    char *mid= strchr(arg, '=');
+    const char *p = arg;
+    int n = 0;
 
-    if(!mid){
-        fprintf(stderr, "Missing =\n");
-        ffmpeg_exit(1);
+    while (p = strchr(p, '=')) {
+        p++;
+        n++;
     }
-    *mid++= 0;
 
-    av_dict_set(&metadata, arg, mid, 0);
+    for (p = arg; p;) {
+        char *comma = strchr(p, ',');
+        char *split = strchr(p, '=');
+        if (!split) {
+            fprintf(stderr, "error, metadata item does not contain '='\n");
+            ffmpeg_exit(1);
+        }
+        *split = 0;
+        if (comma && n > 1)
+            *comma++ = 0;
+        av_dict_set(&metadata, p, split+1, 0);
+        p = comma;
+    }
 
     return 0;
 }
