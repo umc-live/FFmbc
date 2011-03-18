@@ -39,8 +39,6 @@
 #include "faandct.h"
 #include <limits.h>
 
-int dct_quantize_c(MpegEncContext *s, DCTELEM *block, int n, int qscale, int *overflow);
-
 /**
  * allocates a Picture
  * The pixels are allocated/set by calling get_buffer() if shared=0

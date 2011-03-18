@@ -53,6 +53,7 @@ static int dct_quantize_refine(MpegEncContext *s, DCTELEM *block, int16_t *weigh
 static int sse_mb(MpegEncContext *s);
 static void denoise_dct_c(MpegEncContext *s, DCTELEM *block);
 static int dct_quantize_trellis_c(MpegEncContext *s, DCTELEM *block, int n, int qscale, int *overflow);
+static int dct_quantize_c(MpegEncContext *s, DCTELEM *block, int n, int qscale, int *overflow);
 
 /* enable all paranoid tests for rounding, overflows, etc... */
 //#define PARANOID
@@ -3689,7 +3690,7 @@ STOP_TIMER("iterative search")
     return last_non_zero;
 }
 
-int dct_quantize_c(MpegEncContext *s,
+static int dct_quantize_c(MpegEncContext *s,
                         DCTELEM *block, int n,
                         int qscale, int *overflow)
 {

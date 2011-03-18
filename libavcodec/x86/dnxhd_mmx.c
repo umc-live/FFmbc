@@ -24,6 +24,8 @@
 #include "libavutil/x86_cpu.h"
 #include "libavcodec/dnxhdenc.h"
 
+extern uint16_t inv_zigzag_direct16[64];
+
 static void get_pixels_8x4_sym_sse2(DCTELEM *block, const uint8_t *pixels, int line_size)
 {
     __asm__ volatile(
@@ -50,10 +52,68 @@ static void get_pixels_8x4_sym_sse2(DCTELEM *block, const uint8_t *pixels, int l
     );
 }
 
+#if HAVE_SSSE3
+#define HAVE_SSSE3_BAK
+#endif
+#undef HAVE_SSSE3
+#define HAVE_SSSE3 0
+
+#undef HAVE_SSE2
+#undef HAVE_MMX2
+#define HAVE_SSE2 0
+#define HAVE_MMX2 0
+#define RENAME(a) a ## _MMX
+#define RENAMEl(a) a ## _mmx
+#include "dnxhd_mmx_template.c"
+
+#undef HAVE_MMX2
+#define HAVE_MMX2 1
+#undef RENAME
+#undef RENAMEl
+#define RENAME(a) a ## _MMX2
+#define RENAMEl(a) a ## _mmx2
+#include "dnxhd_mmx_template.c"
+
+#undef HAVE_SSE2
+#define HAVE_SSE2 1
+#undef RENAME
+#undef RENAMEl
+#define RENAME(a) a ## _SSE2
+#define RENAMEl(a) a ## _sse2
+#include "dnxhd_mmx_template.c"
+
+#ifdef HAVE_SSSE3_BAK
+#undef HAVE_SSSE3
+#define HAVE_SSSE3 1
+#undef RENAME
+#undef RENAMEl
+#define RENAME(a) a ## _SSSE3
+#define RENAMEl(a) a ## _sse2
+#include "dnxhd_mmx_template.c"
+#endif
+
 void ff_dnxhd_init_mmx(DNXHDEncContext *ctx)
 {
-    if (av_get_cpu_flags() & AV_CPU_FLAG_SSE2) {
-        if (ctx->cid_table->bit_depth == 8)
+    int mm_flags = av_get_cpu_flags();
+    const int dct_algo = ctx->avctx->dct_algo;
+
+    if (ctx->cid_table->bit_depth == 8) {
+        if (mm_flags & AV_CPU_FLAG_SSE2)
             ctx->get_pixels_8x4_sym = get_pixels_8x4_sym_sse2;
+
+        if (dct_algo == FF_DCT_AUTO || dct_algo == FF_DCT_MMX) {
+#if HAVE_SSSE3
+            if (mm_flags & AV_CPU_FLAG_SSSE3) {
+                ctx->dct_quantize = dct_quantize_SSSE3;
+            } else
+#endif
+                if (mm_flags & AV_CPU_FLAG_SSE2) {
+                    ctx->dct_quantize = dct_quantize_SSE2;
+                } else if(mm_flags & AV_CPU_FLAG_MMX2){
+                    ctx->dct_quantize = dct_quantize_MMX2;
+                } else {
+                    ctx->dct_quantize = dct_quantize_MMX;
+                }
+        }
     }
 }

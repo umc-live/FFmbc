@@ -41,8 +41,9 @@ typedef struct {
 
 typedef struct DNXHDEncContext {
     AVClass *class;
-    MpegEncContext m; ///< Used for quantization dsp functions
-
+    AVCodecContext *avctx;
+    PutBitContext pb;
+    DSPContext dsp;
     AVFrame frame;
     int cid;
     const CIDEntry *cid_table;
@@ -61,6 +62,12 @@ typedef struct DNXHDEncContext {
     int interlaced;
     int cur_field;
 
+    int linesize;            ///< line size, in bytes, may be different from width
+    int uvlinesize;          ///< line size, for chroma in bytes, may be different from width
+    int mb_width, mb_height; ///< number of MBs horizontally & vertically
+    int mb_num;              ///< number of MBs of a picture
+    int last_dc[3];
+
     int nitris_compat;
     unsigned min_padding;
 
@@ -70,6 +77,12 @@ typedef struct DNXHDEncContext {
     int      (*qmatrix_l)     [64];
     uint16_t (*qmatrix_l16)[2][64];
     uint16_t (*qmatrix_c16)[2][64];
+
+    int (*q_intra_matrix)[64];
+    uint16_t (*q_intra_matrix16)[2][64];
+
+    int intra_quant_bias; ///< bias for the quantizer
+    ScanTable intra_scantable;
 
     unsigned frame_bits;
     uint8_t *src[3];
@@ -93,7 +106,8 @@ typedef struct DNXHDEncContext {
     RCCMPEntry *mb_cmp;
     RCEntry   (*mb_rc)[8160];
 
-    void (*get_pixels_8x4_sym)(DCTELEM */*align 16*/, const uint8_t *, int);
+    void (*get_pixels_8x4_sym)(DCTELEM *, const uint8_t *, int);
+    int (*dct_quantize)(struct DNXHDEncContext *ctx, DCTELEM *block, int qscale);
 } DNXHDEncContext;
 
 void ff_dnxhd_init_mmx(DNXHDEncContext *ctx);
