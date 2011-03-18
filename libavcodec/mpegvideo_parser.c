@@ -36,6 +36,8 @@ static void mpegvideo_extract_headers(AVCodecParserContext *s,
     int horiz_size_ext, vert_size_ext, bit_rate_ext;
     int did_set_size=0;
 //FIXME replace the crap with get_bits()
+
+    s->pict_type = 0;
     s->repeat_pict = 0;
 
     while (buf < buf_end) {
@@ -62,6 +64,7 @@ static void mpegvideo_extract_headers(AVCodecParserContext *s,
                 avctx->bit_rate = ((buf[4]<<10) | (buf[5]<<2) | (buf[6]>>6))*400;
                 avctx->codec_id = CODEC_ID_MPEG1VIDEO;
                 avctx->sub_id = 1;
+                avctx->has_b_frames = 1; // consider mpeg-1 has delay
             }
             break;
         case EXT_START_CODE:
@@ -145,7 +148,6 @@ static int mpegvideo_parse(AVCodecParserContext *s,
             *poutbuf_size = 0;
             return buf_size;
         }
-
     }
     /* we have a full frame : we just parse the first few MPEG headers
        to have the full timing information. The time take by this

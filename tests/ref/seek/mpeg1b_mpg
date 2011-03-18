@@ -1,4 +1,4 @@
-ret: 0         st: 0 flags:1 dts: 0.000000 pts: 0.000000 pos:      0 size: 11817
+ret: 0         st: 0 flags:1 dts: 0.000000 pts: NOPTS    pos:      0 size: 11817
 ret: 0         st:-1 flags:0  ts:-1.000000
 ret: 0         st: 0 flags:1 dts: 0.000000 pts: NOPTS    pos:      0 size: 11817
 ret: 0         st:-1 flags:1  ts: 1.894167
