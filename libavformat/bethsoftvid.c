@@ -104,7 +104,7 @@ static int read_frame(BVID_DemuxContext *vid, AVIOContext *pb, AVPacket *pkt,
     int vidbuf_nbytes = 0;
     int code;
     int bytes_copied = 0;
-    int position;
+    int position, delay;
     unsigned int vidbuf_capacity;
 
     vidbuf_start = av_malloc(vidbuf_capacity = BUFFER_PADDING_SIZE);
@@ -117,7 +117,7 @@ static int read_frame(BVID_DemuxContext *vid, AVIOContext *pb, AVPacket *pkt,
     vidbuf_start[vidbuf_nbytes++] = block_type;
 
     // get the video delay (next int16), and set the presentation time
-    vid->video_pts += vid->bethsoft_global_delay + avio_rl16(pb);
+    delay = avio_rl16(pb);
 
     // set the y offset if it exists (decoder header data should be in data section)
     if(block_type == VIDEO_YOFF_P_FRAME){
@@ -162,6 +162,8 @@ static int read_frame(BVID_DemuxContext *vid, AVIOContext *pb, AVPacket *pkt,
     pkt->pos = position;
     pkt->stream_index = 0;  // use the video decoder, which was initialized as the first stream
     pkt->pts = vid->video_pts;
+
+    vid->video_pts += vid->bethsoft_global_delay + delay;
 
     vid->nframes--;  // used to check if all the frames were read
     return vidbuf_nbytes;
