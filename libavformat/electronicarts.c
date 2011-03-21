@@ -440,7 +440,7 @@ static int ea_read_header(AVFormatContext *s,
         st = av_new_stream(s, 0);
         if (!st)
             return AVERROR(ENOMEM);
-        av_set_pts_info(st, 33, 1, ea->sample_rate);
+        av_set_pts_info(st, 64, 1, ea->sample_rate);
         st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
         st->codec->codec_id = ea->audio_codec;
         st->codec->codec_tag = 0;  /* no tag */
@@ -466,7 +466,7 @@ static int ea_read_packet(AVFormatContext *s,
     int packet_read = 0;
     unsigned int chunk_type, chunk_size;
     int key = 0;
-    int av_uninit(num_samples);
+    int num_samples = 0;
 
     while (!packet_read) {
         chunk_type = avio_rl32(pb);
@@ -491,13 +491,20 @@ static int ea_read_packet(AVFormatContext *s,
                 avio_skip(pb, 8);
                 chunk_size -= 12;
             }
+
             ret = av_get_packet(pb, pkt, chunk_size);
             if (ret < 0)
                 return ret;
+
+            if (ea->audio_codec == CODEC_ID_ADPCM_EA_R1 ||
+                ea->audio_codec == CODEC_ID_ADPCM_EA_R2 ||
+                ea->audio_codec == CODEC_ID_ADPCM_EA_R3) {
+                num_samples = ea->audio_codec == CODEC_ID_ADPCM_EA_R3 ?
+                    AV_RB32(pkt->data) : AV_RL32(pkt->data);
+            }
+
             pkt->stream_index = ea->audio_stream_index;
-            pkt->pts = 90000;
-            pkt->pts *= ea->audio_frame_counter;
-            pkt->pts /= ea->sample_rate;
+            pkt->pts = ea->audio_frame_counter;
 
             switch (ea->audio_codec) {
             case CODEC_ID_ADPCM_EA:
@@ -506,12 +513,11 @@ static int ea_read_packet(AVFormatContext *s,
                 ea->audio_frame_counter += ((chunk_size - 12) * 2) /
                     ea->num_channels;
                 break;
-            case CODEC_ID_PCM_S16LE_PLANAR:
-            case CODEC_ID_MP3:
-                ea->audio_frame_counter += num_samples;
-                break;
             default:
-                ea->audio_frame_counter += chunk_size /
+                if (num_samples > 0)
+                    ea->audio_frame_counter += num_samples;
+                else
+                    ea->audio_frame_counter += chunk_size /
                     (ea->bytes * ea->num_channels);
             }
 
