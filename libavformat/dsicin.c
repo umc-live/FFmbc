@@ -211,7 +211,9 @@ static int cin_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     pkt->stream_index = cin->audio_stream_index;
     pkt->pts = cin->audio_stream_pts;
-    cin->audio_stream_pts += cin->audio_buffer_size * 2 / cin->file_header.audio_frame_size;
+    cin->audio_stream_pts += cin->audio_buffer_size;
+    av_log(s, AV_LOG_INFO, "frame size %d frame size %d\n", cin->file_header.audio_frame_size,
+           hdr->audio_frame_size);
     cin->audio_buffer_size = 0;
     return 0;
 }
