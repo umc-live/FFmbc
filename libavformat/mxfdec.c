@@ -921,7 +921,7 @@ static int mxf_read_header(AVFormatContext *s, AVFormatParameters *ap)
         const MXFMetadataReadTableEntry *metadata;
 
         if (klv_read_packet(&klv, s->pb) < 0)
-            return -1;
+            break;
         PRINT_KEY(s, "read header", klv.key);
         av_dlog(s, "size %"PRIu64" offset %#"PRIx64"\n", klv.length, klv.offset);
         if (IS_KLV_KEY(klv.key, mxf_encrypted_triplet_key) ||
@@ -948,6 +948,8 @@ static int mxf_read_header(AVFormatContext *s, AVFormatParameters *ap)
         if (!metadata->read)
             avio_skip(s->pb, klv.length);
     }
+    if (url_feof(s->pb))
+        av_log(s, AV_LOG_ERROR, "error, essence data could not be found\n");
     return mxf_parse_structural_metadata(mxf);
 }
 
