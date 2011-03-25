@@ -169,3 +169,42 @@ void av_log_set_callback(void (*callback)(void*, int, const char*, va_list))
 {
     av_log_callback = callback;
 }
+
+static void hex_dump_internal(void *avcl, FILE *f, int level, const uint8_t *buf, int size)
+{
+    int len, i, j, c;
+#undef fprintf
+#define PRINT(...) do { if (!f) av_log(avcl, level, __VA_ARGS__); else fprintf(f, __VA_ARGS__); } while(0)
+
+    for(i=0;i<size;i+=16) {
+        len = size - i;
+        if (len > 16)
+            len = 16;
+        PRINT("%08x ", i);
+        for(j=0;j<16;j++) {
+            if (j < len)
+                PRINT(" %02x", buf[i+j]);
+            else
+                PRINT("   ");
+        }
+        PRINT(" ");
+        for(j=0;j<len;j++) {
+            c = buf[i+j];
+            if (c < ' ' || c > '~')
+                c = '.';
+            PRINT("%c", c);
+        }
+        PRINT("\n");
+    }
+#undef PRINT
+}
+
+void av_hex_dump(FILE *f, const uint8_t *buf, int size)
+{
+    hex_dump_internal(NULL, f, 0, buf, size);
+}
+
+void av_hex_dump_log(void *avcl, int level, const uint8_t *buf, int size)
+{
+    hex_dump_internal(avcl, NULL, level, buf, size);
+}

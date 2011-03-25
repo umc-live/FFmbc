@@ -161,4 +161,29 @@ const char* av_default_item_name(void* ctx);
 #define AV_LOG_SKIP_REPEATED 1
 void av_log_set_flags(int arg);
 
+/**
+ * Send a nice hexadecimal dump of a buffer to the specified file stream.
+ *
+ * @param f The file stream pointer where the dump should be sent to.
+ * @param buf buffer
+ * @param size buffer size
+ *
+ * @see av_hex_dump_log, av_pkt_dump, av_pkt_dump_log
+ */
+void av_hex_dump(FILE *f, const uint8_t *buf, int size);
+
+/**
+ * Send a nice hexadecimal dump of a buffer to the log.
+ *
+ * @param avcl A pointer to an arbitrary struct of which the first field is a
+ * pointer to an AVClass struct.
+ * @param level The importance level of the message, lower values signifying
+ * higher importance.
+ * @param buf buffer
+ * @param size buffer size
+ *
+ * @see av_hex_dump, av_pkt_dump, av_pkt_dump_log
+ */
+void av_hex_dump_log(void *avcl, int level, const uint8_t *buf, int size);
+
 #endif /* AVUTIL_LOG_H */
