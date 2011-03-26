@@ -74,8 +74,8 @@ do { \
 #define SAMPLES_NEEDED \
      av_log (NULL,AV_LOG_INFO,"This file triggers some untested code. Please contact the developers.\n");
 
-#define SAMPLES_NEEDED_2(why) \
-     av_log (NULL,AV_LOG_INFO,"This file triggers some missing code. Please contact the developers.\nPosition: %s\n",why);
+#define SAMPLES_NEEDED_2(avctx, why) \
+    av_log(avctx, AV_LOG_INFO, "This file triggers some missing code. Please contact the developers.\nPosition: %s\n",why);
 
 
 typedef int8_t sb_int8_array[2][30][64];
@@ -389,7 +389,7 @@ static uint16_t qdm2_packet_checksum (const uint8_t *data, int length, int value
  * @param gb            bitreader context
  * @param sub_packet    packet under analysis
  */
-static void qdm2_decode_sub_packet_header (GetBitContext *gb, QDM2SubPacket *sub_packet)
+static void qdm2_decode_sub_packet_header(AVCodecContext *avctx, GetBitContext *gb, QDM2SubPacket *sub_packet)
 {
     sub_packet->type = get_bits (gb, 8);
 
@@ -411,7 +411,7 @@ static void qdm2_decode_sub_packet_header (GetBitContext *gb, QDM2SubPacket *sub
       sub_packet->data = &gb->buffer[get_bits_count(gb) / 8]; // FIXME: this depends on bitreader internal data
     }
 
-    av_log(NULL,AV_LOG_DEBUG,"Subpacket: type=%d size=%d start_offs=%x\n",
+    av_log(avctx, AV_LOG_DEBUG, "Subpacket: type=%d size=%d start_offs=%x\n",
         sub_packet->type, sub_packet->size, get_bits_count(gb) / 8);
 }
 
@@ -495,7 +495,7 @@ static void build_sb_samples_from_noise (QDM2Context *q, int sb)
  * @param channels         number of channels
  * @param coding_method    q->coding_method[0][0][0]
  */
-static void fix_coding_method_array (int sb, int channels, sb_int8_array coding_method)
+static void fix_coding_method_array(int sb, int channels, sb_int8_array coding_method)
 {
     int j,k;
     int ch;
@@ -1177,8 +1177,9 @@ static void process_synthesis_subpackets (QDM2Context *q, QDM2SubPNode *list)
  *
  * @param q    context
  */
-static void qdm2_decode_super_block (QDM2Context *q)
+static void qdm2_decode_super_block(AVCodecContext *avctx)
 {
+    QDM2Context *q = avctx->priv_data;
     GetBitContext gb;
     QDM2SubPacket header, *packet;
     int i, packet_bytes, sub_packet_size, sub_packets_D;
@@ -1194,11 +1195,11 @@ static void qdm2_decode_super_block (QDM2Context *q)
     average_quantized_coeffs(q); // average elements in quantized_coeffs[max_ch][10][8]
 
     init_get_bits(&gb, q->compressed_data, q->compressed_size*8);
-    qdm2_decode_sub_packet_header(&gb, &header);
+    qdm2_decode_sub_packet_header(avctx, &gb, &header);
 
     if (header.type < 2 || header.type >= 8) {
         q->has_errors = 1;
-        av_log(NULL,AV_LOG_ERROR,"bad superblock type\n");
+        av_log(avctx, AV_LOG_ERROR, "bad superblock type\n");
         return;
     }
 
@@ -1215,7 +1216,7 @@ static void qdm2_decode_super_block (QDM2Context *q)
 
         if (csum != 0) {
             q->has_errors = 1;
-            av_log(NULL,AV_LOG_ERROR,"bad packet checksum\n");
+            av_log(avctx, AV_LOG_ERROR, "bad packet checksum\n");
             return;
         }
     }
@@ -1245,7 +1246,7 @@ static void qdm2_decode_super_block (QDM2Context *q)
 
         /* decode subpacket */
         packet = &q->sub_packets[i];
-        qdm2_decode_sub_packet_header(&gb, packet);
+        qdm2_decode_sub_packet_header(avctx, &gb, packet);
         next_index = packet->size + get_bits_count(&gb) / 8;
         sub_packet_size = ((packet->size > 0xff) ? 1 : 0) + packet->size + 2;
 
@@ -1265,7 +1266,7 @@ static void qdm2_decode_super_block (QDM2Context *q)
 
         /* add subpacket to related list */
         if (packet->type == 8) {
-            SAMPLES_NEEDED_2("packet type 8");
+            SAMPLES_NEEDED_2(avctx, "packet type 8");
             return;
         } else if (packet->type >= 9 && packet->type <= 12) {
             /* packets for MPEG Audio like Synthesis Filter */
@@ -1277,7 +1278,7 @@ static void qdm2_decode_super_block (QDM2Context *q)
             for (j = 0; j < 6; j++)
                 q->fft_level_exp[j] = qdm2_get_vlc(&gb, &fft_level_exp_vlc, 0, 2);
         } else if (packet->type == 15) {
-            SAMPLES_NEEDED_2("packet type 15")
+            SAMPLES_NEEDED_2(avctx, "packet type 15");
             return;
         } else if (packet->type >= 16 && packet->type < 48 && !fft_subpackets[packet->type - 16]) {
             /* packets for FFT */
@@ -1637,7 +1638,8 @@ static void qdm2_synthesis_filter (QDM2Context *q, int index)
  *
  * @param q    context
  */
-static av_cold void qdm2_init(QDM2Context *q) {
+static av_cold void qdm2_init(AVCodecContext *avctx)
+{
     static int initialized = 0;
 
     if (initialized != 0)
@@ -1650,7 +1652,7 @@ static av_cold void qdm2_init(QDM2Context *q) {
     rnd_table_init();
     init_noise_samples();
 
-    av_log(NULL, AV_LOG_DEBUG, "init done\n");
+    av_log(avctx, AV_LOG_DEBUG, "init done\n");
 }
 
 
@@ -1841,7 +1843,7 @@ static av_cold int qdm2_decode_init(AVCodecContext *avctx)
     ff_rdft_init(&s->rdft_ctx, s->fft_order, IDFT_C2R);
     ff_mpadsp_init(&s->mpadsp);
 
-    qdm2_init(s);
+    qdm2_init(avctx);
 
     avctx->sample_fmt = AV_SAMPLE_FMT_S16;
 
@@ -1860,8 +1862,9 @@ static av_cold int qdm2_decode_close(AVCodecContext *avctx)
 }
 
 
-static int qdm2_decode (QDM2Context *q, const uint8_t *in, int16_t *out)
+static int qdm2_decode(AVCodecContext *avctx, const uint8_t *in, int16_t *out)
 {
+    QDM2Context *q = avctx->priv_data;
     int ch, i;
     const int frame_size = (q->frame_size * q->channels);
 
@@ -1878,8 +1881,8 @@ static int qdm2_decode (QDM2Context *q, const uint8_t *in, int16_t *out)
     /* decode block of QDM2 compressed data */
     if (q->sub_packet == 0) {
         q->has_errors = 0; // zero it for a new super block
-        av_log(NULL,AV_LOG_DEBUG,"Superblock follows\n");
-        qdm2_decode_super_block(q);
+        av_log(avctx, AV_LOG_DEBUG, "Superblock follows\n");
+        qdm2_decode_super_block(avctx);
     }
 
     /* parse subpackets */
@@ -1895,7 +1898,7 @@ static int qdm2_decode (QDM2Context *q, const uint8_t *in, int16_t *out)
         qdm2_calculate_fft(q, ch, q->sub_packet);
 
         if (!q->has_errors && q->sub_packet_list_C[0].packet != NULL) {
-            SAMPLES_NEEDED_2("has errors, and C list is not empty")
+            SAMPLES_NEEDED_2(avctx, "has errors, and C list is not empty");
             return -1;
         }
     }
@@ -1941,7 +1944,7 @@ static int qdm2_decode_frame(AVCodecContext *avctx,
        buf_size, buf, s->checksum_size, data, *data_size);
 
     for (i = 0; i < 16; i++) {
-        if (qdm2_decode(s, buf, out) < 0)
+        if (qdm2_decode(avctx, buf, out) < 0)
             return -1;
         out += s->channels * s->frame_size;
     }
