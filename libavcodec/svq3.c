@@ -719,43 +719,54 @@ static int svq3_decode_mb(SVQ3Context *svq3, unsigned int mb_type)
     return 0;
 }
 
-static int svq3_decode_slice_header(AVCodecContext *avctx)
+static int svq3_decode_slice_header(AVCodecContext *avctx,
+                                    const uint8_t *buf, int buf_size)
 {
     SVQ3Context *svq3 = avctx->priv_data;
     H264Context *h = &svq3->h;
     MpegEncContext *s = &h->s;
     const int mb_xy = h->mb_xy;
-    int i, header;
+    int i, header, slice_size_len, slice_len;
+    uint8_t tmp[16];
 
-    header = get_bits(&s->gb, 8);
+    header = buf[0];
 
     if (((header & 0x9F) != 1 && (header & 0x9F) != 2) || (header & 0x60) == 0) {
         /* TODO: what? */
         av_log(avctx, AV_LOG_ERROR, "unsupported slice header (%02X)\n", header);
         return -1;
     } else {
-        int length = (header >> 5) & 3;
+        slice_size_len = (header >> 5) & 3;
+        if (slice_size_len == 1)
+            slice_len = buf[1];
+        else if (slice_size_len == 2)
+            slice_len = AV_RB16(buf+1);
+        else
+            slice_len = AV_RB24(buf+1);
 
-        svq3->next_slice_index = get_bits_count(&s->gb) + 8*show_bits(&s->gb, 8*length) + 8*length;
+        svq3->next_slice_index = 24 + slice_len*8;
 
-        if (svq3->next_slice_index > s->gb.size_in_bits) {
+        if (svq3->next_slice_index > buf_size*8) {
             av_log(avctx, AV_LOG_ERROR, "slice after bitstream end\n");
             return -1;
+        }
+
+        av_log(avctx, AV_LOG_DEBUG, "header %x slice size len %d slice len %d next slice %d\n",
+               header, slice_size_len, slice_len, svq3->next_slice_index>>3);
+
+        if (svq3->watermark_key)
+            AV_WL32(svq3->buf+3, AV_RL32(svq3->buf+3) ^ svq3->watermark_key);
+
+        if (slice_size_len > 1) {
+            memcpy(tmp, buf+2+slice_len, slice_size_len - 1);
+            memcpy(tmp+slice_size_len-1, buf+1+slice_size_len,
+                   FFMIN(buf_size-1-slice_size_len, sizeof(tmp)));
+        } else {
+            memcpy(tmp, buf+2, FFMIN(buf_size-2, sizeof(tmp)));
+        }
     }
 
-        s->gb.size_in_bits = svq3->next_slice_index - 8*(length - 1);
-        skip_bits(&s->gb, 8);
-
-        if (svq3->watermark_key) {
-            uint32_t header = AV_RL32(&s->gb.buffer[(get_bits_count(&s->gb)>>3)+1]);
-            AV_WL32(&s->gb.buffer[(get_bits_count(&s->gb)>>3)+1], header ^ svq3->watermark_key);
-        }
-        if (length > 0) {
-            memcpy((uint8_t *) &s->gb.buffer[get_bits_count(&s->gb) >> 3],
-                   &s->gb.buffer[s->gb.size_in_bits >> 3], (length - 1));
-        }
-        skip_bits_long(&s->gb, 0);
-    }
+    init_get_bits(&s->gb, tmp, sizeof(tmp));
 
     if ((i = svq3_get_ue_golomb(&s->gb)) == INVALID_VLC || i >= 3){
         av_log(h->s.avctx, AV_LOG_ERROR, "illegal slice type %d \n", i);
@@ -803,7 +814,7 @@ static int svq3_decode_slice_header(AVCodecContext *avctx)
         }
     }
 
-    return 0;
+    return 16 + get_bits_count(&s->gb);
 }
 
 static av_cold int svq3_decode_init(AVCodecContext *avctx)
@@ -941,7 +952,7 @@ static int svq3_decode_frame(AVCodecContext *avctx,
     H264Context *h = &svq3->h;
     MpegEncContext *s = &h->s;
     int buf_size = avpkt->size;
-    int m, mb_type, left;
+    int m, mb_type, ret, left;
     uint8_t *buf;
 
     /* special case for last picture */
@@ -967,10 +978,12 @@ static int svq3_decode_frame(AVCodecContext *avctx,
         buf = avpkt->data;
     }
 
-    init_get_bits(&s->gb, buf, 8*buf_size);
-
-    if (svq3_decode_slice_header(avctx))
+    ret = svq3_decode_slice_header(avctx, buf, buf_size);
+    if (ret < 0)
         return -1;
+
+    init_get_bits(&s->gb, buf, 8*buf_size);
+    skip_bits_long(&s->gb, ret);
 
     s->pict_type = h->slice_type;
     s->picture_number = h->slice_num;
@@ -1037,19 +1050,6 @@ static int svq3_decode_frame(AVCodecContext *avctx,
     for (s->mb_y = 0; s->mb_y < s->mb_height; s->mb_y++) {
         for (s->mb_x = 0; s->mb_x < s->mb_width; s->mb_x++) {
             h->mb_xy = s->mb_x + s->mb_y*s->mb_stride;
-
-            if ( (get_bits_count(&s->gb) + 7) >= s->gb.size_in_bits &&
-                ((get_bits_count(&s->gb) & 7) == 0 || show_bits(&s->gb, (-get_bits_count(&s->gb) & 7)) == 0)) {
-
-                skip_bits(&s->gb, svq3->next_slice_index - get_bits_count(&s->gb));
-                s->gb.size_in_bits = 8*buf_size;
-
-                if (svq3_decode_slice_header(avctx))
-                    return -1;
-
-                /* TODO: support s->mb_skip_run */
-            }
-
             mb_type = svq3_get_ue_golomb(&s->gb);
 
             if (s->pict_type == AV_PICTURE_TYPE_I) {
@@ -1070,6 +1070,9 @@ static int svq3_decode_frame(AVCodecContext *avctx,
                 s->current_picture.f.mb_type[s->mb_x + s->mb_y * s->mb_stride] =
                     (s->pict_type == AV_PICTURE_TYPE_P && mb_type < 8) ? (mb_type - 1) : -1;
             }
+
+            if (get_bits_count(&s->gb) >= svq3->next_slice_index)
+                break;
         }
 
         ff_draw_horiz_band(s, 16*s->mb_y, 16);
