@@ -230,6 +230,8 @@ static int copy_initial_nonkeyframes = 0;
 
 static int rate_emu = 0;
 
+static const char *target;
+
 static int audio_volume = 256;
 
 static int exit_on_error = 0;
@@ -301,6 +303,8 @@ typedef struct OutputStream {
     AVRational frame_rate;
 
     AVRational frame_aspect_ratio;
+
+    const char *target;
 
     /* forced key frames */
     int64_t *forced_kf_pts;
@@ -2230,6 +2234,80 @@ static const AVRational frame_rate_tab[] = {
     {    0,    0},
 };
 
+static void validate_audio_target(OutputStream *ost)
+{
+    int sample_rate;
+    if (!strcmp(ost->target, "vcd") || !strcmp(ost->target, "svcd"))
+        sample_rate = 44100;
+    else
+        sample_rate = 48000;
+    if (ost->st->codec->sample_rate != 48000) {
+        fprintf(stderr, "Error, target %s only supports "
+                "%d sample rate\n", ost->target, sample_rate);
+        fprintf(stderr, "Resample with \"-ar %d\"\n", sample_rate);
+        ffmpeg_exit(1);
+    }
+}
+
+static void validate_video_target(OutputStream *ost)
+{
+    enum { NTSC_FILM, FILM, PAL, NTSC, HD50P, HD60P, UNKNOWN } norm = UNKNOWN;
+    int frame_rate = (int)(ost->st->codec->time_base.den * 1000.0
+                           / ost->st->codec->time_base.num);
+    if (!ost->target)
+        return;
+
+    switch (frame_rate) {
+    case 23976: norm = NTSC_FILM; break;
+    case 24000: norm = FILM; break;
+    case 25000: norm = PAL; break;
+    case 29970: norm = NTSC; break;
+    case 50000: norm = HD50P; break;
+    case 59940: norm = HD60P; break;
+    default:
+        fprintf(stderr, "Could not determine frame rate for target\n");
+        fprintf(stderr, "Set one from 23.98/24/25/29.97/50/59.94 with \"-r xxx\"\n");
+        ffmpeg_exit(1);
+    }
+
+    if (!strcmp(ost->target, "vcd") || !strcmp(ost->target, "svcd") ||
+        !strcmp(ost->target, "dvd") || !strcmp(ost->target, "dv50") ||
+        !strcmp(ost->target, "dv")) {
+        if (norm != PAL && norm != NTSC) {
+            fprintf(stderr, "Error, target %s only supports ntsc "
+                    "or pal frame rate\n", ost->target);
+            ffmpeg_exit(1);
+        }
+    }
+
+    if (!strcmp(ost->target, "vcd")) {
+        if (ost->st->codec->width != 352 ||
+            (norm == PAL && ost->st->codec->height != 288) ||
+            (norm == NTSC && ost->st->codec->height != 240)) {
+            fprintf(stderr, "Error, target vcd only supports 352x288(pal) "
+                    "or 352x240(ntsc) resolutions\n");
+            ffmpeg_exit(1);
+        }
+    } else if (!strcmp(ost->target, "svcd")) {
+        if (ost->st->codec->width != 480 ||
+            (norm == PAL && ost->st->codec->height != 576) ||
+            (norm == NTSC && ost->st->codec->height != 480)) {
+            fprintf(stderr, "Error, target svcd only supports 480x576(pal) "
+                    "or 480x480(ntsc) resolutions\n");
+            ffmpeg_exit(1);
+        }
+    } else if (!strcmp(ost->target, "dvd") || !strcmp(ost->target, "dv50") ||
+               !strcmp(ost->target, "dv")) {
+        if (ost->st->codec->width != 720 ||
+            (norm == PAL && ost->st->codec->height != 576) ||
+            (norm == NTSC && ost->st->codec->height != 480)) {
+            fprintf(stderr, "Error, target %s only supports 720x576(pal) "
+                    "or 720x480(ntsc) resolutions\n", ost->target);
+            ffmpeg_exit(1);
+        }
+    }
+}
+
 /*
  * The following code is the main loop of the file converter
  */
@@ -2558,6 +2636,8 @@ static int transcode(AVFormatContext **output_files,
                     codec->block_align= 0;
                 if(codec->codec_id == CODEC_ID_AC3)
                     codec->block_align= 0;
+                if (ost->target)
+                    validate_audio_target(ost);
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 codec->pix_fmt = icodec->pix_fmt;
@@ -2571,6 +2651,8 @@ static int transcode(AVFormatContext **output_files,
                         ist->st->codec->sample_aspect_ratio.num ?
                         ist->st->codec->sample_aspect_ratio : (AVRational){0, 1};
                 }
+                if (ost->target)
+                    validate_video_target(ost);
                 break;
             case AVMEDIA_TYPE_SUBTITLE:
                 codec->width = icodec->width;
@@ -2628,6 +2710,8 @@ static int transcode(AVFormatContext **output_files,
                 if (av_get_channel_layout_nb_channels(codec->channel_layout) != codec->channels)
                     codec->channel_layout = 0;
 
+                if (ost->target)
+                    validate_audio_target(ost);
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 if (codec->pix_fmt == PIX_FMT_NONE)
@@ -2697,6 +2781,8 @@ static int transcode(AVFormatContext **output_files,
                     exit(1);
                 }
 #endif
+                if (ost->target)
+                    validate_video_target(ost);
                 break;
             case AVMEDIA_TYPE_SUBTITLE:
                 ost->encoding_needed = 1;
@@ -4003,6 +4089,8 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
 #endif
     }
 
+    ost->target = target;
+
     ost->bitstream_filters = video_bitstream_filters;
     video_bitstream_filters= NULL;
 
@@ -4129,6 +4217,8 @@ static void new_audio_stream(AVFormatContext *oc, int file_idx)
     }
     ost = new_output_stream(oc, file_idx, codec);
     st  = ost->st;
+
+    ost->target = target;
 
     ost->bitstream_filters = audio_bitstream_filters;
     audio_bitstream_filters= NULL;
@@ -4406,6 +4496,7 @@ static int opt_output_file(const char *opt, const char *filename)
         oc->loop_output = loop_output;
     }
 
+    target = NULL;
     frame_rate    = (AVRational){0, 0};
     frame_width   = 0;
     frame_height  = 0;
@@ -4569,57 +4660,25 @@ static int opt_help(const char *opt, const char *arg)
 
 static int opt_target(const char *opt, const char *arg)
 {
-    enum { PAL, NTSC, FILM, UNKNOWN } norm = UNKNOWN;
-    static const char *const frame_rates[] = {"25", "30000/1001", "24000/1001"};
-
-    if(!strncmp(arg, "pal-", 4)) {
-        norm = PAL;
-        arg += 4;
-    } else if(!strncmp(arg, "ntsc-", 5)) {
-        norm = NTSC;
-        arg += 5;
-    } else if(!strncmp(arg, "film-", 5)) {
+    enum { NTSC_FILM, FILM, PAL, NTSC, HD50P, HD60P, UNKNOWN } norm = UNKNOWN;
+    int fr = (int)(frame_rate.num * 1000.0 / frame_rate.den);
+    /* Calculate FR via float to avoid int overflow */
+    if (fr == 23976) {
+        norm = NTSC_FILM;
+    } else if (fr == 24000) {
         norm = FILM;
-        arg += 5;
+    } else if (fr == 25000) {
+        norm = PAL;
+    } else if (fr == 29970) {
+        norm = NTSC;
+    } else if (fr == 50000) {
+        norm = HD50P;
+    } else if (fr == 59940) {
+        norm = HD60P;
     } else {
-        int fr;
-        /* Calculate FR via float to avoid int overflow */
-        fr = (int)(frame_rate.num * 1000.0 / frame_rate.den);
-        if(fr == 25000) {
-            norm = PAL;
-        } else if((fr == 29970) || (fr == 23976)) {
-            norm = NTSC;
-        } else {
-            /* Try to determine PAL/NTSC by peeking in the input files */
-            if(nb_input_files) {
-                int i, j;
-                for (j = 0; j < nb_input_files; j++) {
-                    for (i = 0; i < input_files[j].ctx->nb_streams; i++) {
-                        AVCodecContext *c = input_files[j].ctx->streams[i]->codec;
-                        if(c->codec_type != AVMEDIA_TYPE_VIDEO)
-                            continue;
-                        fr = c->time_base.den * 1000 / c->time_base.num;
-                        if(fr == 25000) {
-                            norm = PAL;
-                            break;
-                        } else if((fr == 29970) || (fr == 23976)) {
-                            norm = NTSC;
-                            break;
-                        }
-                    }
-                    if(norm != UNKNOWN)
-                        break;
-                }
-            }
-        }
-        if(verbose > 0 && norm != UNKNOWN)
-            fprintf(stderr, "Assuming %s for target.\n", norm == PAL ? "PAL" : "NTSC");
-    }
-
-    if(norm == UNKNOWN) {
-        fprintf(stderr, "Could not determine norm (PAL/NTSC/NTSC-Film) for target.\n");
-        fprintf(stderr, "Please prefix target with \"pal-\", \"ntsc-\" or \"film-\",\n");
-        fprintf(stderr, "or set a framerate with \"-r xxx\".\n");
+        fprintf(stderr, "Could not determine frame rate "
+                "(film/pal/ntsc/ntsc-film/50p/60p) for target\n");
+        fprintf(stderr, "Specify one with \"-r xxx\" before -target\n");
         ffmpeg_exit(1);
     }
 
@@ -4629,7 +4688,7 @@ static int opt_target(const char *opt, const char *arg)
         opt_format("f", "vcd");
 
         opt_frame_size("s", norm == PAL ? "352x288" : "352x240");
-        opt_frame_rate("r", frame_rates[norm]);
+        frame_rate = frame_rate_tab[norm];
         opt_default("g", norm == PAL ? "15" : "18");
 
         opt_default("b", "1150000");
@@ -4657,7 +4716,7 @@ static int opt_target(const char *opt, const char *arg)
         opt_format("f", "svcd");
 
         opt_frame_size("s", norm == PAL ? "480x576" : "480x480");
-        opt_frame_rate("r", frame_rates[norm]);
+        frame_rate = frame_rate_tab[norm];
         opt_frame_pix_fmt("pix_fmt", "yuv420p");
         opt_default("g", norm == PAL ? "15" : "18");
 
@@ -4680,7 +4739,7 @@ static int opt_target(const char *opt, const char *arg)
         opt_format("f", "dvd");
 
         opt_frame_size("vcodec", norm == PAL ? "720x576" : "720x480");
-        opt_frame_rate("r", frame_rates[norm]);
+        frame_rate = frame_rate_tab[norm];
         opt_frame_pix_fmt("pix_fmt", "yuv420p");
         opt_default("g", norm == PAL ? "15" : "18");
 
@@ -4695,14 +4754,14 @@ static int opt_target(const char *opt, const char *arg)
         opt_default("ab", "448000");
         audio_sample_rate = 48000;
 
-    } else if(!strncmp(arg, "dv", 2)) {
+    } else if(!strcmp(arg, "dv") || !strcmp(arg, "dv50")) {
 
         opt_format("f", "dv");
 
         opt_frame_size("s", norm == PAL ? "720x576" : "720x480");
         opt_frame_pix_fmt("pix_fmt", !strncmp(arg, "dv50", 4) ? "yuv422p" :
                           norm == PAL ? "yuv420p" : "yuv411p");
-        opt_frame_rate("r", frame_rates[norm]);
+        frame_rate = frame_rate_tab[norm];
 
         audio_sample_rate = 48000;
         audio_channels = 2;
@@ -4711,6 +4770,9 @@ static int opt_target(const char *opt, const char *arg)
         fprintf(stderr, "Unknown target: %s\n", arg);
         return AVERROR(EINVAL);
     }
+
+    target = arg;
+
     return 0;
 }
 
@@ -4854,7 +4916,7 @@ static const OptionDef options[] = {
     { "loop_input", OPT_BOOL | OPT_EXPERT, {(void*)&loop_input}, "deprecated, use -loop" },
     { "loop_output", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&loop_output}, "deprecated, use -loop", "" },
     { "v", HAS_ARG, {(void*)opt_verbose}, "set ffmpeg verbosity level", "number" },
-    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dv\", \"dv50\", \"pal-vcd\", \"ntsc-svcd\", ...)", "type" },
+    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dv\", \"dv50\")", "type" },
     { "threads",  HAS_ARG | OPT_EXPERT, {(void*)opt_thread_count}, "thread count", "count" },
     { "vsync", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&video_sync_method}, "video sync method", "" },
     { "async", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&audio_sync_method}, "audio sync method", "" },
