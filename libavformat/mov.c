@@ -702,6 +702,10 @@ static int mov_read_ftyp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 /* this atom should contain all header atoms */
 static int mov_read_moov(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
+    if (c->found_moov) {
+        av_log(c->fc, AV_LOG_WARNING, "warning, found double moov atom\n");
+        return 0;
+    }
     if (mov_read_default(c, pb, atom) < 0)
         return -1;
     /* we parsed the 'moov' atom, we can terminate the parsing as soon as we find the 'mdat' */
@@ -2512,7 +2516,7 @@ static int mov_read_header(AVFormatContext *s, AVFormatParameters *ap)
         return err;
     }
     if (!mov->found_moov) {
-        av_log(s, AV_LOG_ERROR, "moov atom not found\n");
+        av_log(s, AV_LOG_ERROR, "error, moov atom not found, file broken\n");
         return -1;
     }
     av_dlog(mov->fc, "on_parse_exit_offset=%"PRId64"\n", avio_tell(pb));
