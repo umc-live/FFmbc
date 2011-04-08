@@ -787,7 +787,8 @@ void ff_er_add_slice(MpegEncContext *s, int startx, int starty, int endx, int en
     }
 }
 
-void ff_er_frame_end(MpegEncContext *s){
+int ff_er_frame_end(MpegEncContext *s)
+{
     int i, mb_x, mb_y, error, error_type, dc_error, mv_error, ac_error;
     int distance;
     int threshold_part[4]= {100,100,100};
@@ -800,7 +801,7 @@ void ff_er_frame_end(MpegEncContext *s){
        s->avctx->hwaccel ||
        s->avctx->codec->capabilities&CODEC_CAP_HWACCEL_VDPAU ||
        s->picture_structure != PICT_FRAME || // we dont support ER of field pictures yet, though it should not crash if enabled
-       s->error_count==3*s->mb_width*(s->avctx->skip_top + s->avctx->skip_bottom)) return;
+       s->error_count==3*s->mb_width*(s->avctx->skip_top + s->avctx->skip_bottom)) return 0;
 
     if (s->current_picture.f.motion_val[0] == NULL) {
         av_log(s->avctx, AV_LOG_ERROR, "Warning MVs not available\n");
@@ -954,6 +955,9 @@ void ff_er_frame_end(MpegEncContext *s){
         if(error&MV_ERROR) mv_error ++;
     }
     av_log(s->avctx, AV_LOG_INFO, "concealing %d DC, %d AC, %d MV errors\n", dc_error, ac_error, mv_error);
+
+    if (!s->avctx->error_concealment)
+        return -1;
 
     is_intra_likely= is_intra_more_likely(s);
 
@@ -1164,4 +1168,6 @@ ec_clean:
         }
         s->mbintra_table[mb_xy]=1;
     }
+
+    return 0;
 }

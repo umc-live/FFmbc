@@ -1950,8 +1950,10 @@ static int slice_decode_thread(AVCodecContext *c, void *arg){
 //av_log(c, AV_LOG_DEBUG, "ret:%d resync:%d/%d mb:%d/%d ts:%d/%d ec:%d\n",
 //ret, s->resync_mb_x, s->resync_mb_y, s->mb_x, s->mb_y, s->start_mb_y, s->end_mb_y, s->error_count);
         if(ret < 0){
-            if(s->resync_mb_x>=0 && s->resync_mb_y>=0)
+            if(s->resync_mb_x>=0 && s->resync_mb_y>=0 && c->error_concealment)
                 ff_er_add_slice(s, s->resync_mb_x, s->resync_mb_y, s->mb_x, s->mb_y, AC_ERROR|DC_ERROR|MV_ERROR);
+            else if(!c->error_concealment)
+                return ret;
         }else{
             ff_er_add_slice(s, s->resync_mb_x, s->resync_mb_y, s->mb_x-1, s->mb_y, AC_END|DC_END|MV_END);
         }
@@ -1995,7 +1997,8 @@ static int slice_end(AVCodecContext *avctx, AVFrame *pict)
 
         s->current_picture_ptr->f.qscale_type = FF_QSCALE_TYPE_MPEG2;
 
-        ff_er_frame_end(s);
+        if (ff_er_frame_end(s) < 0)
+            return -1;
 
         MPV_frame_end(s);
 
@@ -2339,18 +2342,25 @@ static int decode_chunks(AVCodecContext *avctx,
         if (start_code > 0x1ff){
             if(s2->pict_type != AV_PICTURE_TYPE_B || avctx->skip_frame <= AVDISCARD_DEFAULT){
                 if(HAVE_THREADS && (avctx->active_thread_type & FF_THREAD_SLICE)){
+                    int threads_ret[MAX_THREADS];
                     int i;
                     av_assert0(avctx->thread_count > 1);
 
-                    avctx->execute(avctx, slice_decode_thread,  &s2->thread_context[0], NULL, s->slice_count, sizeof(void*));
-                    for(i=0; i<s->slice_count; i++)
+                    avctx->execute(avctx, slice_decode_thread, &s2->thread_context[0], threads_ret, s->slice_count, sizeof(void*));
+                    for(i=0; i<s->slice_count; i++) {
                         s2->error_count += s2->thread_context[i]->error_count;
+                        if (threads_ret[i]<0)
+                            return threads_ret[i];
+                    }
                 }
 
                 if (CONFIG_VDPAU && uses_vdpau(avctx))
                     ff_vdpau_mpeg_picture_complete(s2, buf, buf_size, s->slice_count);
 
-                if (slice_end(avctx, picture)) {
+                ret = slice_end(avctx, picture);
+                if (ret < 0)
+                    return ret;
+                if (ret > 0) {
                     if(s2->last_picture_ptr || s2->low_delay) //FIXME merge with the stuff in mpeg_decode_slice
                         *data_size = sizeof(AVPicture);
                 }
@@ -2528,8 +2538,10 @@ static int decode_chunks(AVCodecContext *avctx,
                     emms_c();
 
                     if(ret < 0){
-                        if(s2->resync_mb_x>=0 && s2->resync_mb_y>=0)
+                        if(s2->resync_mb_x>=0 && s2->resync_mb_y>=0 && avctx->error_concealment)
                             ff_er_add_slice(s2, s2->resync_mb_x, s2->resync_mb_y, s2->mb_x, s2->mb_y, AC_ERROR|DC_ERROR|MV_ERROR);
+                        else if(!avctx->error_concealment)
+                            return ret;
                     }else{
                         ff_er_add_slice(s2, s2->resync_mb_x, s2->resync_mb_y, s2->mb_x-1, s2->mb_y, AC_END|DC_END|MV_END);
                     }
