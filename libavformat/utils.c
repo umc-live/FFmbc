@@ -2349,7 +2349,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             }
             st->info->codec_info_duration += pkt->duration;
         }
-        {
+        if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             int64_t last = st->info->last_dts;
             int64_t duration= pkt->dts - last;
 
@@ -2429,7 +2429,6 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 
                 for (j=1; j<FF_ARRAY_ELEMS(st->info->duration_error); j++) {
                     double error = st->info->duration_error[j] * get_std_framerate(j);
-//                    if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
 //                        av_log(NULL, AV_LOG_ERROR, "%f %f\n", get_std_framerate(j) / 12.0/1001, error);
                     if(error < best_error){
                         best_error= error;
