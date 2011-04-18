@@ -2786,6 +2786,9 @@ static int transcode(AVFormatContext **output_files,
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 codec->pix_fmt = icodec->pix_fmt;
+                codec->color_primaries = icodec->color_primaries;
+                codec->color_transfer = icodec->color_transfer;
+                codec->color_matrix = icodec->color_matrix;
                 codec->width = icodec->width;
                 codec->height = icodec->height;
                 codec->has_b_frames = icodec->has_b_frames;
@@ -5059,6 +5062,10 @@ static int opt_target(const char *opt, const char *arg)
             }
         }
 
+        opt_default("color_primaries", norm == PAL ? "bt470bg" : "smpte170m");
+        opt_default("color_transfer", "bt709");
+        opt_default("color_matrix", "smpte170m");
+
         audio_sample_rate = 48000;
     } else if(!strcmp(arg, "xdcamhd422")) {
         opt_codec("vcodec", "mpeg2video");
@@ -5078,6 +5085,10 @@ static int opt_target(const char *opt, const char *arg)
         opt_default("sc_threshold", "1000000000");
 
         intra_dc_precision = 10;
+
+        opt_default("color_primaries", "bt709");
+        opt_default("color_transfer", "bt709");
+        opt_default("color_matrix", "bt709");
 
         audio_sample_rate = 48000;
     } else {

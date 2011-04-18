@@ -2551,8 +2551,8 @@ static int decode_slice_header(H264Context *h, H264Context *h0){
             s->avctx->color_range = h->sps.full_range ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
             if(h->sps.colour_description_present_flag){
                 s->avctx->color_primaries = h->sps.color_primaries;
-                s->avctx->color_trc       = h->sps.color_trc;
-                s->avctx->colorspace      = h->sps.colorspace;
+                s->avctx->color_transfer  = h->sps.color_transfer;
+                s->avctx->color_matrix    = h->sps.color_matrix;
             }
         }
 

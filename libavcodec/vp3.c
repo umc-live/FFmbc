@@ -2144,8 +2144,8 @@ static int theora_decode_header(AVCodecContext *avctx, GetBitContext *gb)
         avctx->color_primaries = AVCOL_PRI_BT470BG;
     }
     if (colorspace == 1 || colorspace == 2) {
-        avctx->colorspace = AVCOL_SPC_BT470BG;
-        avctx->color_trc  = AVCOL_TRC_BT709;
+        avctx->color_matrix = AVCOL_MTX_BT470BG;
+        avctx->color_transfer  = AVCOL_TRC_BT709;
     }
 
     return 0;

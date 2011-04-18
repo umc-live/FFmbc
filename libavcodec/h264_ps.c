@@ -178,14 +178,14 @@ static inline int decode_vui_parameters(H264Context *h, SPS *sps){
         sps->colour_description_present_flag = get_bits1(&s->gb);
         if(sps->colour_description_present_flag){
             sps->color_primaries = get_bits(&s->gb, 8); /* colour_primaries */
-            sps->color_trc       = get_bits(&s->gb, 8); /* transfer_characteristics */
-            sps->colorspace      = get_bits(&s->gb, 8); /* matrix_coefficients */
+            sps->color_transfer  = get_bits(&s->gb, 8); /* transfer_characteristics */
+            sps->color_matrix    = get_bits(&s->gb, 8); /* matrix_coefficients */
             if (sps->color_primaries >= AVCOL_PRI_NB)
                 sps->color_primaries  = AVCOL_PRI_UNSPECIFIED;
-            if (sps->color_trc >= AVCOL_TRC_NB)
-                sps->color_trc  = AVCOL_TRC_UNSPECIFIED;
-            if (sps->colorspace >= AVCOL_SPC_NB)
-                sps->colorspace  = AVCOL_SPC_UNSPECIFIED;
+            if (sps->color_transfer >= AVCOL_TRC_NB)
+                sps->color_transfer  = AVCOL_TRC_UNSPECIFIED;
+            if (sps->color_matrix >= AVCOL_MTX_NB)
+                sps->color_matrix  = AVCOL_MTX_UNSPECIFIED;
         }
     }
 

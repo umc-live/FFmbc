@@ -186,8 +186,8 @@ typedef struct SPS{
     int full_range;
     int colour_description_present_flag;
     enum AVColorPrimaries color_primaries;
-    enum AVColorTransferCharacteristic color_trc;
-    enum AVColorSpace colorspace;
+    enum AVColorTransferCharacteristic color_transfer;
+    enum AVColorMatrix color_matrix;
     int timing_info_present_flag;
     uint32_t num_units_in_tick;
     uint32_t time_scale;

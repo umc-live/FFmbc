@@ -136,13 +136,13 @@ static int libschroedinger_encode_init(AVCodecContext *avccontext)
         p_schro_params->format->colour_primaries = SCHRO_COLOUR_PRIMARY_SDTV_525;
     }
 
-    if (avccontext->colorspace == AVCOL_SPC_BT709) {
+    if (avccontext->color_matrix == AVCOL_MTX_BT709) {
         p_schro_params->format->colour_matrix = SCHRO_COLOUR_MATRIX_HDTV;
-    } else if (avccontext->colorspace == AVCOL_SPC_BT470BG) {
+    } else if (avccontext->color_matrix == AVCOL_MTX_BT470BG) {
         p_schro_params->format->colour_matrix = SCHRO_COLOUR_MATRIX_SDTV;
     }
 
-    if (avccontext->color_trc == AVCOL_TRC_BT709) {
+    if (avccontext->color_transfer == AVCOL_TRC_BT709) {
         p_schro_params->format->transfer_function = SCHRO_TRANSFER_CHAR_TV_GAMMA;
     }
 

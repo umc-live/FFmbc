@@ -1476,8 +1476,8 @@ static void mpeg_decode_sequence_display_extension(Mpeg1Context *s1)
     color_description= get_bits1(&s->gb);
     if(color_description){
         s->avctx->color_primaries= get_bits(&s->gb, 8);
-        s->avctx->color_trc      = get_bits(&s->gb, 8);
-        s->avctx->colorspace     = get_bits(&s->gb, 8);
+        s->avctx->color_transfer = get_bits(&s->gb, 8);
+        s->avctx->color_matrix   = get_bits(&s->gb, 8);
     }
     w= get_bits(&s->gb, 14);
     skip_bits(&s->gb, 1); //marker

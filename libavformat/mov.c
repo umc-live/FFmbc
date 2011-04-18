@@ -939,6 +939,30 @@ static int mov_read_fiel(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_colr(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+    st = c->fc->streams[c->fc->nb_streams-1];
+
+    if (avio_rl32(pb) != AV_RL32("nclc"))
+        return 0;
+
+    st->codec->color_primaries = avio_rb16(pb);
+    st->codec->color_transfer = avio_rb16(pb);
+    st->codec->color_matrix = avio_rb16(pb);
+    if (st->codec->color_primaries >= AVCOL_PRI_NB)
+        st->codec->color_primaries  = AVCOL_PRI_UNSPECIFIED;
+    if (st->codec->color_transfer >= AVCOL_TRC_NB)
+        st->codec->color_transfer  = AVCOL_TRC_UNSPECIFIED;
+    if (st->codec->color_matrix >= AVCOL_MTX_NB)
+        st->codec->color_matrix  = AVCOL_MTX_UNSPECIFIED;
+
+    return 0;
+}
+
 /**
  * This function reads atom content and puts data in extradata without tag
  * nor size unlike mov_read_extradata.
@@ -2402,6 +2426,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('a','v','s','s'), mov_read_extradata },
 { MKTAG('c','h','p','l'), mov_read_chpl },
 { MKTAG('c','o','6','4'), mov_read_stco },
+{ MKTAG('c','o','l','r'), mov_read_colr },
 { MKTAG('c','t','t','s'), mov_read_ctts }, /* composition time to sample */
 { MKTAG('d','i','n','f'), mov_read_default },
 { MKTAG('d','r','e','f'), mov_read_dref },

@@ -347,8 +347,8 @@ static int update_context_from_thread(AVCodecContext *dst, AVCodecContext *src, 
         dst->ticks_per_frame     = src->ticks_per_frame;
         dst->color_primaries     = src->color_primaries;
 
-        dst->color_trc   = src->color_trc;
-        dst->colorspace  = src->colorspace;
+        dst->color_transfer = src->color_transfer;
+        dst->color_matrix   = src->color_matrix;
         dst->color_range = src->color_range;
         dst->chroma_sample_location = src->chroma_sample_location;
     }

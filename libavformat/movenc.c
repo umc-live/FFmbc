@@ -881,7 +881,68 @@ static int mov_write_fiel_tag(AVIOContext *pb, MOVTrack *track)
     return 10;
 }
 
-static int mov_write_video_tag(AVIOContext *pb, MOVTrack *track)
+static int mov_write_colr_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
+{
+    if (track->enc->color_primaries == AVCOL_PRI_UNSPECIFIED &&
+        track->enc->color_transfer == AVCOL_TRC_UNSPECIFIED &&
+        track->enc->color_matrix == AVCOL_MTX_UNSPECIFIED) {
+        if (track->enc->codec_id != CODEC_ID_H264 &&
+            track->enc->codec_id != CODEC_ID_MPEG2VIDEO &&
+            (track->enc->codec_id != CODEC_ID_RAWVIDEO ||
+             track->enc->bits_per_coded_sample) && // RGB sets bps
+            track->enc->codec_id != CODEC_ID_V210)
+            return 0;
+        if (track->enc->height >= 720) {
+            av_log(s, AV_LOG_WARNING, "color primaries unspecified, assuming bt709\n");
+            track->enc->color_primaries = AVCOL_PRI_BT709;
+        } else if (track->enc->width == 720 && track->height == 576) {
+            av_log(s, AV_LOG_WARNING, "color primaries unspecified, assuming bt470bg\n");
+            track->enc->color_primaries = AVCOL_PRI_BT470BG;
+        } else if (track->enc->width == 720 &&
+                   (track->height == 486 || track->height == 480)) {
+            av_log(s, AV_LOG_WARNING, "color primaries unspecified, assuming smpte170\n");
+            track->enc->color_primaries = AVCOL_PRI_SMPTE170M;
+        } else {
+            return 0;
+        }
+    }
+
+    switch (track->enc->color_primaries) {
+    case AVCOL_PRI_BT709:
+        track->enc->color_transfer = AVCOL_TRC_BT709;
+        track->enc->color_matrix = AVCOL_MTX_BT709;
+        break;
+    case AVCOL_PRI_SMPTE170M:
+    case AVCOL_PRI_BT470BG:
+        track->enc->color_transfer = AVCOL_TRC_BT709;
+        track->enc->color_matrix = AVCOL_MTX_SMPTE170M;
+        break;
+    }
+
+    avio_wb32(pb, 18);
+    avio_wtag(pb, "colr");
+    avio_wtag(pb, "nclc");
+    switch (track->enc->color_primaries) {
+    case AVCOL_PRI_BT709:     avio_wb16(pb, 1); break;
+    case AVCOL_PRI_SMPTE170M: avio_wb16(pb, 6); break;
+    case AVCOL_PRI_BT470BG:   avio_wb16(pb, 5); break;
+    default:                  avio_wb16(pb, 2);
+    }
+    switch (track->enc->color_transfer) {
+    case AVCOL_TRC_BT709:     avio_wb16(pb, 1); break;
+    case AVCOL_TRC_SMPTE170M: avio_wb16(pb, 1); break; // remapped
+    default:                  avio_wb16(pb, 2);
+    }
+    switch (track->enc->color_matrix) {
+    case AVCOL_TRC_BT709:     avio_wb16(pb, 1); break;
+    case AVCOL_PRI_SMPTE170M: avio_wb16(pb, 6); break;
+    default:                  avio_wb16(pb, 2);
+    }
+
+    return 18;
+}
+
+static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
     char compressor_name[32];
@@ -960,6 +1021,8 @@ static int mov_write_video_tag(AVIOContext *pb, MOVTrack *track)
             mov_write_fiel_tag(pb, track);
             padding = 1;
         }
+        if (mov_write_colr_tag(s, pb, track) > 0)
+            padding = 1;
         if (padding)
             avio_wb32(pb, 0); // padding for FCP
     }
@@ -1030,7 +1093,7 @@ static int mov_write_stsd_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tra
     avio_wb32(pb, 0); /* version & flags */
     avio_wb32(pb, 1); /* entry count */
     if (track->enc->codec_type == AVMEDIA_TYPE_VIDEO)
-        mov_write_video_tag(pb, track);
+        mov_write_video_tag(s, pb, track);
     else if (track->enc->codec_type == AVMEDIA_TYPE_AUDIO)
         mov_write_audio_tag(pb, track);
     else if (track->enc->codec_type == AVMEDIA_TYPE_SUBTITLE)

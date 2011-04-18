@@ -482,18 +482,19 @@ enum AVColorTransferCharacteristic{
     AVCOL_TRC_UNSPECIFIED=2,
     AVCOL_TRC_GAMMA22    =4, ///< also ITU-R BT470M / ITU-R BT1700 625 PAL & SECAM
     AVCOL_TRC_GAMMA28    =5, ///< also ITU-R BT470BG
+    AVCOL_TRC_SMPTE170M  =6, ///< identical to ITU-R BT.709
     AVCOL_TRC_NB           , ///< Not part of ABI
 };
 
-enum AVColorSpace{
-    AVCOL_SPC_RGB        =0,
-    AVCOL_SPC_BT709      =1, ///< also ITU-R BT1361 / IEC 61966-2-4 xvYCC709 / SMPTE RP177 Annex B
-    AVCOL_SPC_UNSPECIFIED=2,
-    AVCOL_SPC_FCC        =4,
-    AVCOL_SPC_BT470BG    =5, ///< also ITU-R BT601-6 625 / ITU-R BT1358 625 / ITU-R BT1700 625 PAL & SECAM / IEC 61966-2-4 xvYCC601
-    AVCOL_SPC_SMPTE170M  =6, ///< also ITU-R BT601-6 525 / ITU-R BT1358 525 / ITU-R BT1700 NTSC / functionally identical to above
-    AVCOL_SPC_SMPTE240M  =7,
-    AVCOL_SPC_NB           , ///< Not part of ABI
+enum AVColorMatrix{
+    AVCOL_MTX_RGB        =0,
+    AVCOL_MTX_BT709      =1, ///< also ITU-R BT1361 / IEC 61966-2-4 xvYCC709 / SMPTE RP177 Annex B
+    AVCOL_MTX_UNSPECIFIED=2,
+    AVCOL_MTX_FCC        =4,
+    AVCOL_MTX_BT470BG    =5, ///< also ITU-R BT601-6 625 / ITU-R BT1358 625 / ITU-R BT1700 625 PAL & SECAM / IEC 61966-2-4 xvYCC601
+    AVCOL_MTX_SMPTE170M  =6, ///< also ITU-R BT601-6 525 / ITU-R BT1358 525 / ITU-R BT1700 NTSC / functionally identical to above
+    AVCOL_MTX_SMPTE240M  =7,
+    AVCOL_MTX_NB           , ///< Not part of ABI
 };
 
 enum AVColorRange{
@@ -2692,14 +2693,14 @@ typedef struct AVCodecContext {
      * - encoding: Set by user
      * - decoding: Set by libavcodec
      */
-    enum AVColorTransferCharacteristic color_trc;
+    enum AVColorTransferCharacteristic color_transfer;
 
     /**
-     * YUV colorspace type.
+     * Color Matrix.
      * - encoding: Set by user
      * - decoding: Set by libavcodec
      */
-    enum AVColorSpace colorspace;
+    enum AVColorMatrix color_matrix;
 
     /**
      * MPEG vs JPEG YUV range.

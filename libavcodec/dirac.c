@@ -90,14 +90,14 @@ static const enum AVColorPrimaries dirac_primaries[] = {
 
 static const struct {
     enum AVColorPrimaries color_primaries;
-    enum AVColorSpace colorspace;
-    enum AVColorTransferCharacteristic color_trc;
+    enum AVColorMatrix color_matrix;
+    enum AVColorTransferCharacteristic color_transfer;
 } dirac_color_presets[] = {
-    { AVCOL_PRI_BT709,     AVCOL_SPC_BT709,   AVCOL_TRC_BT709 },
-    { AVCOL_PRI_SMPTE170M, AVCOL_SPC_BT470BG, AVCOL_TRC_BT709 },
-    { AVCOL_PRI_BT470BG,   AVCOL_SPC_BT470BG, AVCOL_TRC_BT709 },
-    { AVCOL_PRI_BT709,     AVCOL_SPC_BT709,   AVCOL_TRC_BT709 },
-    { AVCOL_PRI_BT709,     AVCOL_SPC_BT709,   AVCOL_TRC_UNSPECIFIED /* DCinema */ },
+    { AVCOL_PRI_BT709,     AVCOL_MTX_BT709,   AVCOL_TRC_BT709 },
+    { AVCOL_PRI_SMPTE170M, AVCOL_MTX_BT470BG, AVCOL_TRC_BT709 },
+    { AVCOL_PRI_BT470BG,   AVCOL_MTX_BT470BG, AVCOL_TRC_BT709 },
+    { AVCOL_PRI_BT709,     AVCOL_MTX_BT709,   AVCOL_TRC_BT709 },
+    { AVCOL_PRI_BT709,     AVCOL_MTX_BT709,   AVCOL_TRC_UNSPECIFIED /* DCinema */ },
 };
 
 static const enum PixelFormat dirac_pix_fmt[2][3] = {
@@ -211,8 +211,8 @@ static int parse_source_parameters(AVCodecContext *avctx, GetBitContext *gb,
             return -1;
 
         avctx->color_primaries = dirac_color_presets[idx].color_primaries;
-        avctx->colorspace      = dirac_color_presets[idx].colorspace;
-        avctx->color_trc       = dirac_color_presets[idx].color_trc;
+        avctx->color_matrix    = dirac_color_presets[idx].color_matrix;
+        avctx->color_transfer  = dirac_color_presets[idx].color_transfer;
 
         if (!source->color_spec_index) {
             if (get_bits1(gb)) {
@@ -224,19 +224,19 @@ static int parse_source_parameters(AVCodecContext *avctx, GetBitContext *gb,
             if (get_bits1(gb)) {
                 idx = svq3_get_ue_golomb(gb);
                 if (!idx)
-                    avctx->colorspace = AVCOL_SPC_BT709;
+                    avctx->color_matrix = AVCOL_MTX_BT709;
                 else if (idx == 1)
-                    avctx->colorspace = AVCOL_SPC_BT470BG;
+                    avctx->color_matrix = AVCOL_MTX_BT470BG;
             }
 
             if (get_bits1(gb) && !svq3_get_ue_golomb(gb))
-                avctx->color_trc = AVCOL_TRC_BT709;
+                avctx->color_transfer = AVCOL_TRC_BT709;
         }
     } else {
         idx = source->color_spec_index;
         avctx->color_primaries = dirac_color_presets[idx].color_primaries;
-        avctx->colorspace      = dirac_color_presets[idx].colorspace;
-        avctx->color_trc       = dirac_color_presets[idx].color_trc;
+        avctx->color_matrix    = dirac_color_presets[idx].color_matrix;
+        avctx->color_transfer  = dirac_color_presets[idx].color_transfer;
     }
 
     return 0;

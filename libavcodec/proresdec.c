@@ -154,9 +154,9 @@ static int decode_frame_header(ProresContext *ctx, const uint8_t *buf,
 
     avctx->color_primaries = buf[14];
     av_dlog(avctx, "primaries %d\n", buf[14]);
-    avctx->color_trc = buf[15];
+    avctx->color_transfer = buf[15];
     av_dlog(avctx, "transfer func %d\n", buf[15]);
-    avctx->colorspace = buf[16];
+    avctx->color_matrix = buf[16];
     av_dlog(avctx, "matrix %d\n", buf[16]);
 
     ptr   = buf + 20;
