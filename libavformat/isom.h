@@ -56,7 +56,7 @@ typedef struct {
 typedef struct {
     int first;
     int count;
-    int id;
+    unsigned id;
 } MOVStsc;
 
 typedef struct {
@@ -66,6 +66,7 @@ typedef struct {
     char volume[28];
     char filename[64];
     int16_t nlvl_to, nlvl_from;
+    AVIOContext *pb;
 } MOVDref;
 
 typedef struct {
@@ -94,7 +95,6 @@ typedef struct {
 } MOVTrackExt;
 
 typedef struct MOVStreamContext {
-    AVIOContext *pb;
     int ffindex;          ///< AVStream index
     int next_chunk;
     unsigned int chunk_count;
@@ -120,7 +120,9 @@ typedef struct MOVStreamContext {
     unsigned int bytes_per_frame;
     unsigned int samples_per_frame;
     int dv_audio_container;
-    int pseudo_stream_id; ///< -1 means demux all ids
+    int *dref_ids;
+    int dref_ids_count;
+    AVIOContext **sample_dref;
     int16_t audio_cid;    ///< stsd audio compression id
     unsigned drefs_count;
     MOVDref *drefs;
