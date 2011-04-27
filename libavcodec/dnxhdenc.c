@@ -272,9 +272,47 @@ static int dnxhd_encode_init(AVCodecContext *avctx)
         return -1;
     }
 
+    if (!((avctx->width == 1920 && avctx->height == 1080) ||
+          avctx->width == 1280 && avctx->height == 720)) {
+        av_log(avctx, AV_LOG_ERROR, "video resolution not supported, use 1920x1080 or 1280x720\n");
+        return -1;
+    }
+    if (avctx->width == 1280 && avctx->height == 720 && avctx->flags & CODEC_FLAG_INTERLACED_DCT) {
+        av_log(avctx, AV_LOG_ERROR, "1280x720 interlaced is not supported\n");
+        return -1;
+    }
     ctx->cid = ff_dnxhd_find_cid(avctx, bit_depth);
     if (!ctx->cid) {
-        av_log(avctx, AV_LOG_ERROR, "video parameters incompatible with DNxHD\n");
+        av_log(avctx, AV_LOG_ERROR, "could not find encoding profile\n");
+        if (avctx->pix_fmt == PIX_FMT_YUV422P) {
+            av_log(avctx, AV_LOG_INFO, "available bitrates in Mb/s for 8bits:\n");
+            av_log(avctx, AV_LOG_INFO, "1080p24: 36, 115, 175\n");
+            av_log(avctx, AV_LOG_INFO, "1080p25: 36, 120, 185\n");
+            av_log(avctx, AV_LOG_INFO, "1080p30: 45, 145, 220\n");
+            av_log(avctx, AV_LOG_INFO, "1080p50: 75, 240, 365\n");
+            av_log(avctx, AV_LOG_INFO, "1080p60: 90, 290, 440\n");
+            av_log(avctx, AV_LOG_INFO, "1080i25: 120, 185\n");
+            av_log(avctx, AV_LOG_INFO, "1080i30: 145, 220\n");
+            av_log(avctx, AV_LOG_INFO, "720p24: 60, 90\n");
+            av_log(avctx, AV_LOG_INFO, "720p25: 60, 90\n");
+            av_log(avctx, AV_LOG_INFO, "720p30: 75, 110\n");
+            av_log(avctx, AV_LOG_INFO, "720p50: 120, 185\n");
+            av_log(avctx, AV_LOG_INFO, "720p60: 145, 220\n");
+        } else {
+            av_log(avctx, AV_LOG_INFO, "available bitrates in Mb/s for 10bits:\n");
+            av_log(avctx, AV_LOG_INFO, "1080p24: 175\n");
+            av_log(avctx, AV_LOG_INFO, "1080p25: 185\n");
+            av_log(avctx, AV_LOG_INFO, "1080p30: 220\n");
+            av_log(avctx, AV_LOG_INFO, "1080p50: 365\n");
+            av_log(avctx, AV_LOG_INFO, "1080p60: 440\n");
+            av_log(avctx, AV_LOG_INFO, "1080i25: 185\n");
+            av_log(avctx, AV_LOG_INFO, "1080i30: 220\n");
+            av_log(avctx, AV_LOG_INFO, "720p24: 90\n");
+            av_log(avctx, AV_LOG_INFO, "720p25: 90\n");
+            av_log(avctx, AV_LOG_INFO, "720p30: 110\n");
+            av_log(avctx, AV_LOG_INFO, "720p50: 185\n");
+            av_log(avctx, AV_LOG_INFO, "720p60: 220\n");
+        }
         return -1;
     }
     av_log(avctx, AV_LOG_DEBUG, "cid %d\n", ctx->cid);
