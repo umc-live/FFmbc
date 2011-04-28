@@ -1896,8 +1896,18 @@ static void estimate_timings_from_bit_rate(AVFormatContext *ic)
             if (st->codec->bit_rate <= 0 &&
                 (st->codec->codec_type == AVMEDIA_TYPE_VIDEO ||
                  st->codec->codec_type == AVMEDIA_TYPE_AUDIO)) {
-                bit_rate = 0;
-                break;
+                if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+                    int bits_per_sample =
+                        av_get_bits_per_sample(st->codec->codec_id);
+                    if (bits_per_sample) {
+                        st->codec->bit_rate = st->codec->sample_rate *
+                            st->codec->channels * bits_per_sample;
+                    }
+                }
+                if (!st->codec->bit_rate) {
+                    bit_rate = 0;
+                    break;
+                }
             }
             bit_rate += st->codec->bit_rate;
         }
