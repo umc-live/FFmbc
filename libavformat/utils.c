@@ -2848,6 +2848,9 @@ static int validate_codec_tag(AVFormatContext *s, AVStream *st)
     enum CodecID id = CODEC_ID_NONE;
     unsigned int tag = 0;
 
+    if (st->codec->codec_id == CODEC_ID_NONE)
+        return 1;
+
     /**
      * Check that tag + id is in the table
      * If neither is in the table -> OK
