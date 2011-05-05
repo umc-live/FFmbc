@@ -172,7 +172,6 @@ static unsigned int video_codec_tag = 0;
 static char *video_language = NULL;
 static int same_quality = 0;
 static int interlaced = 0;
-static int me_threshold = 0;
 static int intra_dc_precision = 8;
 static int loop_input = 0;
 static int loop_output = AVFMT_NOOUTPUTLOOP;
@@ -1461,8 +1460,7 @@ static void do_video_out(AVFormatContext *s,
             /* handles sameq here. This is not correct because it may
                not be a global option */
             big_picture.quality = quality;
-            if(!me_threshold)
-                big_picture.pict_type = 0;
+            big_picture.pict_type = 0;
 //            big_picture.pts = AV_NOPTS_VALUE;
             big_picture.pts= ost->sync_opts;
 //            big_picture.pts= av_rescale(ost->sync_opts, AV_TIME_BASE*(int64_t)enc->time_base.num, enc->time_base.den);
@@ -3228,12 +3226,6 @@ static int opt_video_rc_override_string(const char *opt, const char *arg)
     return 0;
 }
 
-static int opt_me_threshold(const char *opt, const char *arg)
-{
-    me_threshold = parse_number_or_die(opt, arg, OPT_INT64, INT_MIN, INT_MAX);
-    return 0;
-}
-
 static int opt_verbose(const char *opt, const char *arg)
 {
     verbose = parse_number_or_die(opt, arg, OPT_INT64, -10, 10);
@@ -3859,8 +3851,6 @@ static int opt_input_file(const char *opt, const char *filename)
             if (dec->lowres) {
                 dec->flags |= CODEC_FLAG_EMU_EDGE;
             }
-            if(me_threshold)
-                dec->debug |= FF_DEBUG_MV;
 
             if(video_disable)
                 st->discard= AVDISCARD_ALL;
@@ -4061,7 +4051,6 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
         video_enc->rc_override_count=i;
         if (!video_enc->rc_initial_buffer_occupancy)
             video_enc->rc_initial_buffer_occupancy = video_enc->rc_buffer_size*3/4;
-        video_enc->me_threshold= me_threshold;
         video_enc->intra_dc_precision= intra_dc_precision - 8;
 
         if (do_psnr)
@@ -4871,7 +4860,6 @@ static const OptionDef options[] = {
     { "qscale", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_qscale}, "use fixed video quantizer scale (VBR)", "q" },
     { "rc_override", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_video_rc_override_string}, "rate control override for specific intervals", "override" },
     { "vcodec", HAS_ARG | OPT_VIDEO, {(void*)opt_codec}, "force video codec ('copy' to copy stream)", "codec" },
-    { "me_threshold", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_me_threshold}, "motion estimaton threshold",  "threshold" },
     { "sameq", OPT_BOOL | OPT_VIDEO, {(void*)&same_quality},
       "use same quantizer as source (implies VBR)" },
     { "pass", HAS_ARG | OPT_VIDEO, {(void*)opt_pass}, "select the pass number (1 or 2)", "n" },
