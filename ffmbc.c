@@ -1454,6 +1454,10 @@ static void do_video_out(AVFormatContext *s,
     AVFrame frame;
     AVCodecContext *enc = ost->st->codec;
     double sync_ipts;
+    int frames_left = max_frames[AVMEDIA_TYPE_VIDEO] - ost->frame_number;
+
+    if (frames_left <= 0)
+        return;
 
     sync_ipts = get_sync_ipts(ost) / av_q2d(enc->time_base);
 
@@ -1477,24 +1481,25 @@ static void do_video_out(AVFormatContext *s,
         if (verbose>3)
             fprintf(stderr, "vdelta:%f, ost->sync_opts:%"PRId64", ost->sync_ipts:%f nb_frames:%d\n",
                     vdelta, ost->sync_opts, get_sync_ipts(ost), nb_frames);
-        if (nb_frames == 0){
-            ++nb_frames_drop;
-            if (verbose>2)
-                fprintf(stderr, "*** drop!\n");
-        }else if (nb_frames > 1) {
-            nb_frames_dup += nb_frames - 1;
-            if (verbose>2)
-                fprintf(stderr, "*** %d dup!\n", nb_frames-1);
-        }
     } else if (!video_sync_method) {
         if (ist->dts_is_reordered_pts && ist->st->codec->has_b_frames > 0)
             sync_ipts -= ist->st->codec->has_b_frames;
         ost->sync_opts= lrintf(sync_ipts);
     }
 
-    nb_frames= FFMIN(nb_frames, max_frames[AVMEDIA_TYPE_VIDEO] - ost->frame_number);
+    if (nb_frames == 0) {
+        ++nb_frames_drop;
+        if (verbose > 2)
+            fprintf(stderr, "*** drop!\n");
+    }
+    nb_frames = FFMIN(nb_frames, frames_left);
     if (nb_frames <= 0)
         return;
+    if (nb_frames > 1) {
+        nb_frames_dup += nb_frames - 1;
+        if (verbose > 2)
+            fprintf(stderr, "*** %d dup!\n", nb_frames-1);
+    }
 
     formatted_picture = in_picture;
     final_picture = formatted_picture;
@@ -1754,6 +1759,9 @@ static int output_packet(InputStream *ist, int ist_index,
     if(ist->next_pts == AV_NOPTS_VALUE)
         ist->next_pts= ist->pts;
 
+    if (ist->is_past_recording_time)
+        goto discard_packet;
+
     if (pkt == NULL) {
         /* EOF handling */
         av_init_packet(&avpkt);
@@ -1870,6 +1878,8 @@ static int output_packet(InputStream *ist, int ist_index,
                     ist->st->codec->sample_rate;
                 break;
             case AVMEDIA_TYPE_VIDEO:
+                // offset dts by delay when stream copying
+                ist->pts += av_rescale_q(ist->st->start_time - ist->st->first_dts, ist->st->time_base, AV_TIME_BASE_Q);
                 if (ist->st->codec->time_base.num != 0) {
                     int ticks = ist->st->codec->ticks_per_frame;
                     ist->next_pts += ((int64_t)AV_TIME_BASE *
@@ -1883,6 +1893,11 @@ static int output_packet(InputStream *ist, int ist_index,
             }
             ret = avpkt.size;
             avpkt.size = 0;
+        }
+
+        if (ist->pts - start_time >= recording_time) {
+            ist->is_past_recording_time = 1;
+            goto discard_packet;
         }
 
         // preprocess audio (volume)
@@ -3377,18 +3392,7 @@ static int transcode(AVFormatContext **output_files,
         }
         ist->dts = pkt.dts;
 
-        /* finish if recording time exhausted */
-        if (recording_time != INT64_MAX &&
-            (pkt.pts != AV_NOPTS_VALUE ?
-                av_compare_ts(pkt.pts, ist->st->time_base, recording_time + start_time, (AVRational){1, 1000000})
-                    :
-                av_compare_ts(ist->pts, AV_TIME_BASE_Q, recording_time + start_time, (AVRational){1, 1000000})
-            )>= 0) {
-            ist->is_past_recording_time = 1;
-            goto discard_packet;
-        }
-
-        //fprintf(stderr,"read #%d.%d size=%d\n", ist->file_index, ist->st->index, pkt.size);
+        //fprintf(stderr,"read #%d.%d size=%d\n", ist->file_index, ist->index, pkt.size);
         if (output_packet(ist, ist_index, ost_table, nb_ostreams, &pkt) < 0) {
 
             if (verbose >= 0)
