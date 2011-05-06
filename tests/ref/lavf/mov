@@ -4,6 +4,6 @@
 95ce83952052b770db8a2abc7a857eb7 *./tests/data/lavf/lavf_tc.mov
 448476 ./tests/data/lavf/lavf_tc.mov
 ./tests/data/lavf/lavf_tc.mov CRC=0x0cf0b931
-57621d4bcc23ab595368a6c8bcd320c5 *./tests/data/lavf/lavf_imx50.mov
+76d1d31a1c53c7013342cadeed831a77 *./tests/data/lavf/lavf_imx50.mov
 6350594 ./tests/data/lavf/lavf_imx50.mov
 ./tests/data/lavf/lavf_imx50.mov CRC=0x1906ce77

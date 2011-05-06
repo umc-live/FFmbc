@@ -176,6 +176,18 @@ static av_cold int encode_init(AVCodecContext *avctx)
         avctx->rc_buffer_size = FFMIN(max, avctx->rc_max_rate*65535LL/90000);
     }
 
+    switch (avctx->color_primaries) {
+    case AVCOL_PRI_BT709:
+        avctx->color_transfer = AVCOL_TRC_BT709;
+        avctx->color_matrix = AVCOL_MTX_BT709;
+        break;
+    case AVCOL_PRI_SMPTE170M:
+    case AVCOL_PRI_BT470BG:
+        avctx->color_transfer = AVCOL_TRC_BT709;
+        avctx->color_matrix = AVCOL_MTX_SMPTE170M;
+        break;
+    }
+
     if(MPV_encode_init(avctx) < 0)
         return -1;
 
@@ -310,6 +322,20 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
                 put_bits(&s->pb, 1, s->low_delay);
                 put_bits(&s->pb, 2, 0); // frame_rate_ext_n
                 put_bits(&s->pb, 5, 0); // frame_rate_ext_d
+
+                if (s->avctx->color_primaries != AVCOL_PRI_UNSPECIFIED) {
+                    put_header(s, EXT_START_CODE);
+                    put_bits(&s->pb, 4, 2); //seq display ext
+                    put_bits(&s->pb, 3, 0); //video_format, set to component
+                    put_bits(&s->pb, 1, 1); //colour_description
+                    put_bits(&s->pb, 8, s->avctx->color_primaries); //colour_primaries
+                    put_bits(&s->pb, 8, s->avctx->color_transfer); //transfer_characteristics
+                    put_bits(&s->pb, 8, s->avctx->color_matrix); //matrix_coefficients
+                    put_bits(&s->pb, 14, s->width);
+                    put_bits(&s->pb, 1, 1);
+                    put_bits(&s->pb, 14, s->height);
+                    put_bits(&s->pb, 1, 0);
+                }
             }
 
             put_header(s, GOP_START_CODE);
