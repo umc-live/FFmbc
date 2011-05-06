@@ -49,7 +49,7 @@ int av_strerror(int errnum, char *errbuf, size_t errbuf_size)
 #else
         ret = -1;
 #endif
-        if (ret < 0)
+        if (ret < 0 || errnum == -1)
             snprintf(errbuf, errbuf_size, "Error number %d occurred", errnum);
     }
 
