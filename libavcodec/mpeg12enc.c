@@ -247,7 +247,8 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
 
                 error= FFABS(error);
 
-                if(error < best_aspect_error){
+                // <= so square pixels can match 4:3 or 16:9
+                if(error <= best_aspect_error){
                     best_aspect_error= error;
                     s->aspect_ratio_info= i;
                 }
