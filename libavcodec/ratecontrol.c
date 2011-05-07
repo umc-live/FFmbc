@@ -286,16 +286,16 @@ int ff_vbv_update(MpegEncContext *s, int frame_size){
         rcc->buffer_index += av_clip(left, min_rate, max_rate);
 
         if(rcc->buffer_index > buffer_size){
-            int stuffing= ceil((rcc->buffer_index - buffer_size)/8);
+            int stuffing= rcc->buffer_index - buffer_size;
 
-            if(stuffing < 4 && s->codec_id == CODEC_ID_MPEG4)
-                stuffing=4;
-            rcc->buffer_index -= 8*stuffing;
+            if(stuffing < 32 && s->codec_id == CODEC_ID_MPEG4)
+                stuffing = 32;
+            rcc->buffer_index -= stuffing;
 
             if(s->avctx->debug & FF_DEBUG_RC)
-                av_log(s->avctx, AV_LOG_DEBUG, "stuffing %d bytes\n", stuffing);
+                av_log(s->avctx, AV_LOG_DEBUG, "stuffing %d bytes\n", stuffing>>3);
 
-            return stuffing;
+            return stuffing>>3;
         }
     }
     return 0;
