@@ -254,9 +254,10 @@ static float dts_delta_threshold = 10;
 
 static int64_t timer_start;
 
+static uint8_t *input_tmp;
 static uint8_t *audio_buf;
 static uint8_t *audio_out;
-static unsigned int allocated_audio_out_size, allocated_audio_buf_size;
+static unsigned int allocated_audio_out_size, allocated_audio_buf_size, input_tmp_size;
 
 static short *samples;
 
@@ -621,6 +622,7 @@ static int ffmpeg_exit(int ret)
     uninit_opts();
     av_free(audio_buf);
     av_free(audio_out);
+    av_free(input_tmp);
     allocated_audio_buf_size= allocated_audio_out_size= 0;
     av_free(samples);
 
@@ -1118,8 +1120,7 @@ need_realloc:
                     if(!size)
                         return;
                 }else{
-                    static uint8_t *input_tmp= NULL;
-                    input_tmp= av_realloc(input_tmp, byte_delta + size);
+                    av_fast_malloc(&input_tmp, &input_tmp_size, byte_delta + size);
 
                     if(byte_delta > allocated_for_size - size){
                         allocated_for_size= byte_delta + (int64_t)size;
