@@ -27,9 +27,22 @@
 #include "avfiltergraph.h"
 #include "internal.h"
 
+static const char* context_to_name(void *ptr)
+{
+    return "graph";
+}
+
+static const AVClass class = { "AVFilterGraph", context_to_name, NULL,
+                               LIBAVFILTER_VERSION_INT,
+                               offsetof(AVFilterGraph, log_level_offset) };
+
 AVFilterGraph *avfilter_graph_alloc(void)
 {
-    return av_mallocz(sizeof(AVFilterGraph));
+    AVFilterGraph *graph = av_mallocz(sizeof(AVFilterGraph));
+    if (!graph)
+        return NULL;
+    graph->av_class = &class;
+    return graph;
 }
 
 void avfilter_graph_free(AVFilterGraph **graph)
@@ -77,7 +90,7 @@ fail:
     return ret;
 }
 
-int ff_avfilter_graph_check_validity(AVFilterGraph *graph, AVClass *log_ctx)
+int ff_avfilter_graph_check_validity(AVFilterGraph *graph)
 {
     AVFilterContext *filt;
     int i, j;
@@ -88,7 +101,7 @@ int ff_avfilter_graph_check_validity(AVFilterGraph *graph, AVClass *log_ctx)
             continue;
         for (j = 0; j < filt->input_count; j++) {
             if (!filt->inputs[j] || !filt->inputs[j]->src) {
-                av_log(log_ctx, AV_LOG_ERROR,
+                av_log(graph, AV_LOG_ERROR,
                        "Input pad \"%s\" for the filter \"%s\" of type \"%s\" not connected to any source\n",
                        filt->input_pads[j].name, filt->name, filt->filter->name);
                 return AVERROR(EINVAL);
@@ -97,7 +110,7 @@ int ff_avfilter_graph_check_validity(AVFilterGraph *graph, AVClass *log_ctx)
 
         for (j = 0; j < filt->output_count; j++) {
             if (!filt->outputs[j] || !filt->outputs[j]->dst) {
-                av_log(log_ctx, AV_LOG_ERROR,
+                av_log(graph, AV_LOG_ERROR,
                        "Output pad \"%s\" for the filter \"%s\" of type \"%s\" not connected to any destination\n",
                        filt->output_pads[j].name, filt->name, filt->filter->name);
                 return AVERROR(EINVAL);
@@ -108,7 +121,7 @@ int ff_avfilter_graph_check_validity(AVFilterGraph *graph, AVClass *log_ctx)
     return 0;
 }
 
-int ff_avfilter_graph_config_links(AVFilterGraph *graph, AVClass *log_ctx)
+int ff_avfilter_graph_config_links(AVFilterGraph *graph)
 {
     AVFilterContext *filt;
     int i, ret;
@@ -139,7 +152,7 @@ AVFilterContext *avfilter_graph_get_filter(AVFilterGraph *graph, char *name)
     return NULL;
 }
 
-static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
+static int query_formats(AVFilterGraph *graph)
 {
     int i, j, ret;
     int scaler_count = 0;
@@ -182,7 +195,7 @@ static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
                          !avfilter_merge_formats(link->in_formats, link->out_formats)) ||
                         ((link = scale->outputs[0]) &&
                          !avfilter_merge_formats(link->in_formats, link->out_formats))) {
-                        av_log(log_ctx, AV_LOG_ERROR,
+                        av_log(graph, AV_LOG_ERROR,
                                "Impossible to convert between the formats supported by the filter "
                                "'%s' and the filter '%s'\n", link->src->name, link->dst->name);
                         return AVERROR(EINVAL);
@@ -233,12 +246,12 @@ static void pick_formats(AVFilterGraph *graph)
     }
 }
 
-int ff_avfilter_graph_config_formats(AVFilterGraph *graph, AVClass *log_ctx)
+int ff_avfilter_graph_config_formats(AVFilterGraph *graph)
 {
     int ret;
 
     /* find supported formats from sub-filters, and merge along links */
-    if ((ret = query_formats(graph, log_ctx)) < 0)
+    if (query_formats(graph))
         return ret;
 
     /* Once everything is merged, it's possible that we'll still have
@@ -248,15 +261,15 @@ int ff_avfilter_graph_config_formats(AVFilterGraph *graph, AVClass *log_ctx)
     return 0;
 }
 
-int avfilter_graph_config(AVFilterGraph *graphctx, void *log_ctx)
+int avfilter_graph_config(AVFilterGraph *graph)
 {
     int ret;
 
-    if ((ret = ff_avfilter_graph_check_validity(graphctx, log_ctx)))
+    if ((ret = ff_avfilter_graph_check_validity(graph)))
         return ret;
-    if ((ret = ff_avfilter_graph_config_formats(graphctx, log_ctx)))
+    if ((ret = ff_avfilter_graph_config_formats(graph)))
         return ret;
-    if ((ret = ff_avfilter_graph_config_links(graphctx, log_ctx)))
+    if ((ret = ff_avfilter_graph_config_links(graph)))
         return ret;
 
     return 0;

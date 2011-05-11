@@ -478,7 +478,7 @@ static int configure_video_filters(InputStream *ist, OutputStream *ost)
             return ret;
     }
 
-    if ((ret = avfilter_graph_config(ost->graph, NULL)) < 0)
+    if ((ret = avfilter_graph_config(ost->graph)) < 0)
         return ret;
 
     codec->width  = ost->output_video_filter->inputs[0]->w;
@@ -2344,7 +2344,7 @@ static int auto_scale_pad(OutputStream *ost, int width, int scale_height, int pa
     }
 
     avfilter_link(last, 0, ost->output_video_filter, 0);
-    if (avfilter_graph_config(ost->graph, NULL) < 0)
+    if (avfilter_graph_config(ost->graph) < 0)
         ffmpeg_exit(1);
 
     codec->width  = ost->output_video_filter->inputs[0]->w;

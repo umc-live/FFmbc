@@ -1717,7 +1717,7 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
             return ret;
     }
 
-    if ((ret = avfilter_graph_config(graph, NULL)) < 0)
+    if ((ret = avfilter_graph_config(graph)) < 0)
         return ret;
 
     is->out_video_filter = filt_out;
