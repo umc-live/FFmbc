@@ -36,6 +36,7 @@
 #include "isom.h"
 #include "id3v1.h"
 #include "libavcodec/get_bits.h"
+#include "libavcodec/timecode.h"
 
 #if CONFIG_ZLIB
 #include <zlib.h>
@@ -2644,6 +2645,28 @@ finish:
     avio_seek(s->pb, cur_pos, SEEK_SET);
 }
 
+static void mov_read_timecode(AVFormatContext *s, AVStream *st)
+{
+    int64_t pos = avio_tell(s->pb);
+    AVIndexEntry *e;
+    int framenum;
+    char timecode[16];
+
+    if (!st->nb_index_entries)
+        return;
+    e = &st->index_entries[0];
+    avio_seek(s->pb, e->pos, SEEK_SET);
+    framenum = avio_rb32(s->pb);
+    if (ff_framenum_to_timecode(timecode, framenum,
+                                st->codec->flags2 & CODEC_FLAG2_DROP_FRAME_TIMECODE,
+                                st->codec->time_base.den) < 0) {
+        av_log(s, AV_LOG_ERROR, "error reading timecode\n");
+        return;
+    }
+    av_dict_set(&s->metadata, "timecode", timecode, 0);
+    avio_seek(s->pb, pos, SEEK_SET);
+}
+
 static int mov_read_header(AVFormatContext *s, AVFormatParameters *ap)
 {
     MOVContext *mov = s->priv_data;
@@ -2670,8 +2693,15 @@ static int mov_read_header(AVFormatContext *s, AVFormatParameters *ap)
     }
     av_dlog(mov->fc, "on_parse_exit_offset=%"PRId64"\n", avio_tell(pb));
 
-    if (pb->seekable && mov->chapter_track > 0)
-        mov_read_chapters(s);
+    if (pb->seekable) {
+        if (mov->chapter_track > 0)
+            mov_read_chapters(s);
+        for (i = 0; i < s->nb_streams; i++) {
+            AVStream *st = s->streams[i];
+            if (st->codec->codec_tag == AV_RL32("tmcd"))
+                mov_read_timecode(s, st);
+        }
+    }
 
     for (i = 0; i < mov->keys_count; i++)
         av_freep(&mov->keys_data[i]);
