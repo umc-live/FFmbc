@@ -1193,6 +1193,7 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
             /* codec_tag YV12 triggers an UV swap in rawdec.c */
             if (!memcmp(st->codec->codec_name, "Planar Y'CbCr 8-bit 4:2:0", 25))
                 st->codec->codec_tag=MKTAG('I', '4', '2', '0');
+            av_dict_set(&st->metadata, "codec_name", st->codec->codec_name, 0);
 
             st->codec->bits_per_coded_sample = avio_rb16(pb); /* depth */
             st->codec->color_table_id = avio_rb16(pb); /* colortable id */
