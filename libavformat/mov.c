@@ -303,8 +303,7 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         if (!parse) { /* skip leaf atoms data */
             avio_skip(pb, a.size);
         } else {
-            int64_t start_pos = avio_tell(pb);
-            int64_t left;
+            int64_t left, start_pos = avio_tell(pb);
             int err = parse(c, pb, a);
             if (err < 0)
                 return err;
@@ -312,15 +311,17 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 (!pb->seekable || start_pos + a.size == avio_size(pb)))
                 return 0;
             left = a.size - avio_tell(pb) + start_pos;
-            if (left > 0) /* skip garbage at atom end */
+            if (left < 0) {
+                av_log(c->fc, AV_LOG_WARNING, "atom '%.4s' left %"PRId64"\n",
+                       (char*)&a.type, left);
+            } else if (left > 0) { /* skip garbage at atom end */
+                av_dlog(c->fc, "atom '%.4s' left %"PRId64"\n",
+                        (char*)&a.type, left);
                 avio_skip(pb, left);
+            }
         }
-
         total_size += a.size;
     }
-
-    if (total_size < atom.size && atom.size < 0x7ffff)
-        avio_skip(pb, atom.size - total_size);
 
     return 0;
 }
@@ -946,8 +947,7 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
         //Parsing Sample description table
         enum CodecID id;
         int dref_id = 1;
-        MOVAtom a = { AV_RL32("stsd") };
-        int64_t start_pos = avio_tell(pb);
+        int64_t left, start_pos = avio_tell(pb);
         int size = avio_rb32(pb); /* size */
         uint32_t format = avio_rl32(pb); /* data format */
 
@@ -967,8 +967,7 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
              * in the MOV demuxer, patch welcome. */
         multiple_stsd:
             av_log(c->fc, AV_LOG_WARNING, "multiple fourcc not supported\n");
-            avio_skip(pb, size - (avio_tell(pb) - start_pos));
-            continue;
+            goto skip;
         }
         /* we cannot demux concatenated h264 streams because of different extradata */
         if (st->codec->codec_tag && st->codec->codec_tag == AV_RL32("avc1"))
@@ -1194,16 +1193,23 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
             st->codec->width = sc->width;
             st->codec->height = sc->height;
         } else {
-            /* other codec type, just skip (rtp, mp4s, tmcd ...) */
-            avio_skip(pb, size - (avio_tell(pb) - start_pos));
+            goto skip;
         }
         /* this will read extra atoms at the end (wave, alac, damr, avcC, SMI ...) */
-        a.size = size - (avio_tell(pb) - start_pos);
-        if (a.size > 8) {
-            if (mov_read_default(c, pb, a) < 0)
+        left = size - (avio_tell(pb) - start_pos);
+        if (left > 8)
+            if (mov_read_default(c, pb, (MOVAtom){ AV_RL32("stsd"), left }) < 0)
                 return -1;
-        } else if (a.size > 0)
-            avio_skip(pb, a.size);
+    skip:
+        left = size - (avio_tell(pb) - start_pos);
+        if (left < 0) {
+            av_log(c->fc, AV_LOG_WARNING, "stsd entry '%.4s' left %"PRId64"\n",
+                   (char*)&format, left);
+        } else if (left > 0) {
+            av_dlog(c->fc, "stsd entry '%.4s' left %"PRId64"\n",
+                    (char*)&format, left);
+            avio_skip(pb, left);
+        }
     }
 
     if(st->codec->codec_type==AVMEDIA_TYPE_AUDIO && st->codec->sample_rate==0 && sc->time_scale>1)
