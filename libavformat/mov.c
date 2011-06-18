@@ -1654,14 +1654,6 @@ static void mov_compute_stream_time_offset(MOVContext *mov, AVStream *st)
         }
     }
 
-    if (sc->ctts_data && sc->stts_data &&
-        sc->ctts_data[0].duration / FFMAX(sc->stts_data[0].duration, 1) > 16) {
-        /* more than 16 frames delay, dts are likely wrong
-           this happens with files created by iMovie */
-        sc->wrong_dts = 1;
-        st->codec->has_b_frames = 1;
-    }
-
     if (i < sc->elst_count)
         av_log(mov->fc, AV_LOG_WARNING, "multiple edit list entries, "
                "a/v desync might occur, patch welcome\n");
@@ -2642,8 +2634,6 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
             sc->ctts_index++;
             sc->ctts_sample = 0;
         }
-        if (sc->wrong_dts)
-            pkt->dts = AV_NOPTS_VALUE;
     } else {
         int64_t next_dts = (sc->current_sample < st->nb_index_entries) ?
             st->index_entries[sc->current_sample].timestamp : st->duration;
