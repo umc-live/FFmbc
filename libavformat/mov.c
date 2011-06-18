@@ -1636,6 +1636,37 @@ static int mov_read_ctts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static void mov_compute_stream_time_offset(MOVContext *mov, AVStream *st)
+{
+    MOVStreamContext *sc = st->priv_data;
+    int i;
+
+    /* adjust first dts according to edit list */
+    for (i = 0; i < sc->elst_count; i++) {
+        if (sc->elst_data[i].time == -1) {
+            if (i > 0)
+                break;
+            sc->time_offset -= av_rescale(sc->elst_data[i].duration,
+                                          sc->time_scale, mov->time_scale);
+        } else {
+            sc->time_offset += sc->elst_data[i++].time;
+            break;
+        }
+    }
+
+    if (sc->ctts_data && sc->stts_data &&
+        sc->ctts_data[0].duration / FFMAX(sc->stts_data[0].duration, 1) > 16) {
+        /* more than 16 frames delay, dts are likely wrong
+           this happens with files created by iMovie */
+        sc->wrong_dts = 1;
+        st->codec->has_b_frames = 1;
+    }
+
+    if (i < sc->elst_count)
+        av_log(mov->fc, AV_LOG_WARNING, "multiple edit list entries, "
+               "a/v desync might occur, patch welcome\n");
+}
+
 static void mov_build_index(MOVContext *mov, AVStream *st)
 {
     MOVStreamContext *sc = st->priv_data;
@@ -1648,19 +1679,8 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
     unsigned int i, j;
     uint64_t stream_size = 0;
 
-    /* adjust first dts according to edit list */
-    if (sc->time_offset && mov->time_scale > 0) {
-        if (sc->time_offset < 0)
-            sc->time_offset = av_rescale(sc->time_offset, sc->time_scale, mov->time_scale);
-        current_dts = -sc->time_offset;
-        if (sc->ctts_data && sc->stts_data &&
-            sc->ctts_data[0].duration / FFMAX(sc->stts_data[0].duration, 1) > 16) {
-            /* more than 16 frames delay, dts are likely wrong
-               this happens with files created by iMovie */
-            sc->wrong_dts = 1;
-            st->codec->has_b_frames = 1;
-        }
-    }
+    mov_compute_stream_time_offset(mov, st);
+    current_dts = -sc->time_offset;
 
     /* only use old uncompressed audio chunk demuxing when stts specifies it */
     if (!(st->codec->codec_type == AVMEDIA_TYPE_AUDIO &&
@@ -1945,6 +1965,7 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_freep(&sc->keyframes);
     av_freep(&sc->stts_data);
     av_freep(&sc->stps_data);
+    av_freep(&sc->elst_data);
 
     return 0;
 }
@@ -2285,7 +2306,7 @@ free_and_return:
 static int mov_read_elst(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     MOVStreamContext *sc;
-    int i, edit_count, version;
+    int i, entries, version;
 
     if (c->fc->nb_streams < 1)
         return 0;
@@ -2293,32 +2314,27 @@ static int mov_read_elst(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     version = avio_r8(pb); /* version */
     avio_rb24(pb); /* flags */
-    edit_count = avio_rb32(pb); /* entries */
+    entries = avio_rb32(pb); /* entries */
 
-    if((uint64_t)edit_count*12+8 > atom.size)
+    if((uint64_t)entries*12+8 > atom.size)
         return -1;
+    sc->elst_data = av_malloc(entries * sizeof(*sc->elst_data));
+    if (!sc->elst_data)
+        return AVERROR(ENOMEM);
+    sc->elst_count = entries;
 
-    for(i=0; i<edit_count; i++){
-        int64_t time;
-        int64_t duration;
+    for (i = 0; i < entries; i++) {
         if (version == 1) {
-            duration = avio_rb64(pb);
-            time     = avio_rb64(pb);
+            sc->elst_data[i].duration = avio_rb64(pb);
+            sc->elst_data[i].time     = avio_rb64(pb);
         } else {
-            duration = avio_rb32(pb); /* segment duration */
-            time     = (int32_t)avio_rb32(pb); /* media time */
+            sc->elst_data[i].duration = avio_rb32(pb); /* segment duration */
+            sc->elst_data[i].time     = avio_rb32(pb); /* media time */
         }
         avio_rb32(pb); /* Media rate */
-        if (i == 0 && time >= -1) {
-            sc->time_offset = time != -1 ? time : -duration;
-        }
     }
 
-    if(edit_count > 1)
-        av_log(c->fc, AV_LOG_WARNING, "multiple edit list entries, "
-               "a/v desync might occur, patch welcome\n");
-
-    av_dlog(c->fc, "track[%i].edit_count = %i\n", c->fc->nb_streams-1, edit_count);
+    av_dlog(c->fc, "track[%i].edit_count = %i\n", c->fc->nb_streams-1, entries);
     return 0;
 }
 

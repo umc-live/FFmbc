@@ -43,6 +43,11 @@ int ff_mov_lang_to_iso639(unsigned code, char to[4]);
  */
 
 typedef struct {
+    int64_t duration;
+    int time;
+} MOVElst;
+
+typedef struct {
     int count;
     int duration;
 } MOVStts;
@@ -126,6 +131,8 @@ typedef struct MOVStreamContext {
     uint32_t palette[256];
     int has_palette;
     AVRational pixel_aspect; ///< information in 'pasp' atom
+    MOVElst *elst_data;   ///< edit list
+    unsigned elst_count;
 } MOVStreamContext;
 
 typedef struct MOVContext {
