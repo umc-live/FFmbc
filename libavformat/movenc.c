@@ -181,7 +181,7 @@ static int mov_write_stss_tag(AVIOContext *pb, MOVTrack *track, uint32_t flag)
     int i, index = 0;
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); // size
-    avio_wtag(pb, flag == MOV_SYNC_SAMPLE ? "stss" : "stps");
+    avio_wtag(pb, flag == MOV_PARTIAL_SYNC_SAMPLE ? "stps" : "stss");
     avio_wb32(pb, 0); // version & flags
     entryPos = avio_tell(pb);
     avio_wb32(pb, track->entry); // entry count
@@ -289,7 +289,7 @@ static unsigned compute_avg_bitrate(MOVTrack *track)
     int i;
     for (i = 0; i < track->entry; i++)
         size += track->cluster[i].size;
-    return size * 8 * track->timescale / track->trackDuration;
+    return size * 8 * track->timescale / track->total_duration;
 }
 
 static int mov_write_esds_tag(AVIOContext *pb, MOVTrack *track) // Basic
@@ -1030,7 +1030,7 @@ static int mov_write_stts_tag(AVIOContext *pb, MOVTrack *track)
         stts_entries = av_malloc(track->entry * sizeof(*stts_entries)); /* worst case */
         for (i=0; i<track->entry; i++) {
             int64_t duration = i + 1 == track->entry ?
-                track->trackDuration - track->cluster[i].dts + track->cluster[0].dts : /* readjusting */
+                track->total_duration - track->cluster[i].dts + track->cluster[0].dts : /* readjusting */
                 track->cluster[i+1].dts - track->cluster[i].dts;
             if (i && duration == stts_entries[entries].duration) {
                 stts_entries[entries].count++; /* compress */
@@ -1078,8 +1078,11 @@ static int mov_write_stbl_tag(AVIOContext *pb, MOVTrack *track)
     mov_write_stts_tag(pb, track);
     if ((track->enc->codec_type == AVMEDIA_TYPE_VIDEO ||
          track->enc->codec_tag == MKTAG('r','t','p',' ')) &&
-        track->hasKeyframes && track->hasKeyframes < track->entry)
-        mov_write_stss_tag(pb, track, MOV_SYNC_SAMPLE);
+        track->hasKeyframes && track->hasKeyframes < track->entry) {
+        mov_write_stss_tag(pb, track, track->mode == MODE_MOV ?
+                           MOV_SYNC_SAMPLE :
+                           MOV_SYNC_SAMPLE | MOV_PARTIAL_SYNC_SAMPLE);
+    }
     if (track->mode == MODE_MOV && track->flags & MOV_TRACK_STPS)
         mov_write_stss_tag(pb, track, MOV_PARTIAL_SYNC_SAMPLE);
     if (track->enc->codec_type == AVMEDIA_TYPE_VIDEO &&
@@ -1256,7 +1259,7 @@ static int mov_write_minf_tag(AVIOContext *pb, MOVTrack *track)
 
 static int mov_write_mdhd_tag(AVIOContext *pb, MOVTrack *track)
 {
-    int version = track->trackDuration < INT32_MAX ? 0 : 1;
+    int version = track->total_duration < INT32_MAX ? 0 : 1;
 
     (version == 1) ? avio_wb32(pb, 44) : avio_wb32(pb, 32); /* size */
     avio_wtag(pb, "mdhd");
@@ -1270,7 +1273,10 @@ static int mov_write_mdhd_tag(AVIOContext *pb, MOVTrack *track)
         avio_wb32(pb, track->time); /* modification time */
     }
     avio_wb32(pb, track->timescale); /* time scale (sample rate for audio) */
-    (version == 1) ? avio_wb64(pb, track->trackDuration) : avio_wb32(pb, track->trackDuration); /* duration */
+    if (version == 1)
+        avio_wb64(pb, track->total_duration);
+    else
+        avio_wb32(pb, track->total_duration); /* duration */
     avio_wb16(pb, track->language); /* language */
     avio_wb16(pb, 0); /* reserved (quality) */
 
@@ -1297,8 +1303,9 @@ static int mov_write_mdia_tag(AVIOContext *pb, MOVTrack *track)
 
 static int mov_write_tkhd_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
 {
-    int64_t duration = av_rescale_rnd(track->trackDuration, MOV_TIMESCALE,
-                                      track->timescale, AV_ROUND_UP);
+    int64_t duration = av_rescale_rnd(track->edit_duration + track->pts_offset,
+                                      MOV_TIMESCALE, track->timescale,
+                                      AV_ROUND_UP);
     int version = duration < INT32_MAX ? 0 : 1;
 
     (version == 1) ? avio_wb32(pb, 104) : avio_wb32(pb, 92); /* size */
@@ -1378,17 +1385,15 @@ static int mov_write_tapt_tag(AVIOContext *pb, MOVTrack *track)
 // This box seems important for the psp playback ... without it the movie seems to hang
 static int mov_write_edts_tag(AVIOContext *pb, MOVTrack *track)
 {
-    int64_t duration = av_rescale_rnd(track->trackDuration, MOV_TIMESCALE,
-                                      track->timescale, AV_ROUND_UP);
-    int version = duration < INT32_MAX ? 0 : 1;
-    int entry_size, entry_count, size;
-    int64_t delay, start_ct = track->cluster[0].cts;
-    delay = av_rescale_rnd(track->cluster[0].dts + start_ct, MOV_TIMESCALE,
-                           track->timescale, AV_ROUND_DOWN);
-    version |= delay < INT32_MAX ? 0 : 1;
+    int64_t pts_offset = av_rescale_rnd(track->pts_offset, MOV_TIMESCALE,
+                                        track->timescale, AV_ROUND_DOWN);
+    int64_t edit_duration = av_rescale_rnd(track->edit_duration, MOV_TIMESCALE,
+                                           track->timescale, AV_ROUND_UP);
+    int entry_size, entry_count, size, version;
 
+    version = pts_offset >= INT32_MAX || edit_duration >= INT32_MAX;
     entry_size = (version == 1) ? 20 : 12;
-    entry_count = 1 + (delay > 0);
+    entry_count = 1 + (track->pts_offset > 0);
     size = 24 + entry_count * entry_size;
 
     /* write the atom data */
@@ -1398,14 +1403,14 @@ static int mov_write_edts_tag(AVIOContext *pb, MOVTrack *track)
     avio_wtag(pb, "elst");
     avio_w8(pb, version);
     avio_wb24(pb, 0); /* flags */
-
     avio_wb32(pb, entry_count);
-    if (delay > 0) { /* add an empty edit to delay presentation */
+
+    if (track->pts_offset > 0) { /* add an empty edit to delay presentation */
         if (version == 1) {
-            avio_wb64(pb, delay);
+            avio_wb64(pb, pts_offset);
             avio_wb64(pb, -1);
         } else {
-            avio_wb32(pb, delay);
+            avio_wb32(pb, pts_offset);
             avio_wb32(pb, -1);
         }
         avio_wb32(pb, 0x00010000);
@@ -1413,11 +1418,11 @@ static int mov_write_edts_tag(AVIOContext *pb, MOVTrack *track)
 
     /* duration */
     if (version == 1) {
-        avio_wb64(pb, duration);
-        avio_wb64(pb, start_ct);
+        avio_wb64(pb, edit_duration);
+        avio_wb64(pb, track->first_edit_pts);
     } else {
-        avio_wb32(pb, duration);
-        avio_wb32(pb, start_ct);
+        avio_wb32(pb, edit_duration);
+        avio_wb32(pb, track->first_edit_pts);
     }
     avio_wb32(pb, 0x00010000);
     return size;
@@ -1483,8 +1488,7 @@ static int mov_write_trak_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
         track->enc->sample_aspect_ratio.den !=
         track->enc->sample_aspect_ratio.num)
         mov_write_tapt_tag(pb, track);
-    if (track->mode == MODE_PSP || track->flags & MOV_TRACK_CTTS || track->cluster[0].dts)
-        mov_write_edts_tag(pb, track);  // PSP Movies require edts box
+    mov_write_edts_tag(pb, track); // PSP Movies require edts box
     if (track->tref_tag)
         mov_write_tref_tag(pb, track);
     mov_write_mdia_tag(pb, track);
@@ -1518,16 +1522,16 @@ static int mov_write_mvhd_tag(AVIOContext *pb, MOVMuxContext *mov)
     int version;
 
     for (i=0; i<mov->nb_streams; i++) {
-        if(mov->tracks[i].entry > 0) {
-            maxTrackLenTemp = av_rescale_rnd(mov->tracks[i].trackDuration,
-                                             MOV_TIMESCALE,
-                                             mov->tracks[i].timescale,
-                                             AV_ROUND_UP);
-            if(maxTrackLen < maxTrackLenTemp)
-                maxTrackLen = maxTrackLenTemp;
-            if(maxTrackID < mov->tracks[i].trackID)
-                maxTrackID = mov->tracks[i].trackID;
-        }
+        MOVTrack *track = &mov->tracks[i];
+        if (track->entry == 0)
+            continue;
+        maxTrackLenTemp = av_rescale_rnd(track->edit_duration +
+                                         track->pts_offset, MOV_TIMESCALE,
+                                         track->timescale, AV_ROUND_UP);
+        if (maxTrackLen < maxTrackLenTemp)
+            maxTrackLen = maxTrackLenTemp;
+        if (maxTrackID < track->trackID)
+            maxTrackID = track->trackID;
     }
 
     version = maxTrackLen < UINT32_MAX ? 0 : 1;
@@ -1886,16 +1890,71 @@ static int mov_write_uuidusmt_tag(AVIOContext *pb, AVFormatContext *s)
 static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
                               AVFormatContext *s)
 {
-    int i;
+    int i, j;
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size placeholder*/
     avio_wtag(pb, "moov");
 
     for (i=0; i<mov->nb_streams; i++) {
-        if(mov->tracks[i].entry <= 0) continue;
+        MOVTrack *track = &mov->tracks[i];
+        int64_t first_pts, first_dec_pts;
+        MOVIentry *kf = NULL;
 
-        mov->tracks[i].time = mov->time;
-        mov->tracks[i].trackID = i+1;
+        if (track->entry <= 0)
+            continue;
+
+        track->time = mov->time;
+        track->trackID = i+1;
+
+        track->edit_duration = track->total_duration;
+        first_pts = track->cluster[0].dts + track->cluster[0].cts;
+        for (j = 1; j < track->entry; j++) {
+            int64_t pts = track->cluster[j].dts + track->cluster[j].cts;
+            if (pts >= track->cluster[0].dts + track->cluster[0].cts)
+                break;
+            first_pts = FFMIN(pts, first_pts);
+        }
+        if (first_pts > 0) {
+            track->pts_offset = first_pts;
+        }
+
+        // search for first keyframe
+        for (j = 0; j < track->entry; j++) {
+            if (track->cluster[j].flags & (MOV_SYNC_SAMPLE|MOV_PARTIAL_SYNC_SAMPLE)) {
+                kf = &track->cluster[j];
+                break;
+            }
+        }
+        if (!kf) {
+            av_log(s, AV_LOG_WARNING, "track %d has no keyframes\n", i);
+            continue;
+        }
+
+        // check if first keyframe is reordered
+        first_dec_pts = kf->dts + kf->cts;
+        for (j++; j < track->entry; j++) {
+            int64_t pts = track->cluster[j].dts + track->cluster[j].cts;
+            if (pts >= kf->dts + kf->cts)
+                break;
+            first_dec_pts = FFMIN(pts, first_dec_pts);
+        }
+        track->delay = first_dec_pts - kf->dts;
+        if (kf->flags & MOV_PARTIAL_SYNC_SAMPLE) {
+            // unmark partial sync entry for the first kf,
+            // offset using edit list
+            kf->flags |= MOV_SYNC_SAMPLE;
+            // do not display first b frames if keyframe is partial
+            track->pts_offset += kf->dts + kf->cts - first_dec_pts;
+            first_dec_pts = kf->dts + kf->cts;
+        }
+        track->edit_duration -= first_dec_pts - first_pts;
+        track->first_edit_pts = first_dec_pts - first_pts;
+
+        if (first_pts < 0) {
+            track->first_edit_pts = -first_pts;
+            track->edit_duration -= -first_pts;
+        }
+        track->first_edit_pts += track->delay;
     }
 
     if (mov->chapter_track)
@@ -1915,7 +1974,8 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
             if (s->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
                 mov->tracks[i].tref_tag = MKTAG('t','m','c','d');
                 mov->tracks[i].tref_id = mov->tracks[mov->timecode_track].trackID;
-                mov->tracks[mov->timecode_track].trackDuration = mov->tracks[i].trackDuration;
+                mov->tracks[mov->timecode_track].total_duration = mov->tracks[i].total_duration;
+                mov->tracks[mov->timecode_track].edit_duration = mov->tracks[i].total_duration;
                 break;
             }
         }
@@ -2160,7 +2220,8 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     trk->cluster[trk->entry].size = size;
     trk->cluster[trk->entry].entries = samplesInChunk;
     trk->cluster[trk->entry].dts = pkt->dts;
-    trk->trackDuration = pkt->dts - trk->cluster[0].dts + pkt->duration;
+    trk->cluster[trk->entry].cts = pkt->pts - pkt->dts;
+    trk->total_duration = pkt->dts - trk->cluster[0].dts + pkt->duration;
 
     if (pkt->pts == AV_NOPTS_VALUE) {
         av_log(s, AV_LOG_WARNING, "pts has no value\n");
@@ -2171,17 +2232,16 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     trk->cluster[trk->entry].cts = pkt->pts - pkt->dts;
     trk->cluster[trk->entry].flags = 0;
     if (pkt->flags & AV_PKT_FLAG_KEY) {
-        if (mov->mode == MODE_MOV && enc->codec_id == CODEC_ID_MPEG2VIDEO &&
-            trk->entry > 0) { // force sync sample for the first key frame
+        if (enc->codec_id == CODEC_ID_MPEG2VIDEO)
             mov_parse_mpeg2_frame(pkt, &trk->cluster[trk->entry].flags);
-            if (trk->cluster[trk->entry].flags & MOV_PARTIAL_SYNC_SAMPLE)
-                trk->flags |= MOV_TRACK_STPS;
-        } else {
+        else
             trk->cluster[trk->entry].flags = MOV_SYNC_SAMPLE;
-        }
+        if (trk->cluster[trk->entry].flags & MOV_PARTIAL_SYNC_SAMPLE)
+            trk->flags |= MOV_TRACK_STPS;
         if (trk->cluster[trk->entry].flags & MOV_SYNC_SAMPLE)
             trk->hasKeyframes++;
     }
+
     trk->entry++;
     trk->sampleCount += samplesInChunk;
     mov->mdat_size += size;

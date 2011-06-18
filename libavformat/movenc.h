@@ -70,7 +70,6 @@ typedef struct MOVIndex {
     int         entry;
     unsigned    timescale;
     uint64_t    time;
-    int64_t     trackDuration;
     long        sampleCount;
     long        sampleSize;
     int         hasKeyframes;
@@ -82,7 +81,11 @@ typedef struct MOVIndex {
     int         trackID;
     int         tag; ///< stsd fourcc
     AVCodecContext *enc;
-
+    int         delay;
+    int64_t     first_edit_pts;
+    int64_t     pts_offset;
+    int64_t     edit_duration;
+    int64_t     total_duration;
     int         vosLen;
     uint8_t     *vosData;
     MOVIentry   *cluster;
