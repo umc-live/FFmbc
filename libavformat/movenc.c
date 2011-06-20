@@ -1676,23 +1676,26 @@ static int mov_write_iods_tag(AVIOContext *pb, MOVMuxContext *mov)
 static int mov_write_mvhd_tag(AVIOContext *pb, MOVMuxContext *mov)
 {
     int maxTrackID = 1, i;
-    int64_t maxTrackLenTemp, maxTrackLen = 0;
+    int64_t duration, max_duration = 0;
+    int64_t video_duration = 0;
     int version;
 
     for (i=0; i<mov->nb_streams; i++) {
         MOVTrack *track = &mov->tracks[i];
         if (track->entry == 0)
             continue;
-        maxTrackLenTemp = av_rescale_rnd(track->edit_duration +
-                                         track->pts_offset, MOV_TIMESCALE,
-                                         track->timescale, AV_ROUND_UP);
-        if (maxTrackLen < maxTrackLenTemp)
-            maxTrackLen = maxTrackLenTemp;
+        duration = av_rescale_rnd(track->edit_duration +
+                                  track->pts_offset, MOV_TIMESCALE,
+                                  track->timescale, AV_ROUND_UP);
+        if (track->enc->codec_type == AVMEDIA_TYPE_VIDEO)
+            video_duration = FFMAX(video_duration, duration);
+        max_duration = FFMAX(max_duration, duration);
         if (maxTrackID < track->trackID)
             maxTrackID = track->trackID;
     }
 
-    version = maxTrackLen < UINT32_MAX ? 0 : 1;
+    duration = video_duration > 0 ? video_duration : max_duration;
+    version = duration < UINT32_MAX ? 0 : 1;
     (version == 1) ? avio_wb32(pb, 120) : avio_wb32(pb, 108); /* size */
     avio_wtag(pb, "mvhd");
     avio_w8(pb, version);
@@ -1705,7 +1708,7 @@ static int mov_write_mvhd_tag(AVIOContext *pb, MOVMuxContext *mov)
         avio_wb32(pb, mov->time); /* modification time */
     }
     avio_wb32(pb, MOV_TIMESCALE);
-    (version == 1) ? avio_wb64(pb, maxTrackLen) : avio_wb32(pb, maxTrackLen); /* duration of longest track */
+    (version == 1) ? avio_wb64(pb, duration) : avio_wb32(pb, duration);
 
     avio_wb32(pb, 0x00010000); /* reserved (preferred rate) 1.0 = normal */
     avio_wb16(pb, 0x0100); /* reserved (preferred volume) 1.0 = normal */
