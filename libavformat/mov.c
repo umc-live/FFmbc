@@ -1679,6 +1679,29 @@ static int mov_read_stts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_cslg(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    av_unused int tmp;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+
+    avio_rb32(pb); // version + flags
+
+    tmp = avio_rb32(pb);
+    av_dlog(c->fc, "dts shift %d\n", tmp);
+    tmp = avio_rb32(pb); // least dts to pts delta
+    av_dlog(c->fc, "least cts %d\n", tmp);
+    tmp = avio_rb32(pb); // greatest dts to pts delta
+    av_dlog(c->fc, "greatest cts %d\n", tmp);
+    tmp = avio_rb32(pb); // pts start
+    av_dlog(c->fc, "pts start %d\n", tmp);
+    tmp = avio_rb32(pb); // pts end
+    av_dlog(c->fc, "pts end %d\n", tmp);
+
+    return 0;
+}
+
 static int mov_read_ctts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -2481,6 +2504,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('c','h','p','l'), mov_read_chpl },
 { MKTAG('c','o','6','4'), mov_read_stco },
 { MKTAG('c','o','l','r'), mov_read_colr },
+{ MKTAG('c','s','l','g'), mov_read_cslg },
 { MKTAG('c','t','t','s'), mov_read_ctts }, /* composition time to sample */
 { MKTAG('d','i','n','f'), mov_read_default },
 { MKTAG('d','r','e','f'), mov_read_dref },
