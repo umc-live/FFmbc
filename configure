@@ -81,7 +81,6 @@ Configuration options:
   --disable-doc            do not build documentation
   --disable-ffplay         disable ffplay build
   --disable-ffprobe        disable ffprobe build
-  --disable-ffserver       disable ffserver build
   --disable-avdevice       disable libavdevice build
   --disable-avcodec        disable libavcodec build
   --disable-avformat       disable libavformat build
@@ -913,7 +912,6 @@ CONFIG_LIST="
     ffmbc
     ffplay
     ffprobe
-    ffserver
     fft
     frei0r
     golomb
@@ -1507,8 +1505,6 @@ ffmpeg_select="buffer_filter buffersink_filter"
 ffplay_deps="avcodec avformat swscale sdl"
 ffplay_select="buffersink_filter rdft"
 ffprobe_deps="avcodec avformat"
-ffserver_deps="avformat ffm_muxer fork rtp_protocol rtsp_demuxer"
-ffserver_extralibs='$ldl'
 
 doc_deps="texi2html"
 
@@ -1655,7 +1651,7 @@ enable fastdiv
 enable ffmpeg
 enable ffplay
 enable ffprobe
-enable ffserver
+enable mpegaudio_hp
 enable network
 enable optimizations
 enable postproc
@@ -1667,7 +1663,6 @@ enable swscale_alpha
 
 # build settings
 SHFLAGS='-shared -Wl,-soname,$$(@F)'
-FFSERVERLDFLAGS=-Wl,-E
 LIBPREF="lib"
 LIBSUF=".a"
 FULLNAME='$(NAME)$(BUILDSUF)'
@@ -2375,7 +2370,6 @@ case $target_os in
         host_libs=
         ;;
     sunos)
-        FFSERVERLDFLAGS=""
         SHFLAGS='-shared -Wl,-h,$$(@F)'
         enabled x86 && SHFLAGS="-mimpure-text $SHFLAGS"
         network_extralibs="-lsocket -lnsl"
@@ -2422,7 +2416,6 @@ case $target_os in
         SLIBSUF=".dylib"
         SLIBNAME_WITH_VERSION='$(SLIBPREF)$(FULLNAME).$(LIBVERSION)$(SLIBSUF)'
         SLIBNAME_WITH_MAJOR='$(SLIBPREF)$(FULLNAME).$(LIBMAJOR)$(SLIBSUF)'
-        FFSERVERLDFLAGS=-Wl,-bind_at_load
         objformat="macho"
         enabled x86_64 && objformat="macho64"
         enabled_any pic shared ||
@@ -2494,7 +2487,6 @@ case $target_os in
         add_cppflags -D_GNU_SOURCE
         add_ldflags -Zomf -Zbin-files -Zargs-wild -Zmap
         SHFLAGS='$(SUBDIR)$(NAME).def -Zdll -Zomf'
-        FFSERVERLDFLAGS=""
         LIBSUF="_s.a"
         SLIBPREF=""
         SLIBSUF=".dll"
@@ -3263,7 +3255,6 @@ ASFLAGS=$ASFLAGS
 AS_O=$CC_O
 CC_O=$CC_O
 LDFLAGS=$LDFLAGS
-FFSERVERLDFLAGS=$FFSERVERLDFLAGS
 SHFLAGS=$SHFLAGS
 YASMFLAGS=$YASMFLAGS
 BUILDSUF=$build_suffix

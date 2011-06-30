@@ -46,8 +46,6 @@
 #include "libavutil/libm.h"
 #include "libavformat/os_support.h"
 
-#include "libavformat/ffm.h" // not public API
-
 #if CONFIG_AVFILTER
 # include "libavfilter/avcodec.h"
 # include "libavfilter/avfilter.h"
@@ -794,51 +792,6 @@ static OutputStream *new_output_stream(AVFormatContext *oc, int file_idx, AVCode
 
     ost->sws_flags = av_get_int(sws_opts, "sws_flags", NULL);
     return ost;
-}
-
-static int read_ffserver_streams(AVFormatContext *s, const char *filename)
-{
-    int i, err;
-    AVFormatContext *ic = NULL;
-    int nopts = 0;
-
-    err = avformat_open_input(&ic, filename, NULL, NULL);
-    if (err < 0)
-        return err;
-    /* copy stream format */
-    for(i=0;i<ic->nb_streams;i++) {
-        AVStream *st;
-        OutputStream *ost;
-        AVCodec *codec;
-
-        codec = avcodec_find_encoder(ic->streams[i]->codec->codec_id);
-        ost   = new_output_stream(s, nb_output_files, codec);
-        st    = ost->st;
-
-        // FIXME: a more elegant solution is needed
-        memcpy(st, ic->streams[i], sizeof(AVStream));
-        st->info = av_malloc(sizeof(*st->info));
-        memcpy(st->info, ic->streams[i]->info, sizeof(*st->info));
-        avcodec_copy_context(st->codec, ic->streams[i]->codec);
-
-        if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
-            if (audio_stream_copy) {
-                st->stream_copy = 1;
-            } else
-                choose_sample_fmt(st, codec);
-        } else if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
-            if (video_stream_copy) {
-                st->stream_copy = 1;
-            } else
-                choose_pixel_fmt(st, codec);
-        }
-
-        if(st->codec->flags & CODEC_FLAG_BITEXACT)
-            nopts = 1;
-    }
-
-    av_close_input_file(ic);
-    return 0;
 }
 
 static double
@@ -4629,16 +4582,7 @@ static int opt_output_file(const char *opt, const char *filename)
     }
     file_oformat= oc->oformat;
 
-    if (!strcmp(file_oformat->name, "ffm") &&
-        av_strstart(filename, "http:", NULL)) {
-        /* special case for files sent to ffserver: we get the stream
-           parameters from ffserver */
-        int err = read_ffserver_streams(oc, filename);
-        if (err < 0) {
-            print_error(filename, err);
-            ffmpeg_exit(1);
-        }
-    } else {
+    {
         use_video = file_oformat->video_codec != CODEC_ID_NONE || video_stream_copy || video_codec_name;
         use_audio = file_oformat->audio_codec != CODEC_ID_NONE || audio_stream_copy || audio_codec_name;
         use_subtitle = file_oformat->subtitle_codec != CODEC_ID_NONE || subtitle_stream_copy || subtitle_codec_name;
