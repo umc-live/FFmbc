@@ -61,7 +61,6 @@ typedef struct {
     int (*write_packet)(void *opaque, uint8_t *buf, int buf_size);
     int64_t (*seek)(void *opaque, int64_t offset, int whence);
     int64_t pos;            /**< position in the file of the current buffer */
-    int must_flush;         /**< true if the next seek should flush */
     int eof_reached;        /**< true if eof reached */
     int write_flag;         /**< true if open for writing */
 #if FF_API_OLD_AVIO
@@ -87,6 +86,7 @@ typedef struct {
      * A combination of AVIO_SEEKABLE_ flags or 0 when the stream is not seekable.
      */
     int seekable;
+    unsigned char *max_buf_ptr; /**< max written position in buf */
 } AVIOContext;
 
 /* unbuffered I/O */
