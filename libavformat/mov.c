@@ -1759,6 +1759,15 @@ static void mov_compute_stream_time_offset(MOVContext *mov, AVStream *st)
         }
     }
 
+    // shorten the duration of the first video or timecode sample
+    if (st->codec->codec_type != AVMEDIA_TYPE_AUDIO &&
+        sc->time_offset > 0 && sc->stts_count > 0 &&
+        sc->stts_data[0].count == 1 &&
+        sc->stts_data[0].duration > sc->time_offset) {
+        sc->stts_data[0].duration -= sc->time_offset;
+        sc->time_offset = 0;
+    }
+
     if (i < sc->elst_count)
         av_log(mov->fc, AV_LOG_WARNING, "multiple edit list entries, "
                "a/v desync might occur, patch welcome\n");
@@ -2068,9 +2077,16 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         av_reduce(&st->avg_frame_rate.num, &st->avg_frame_rate.den,
                   sc->time_scale*st->nb_frames, st->duration, INT_MAX);
 
-        if (sc->stts_count == 1 || (sc->stts_count == 2 && sc->stts_data[1].count == 1))
-            av_reduce(&st->r_frame_rate.num, &st->r_frame_rate.den,
-                      sc->time_scale, sc->stts_data[0].duration, INT_MAX);
+        if (sc->stts_count > 0) {
+            int frame_duration = sc->stts_data[0].duration;
+            for (i = 1; i < sc->stts_count; i++)
+                if ((i+1 < sc->stts_count || sc->stts_data[i].count > 1) &&
+                    sc->stts_data[i].duration != frame_duration)
+                    break;
+            if (i == sc->stts_count)
+                av_reduce(&st->r_frame_rate.num, &st->r_frame_rate.den,
+                          sc->time_scale, sc->stts_data[0].duration, INT_MAX);
+        }
 
         // tkhd with matrix will set it
         if (!st->sample_aspect_ratio.num) {
