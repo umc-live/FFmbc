@@ -54,7 +54,7 @@ static int avisynth_read_header(AVFormatContext *s, AVFormatParameters *ap)
   res = AVIFileOpen(&avs->file, s->filename, OF_READ|OF_SHARE_DENY_WRITE, NULL);
   if (res != S_OK)
     {
-      av_log(s, AV_LOG_ERROR, "AVIFileOpen failed with error %ld", res);
+      av_log(s, AV_LOG_ERROR, "AVIFileOpen failed with error %ld\n", res);
       AVIFileExit();
       return -1;
     }
@@ -62,7 +62,7 @@ static int avisynth_read_header(AVFormatContext *s, AVFormatParameters *ap)
   res = AVIFileInfo(avs->file, &info, sizeof(info));
   if (res != S_OK)
     {
-      av_log(s, AV_LOG_ERROR, "AVIFileInfo failed with error %ld", res);
+      av_log(s, AV_LOG_ERROR, "AVIFileInfo failed with error %ld\n", res);
       AVIFileExit();
       return -1;
     }
@@ -98,6 +98,7 @@ static int avisynth_read_header(AVFormatContext *s, AVFormatParameters *ap)
 
                   st->codec->codec_tag = wvfmt.wFormatTag;
                   st->codec->codec_id = ff_wav_codec_get_id(wvfmt.wFormatTag, st->codec->bits_per_coded_sample);
+                  av_set_pts_info(st, 64, 1, st->codec->sample_rate);
                 }
               else if (stream->info.fccType == streamtypeVIDEO)
                 {
@@ -124,6 +125,7 @@ static int avisynth_read_header(AVFormatContext *s, AVFormatParameters *ap)
                   st->codec->codec_id = ff_codec_get_id(ff_codec_bmp_tags, imgfmt.bmiHeader.biCompression);
 
                   st->duration = stream->info.dwLength;
+                  av_set_pts_info(st, 64, info.dwScale, info.dwRate);
                 }
               else
                 {
@@ -135,7 +137,6 @@ static int avisynth_read_header(AVFormatContext *s, AVFormatParameters *ap)
 
               st->codec->stream_codec_tag = stream->info.fccHandler;
 
-              av_set_pts_info(st, 64, info.dwScale, info.dwRate);
               st->start_time = stream->info.dwStart;
             }
         }
