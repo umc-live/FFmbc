@@ -2792,7 +2792,7 @@ static int transcode(AVFormatContext **output_files,
         AVStream *st;
         ist = &input_streams[i];
         st= ist->st;
-        ist->pts = st->avg_frame_rate.num ? - st->codec->has_b_frames*AV_TIME_BASE / av_q2d(st->avg_frame_rate) : 0;
+        ist->pts = 0;
         ist->next_pts = AV_NOPTS_VALUE;
         ist->is_start = 1;
     }
