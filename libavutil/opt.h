@@ -149,6 +149,8 @@ int64_t av_get_int(void *obj, const char *name, const AVOption **o_out);
 const char *av_get_string(void *obj, const char *name, const AVOption **o_out, char *buf, int buf_len);
 const AVOption *av_next_option(void *obj, const AVOption *last);
 
+void av_opt_list(void *obj, void *av_log_obj, const char *unit, int req_flags, int rej_flags);
+
 /**
  * Show the obj options.
  *

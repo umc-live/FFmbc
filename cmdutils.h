@@ -139,6 +139,8 @@ typedef struct {
     const char *argname;
 } OptionDef;
 
+int show_options(const char *name, const char *type, void *obj, int req_flags);
+
 void show_help_options(const OptionDef *options, const char *msg, int mask, int value);
 
 /**

@@ -333,7 +333,7 @@ int av_opt_flag_is_set(void *obj, const char *field_name, const char *flag_name)
     return av_get_int(obj, field_name, NULL) & (int) flag->default_val.dbl;
 }
 
-static void opt_list(void *obj, void *av_log_obj, const char *unit,
+void av_opt_list(void *obj, void *av_log_obj, const char *unit,
                      int req_flags, int rej_flags)
 {
     const AVOption *opt=NULL;
@@ -397,7 +397,7 @@ static void opt_list(void *obj, void *av_log_obj, const char *unit,
             av_log(av_log_obj, AV_LOG_INFO, " %s", opt->help);
         av_log(av_log_obj, AV_LOG_INFO, "\n");
         if (opt->unit && opt->type != FF_OPT_TYPE_CONST) {
-            opt_list(obj, av_log_obj, opt->unit, req_flags, rej_flags);
+            av_opt_list(obj, av_log_obj, opt->unit, req_flags, rej_flags);
         }
     }
 }
@@ -409,7 +409,7 @@ int av_opt_show2(void *obj, void *av_log_obj, int req_flags, int rej_flags)
 
     av_log(av_log_obj, AV_LOG_INFO, "%s AVOptions:\n", (*(AVClass**)obj)->class_name);
 
-    opt_list(obj, av_log_obj, NULL, req_flags, rej_flags);
+    av_opt_list(obj, av_log_obj, NULL, req_flags, rej_flags);
 
     return 0;
 }

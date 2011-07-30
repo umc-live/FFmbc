@@ -87,6 +87,20 @@ void log_callback_help(void* ptr, int level, const char* fmt, va_list vl)
     vfprintf(stdout, fmt, vl);
 }
 
+int show_options(const char *name, const char *type, void *obj, int req_flags)
+{
+    if (!obj || !name)
+        return -1;
+
+    if (name && type)
+        printf("%s %s options:\n", name, type);
+    else
+        printf("%s options:\n", name);
+    av_opt_list(obj, NULL, NULL, req_flags, 0);
+
+    return 0;
+}
+
 double parse_number_or_die(const char *context, const char *numstr, int type, double min, double max)
 {
     char *tail;

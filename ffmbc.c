@@ -4793,38 +4793,41 @@ static int opt_help(const char *opt, const char *arg)
                       OPT_GRAB,
                       OPT_GRAB);
     printf("\n");
-    av_opt_show2(avcodec_opts[0], NULL, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0);
+    show_options("AVCodecContext", NULL, avcodec_opts[0], AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM);
     printf("\n");
+
+    show_options("AVFormatContext", NULL, avformat_opts, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM);
+    printf("\n");
+
+    show_options("SwsContext", NULL, sws_opts, AV_OPT_FLAG_ENCODING_PARAM);
+    printf("\n");
+
+    /* individual demuxer options */
+    while ((iformat = av_iformat_next(iformat))) {
+        if (iformat->priv_class) {
+            show_options(iformat->name, "demuxer", &iformat->priv_class, AV_OPT_FLAG_DECODING_PARAM);
+            printf("\n");
+        }
+    }
 
     /* individual codec options */
     c = NULL;
     while ((c = av_codec_next(c))) {
         if (c->priv_class) {
-            av_opt_show2(&c->priv_class, NULL, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0);
+            show_options(c->name, c->encode ? "encoder" : "decoder", &c->priv_class,
+                         AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_ENCODING_PARAM);
             printf("\n");
         }
     }
-
-    av_opt_show2(avformat_opts, NULL, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0);
-    printf("\n");
 
     /* individual muxer options */
     while ((oformat = av_oformat_next(oformat))) {
         if (oformat->priv_class) {
-            av_opt_show2(&oformat->priv_class, NULL, AV_OPT_FLAG_ENCODING_PARAM, 0);
+            show_options(oformat->name, "muxer", &oformat->priv_class, AV_OPT_FLAG_ENCODING_PARAM);
             printf("\n");
         }
     }
 
-    /* individual demuxer options */
-    while ((iformat = av_iformat_next(iformat))) {
-        if (iformat->priv_class) {
-            av_opt_show2(&iformat->priv_class, NULL, AV_OPT_FLAG_DECODING_PARAM, 0);
-            printf("\n");
-        }
-    }
-
-    av_opt_show2(sws_opts, NULL, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0);
     return 0;
 }
 
