@@ -35,7 +35,7 @@
                                            LIBAVFORMAT_VERSION_MICRO)
 #define LIBAVFORMAT_BUILD       LIBAVFORMAT_VERSION_INT
 
-#define LIBAVFORMAT_IDENT       "FFmbc 0.6"
+#define LIBAVFORMAT_IDENT       "FFmbc 0.6.1"
 
 /**
  * Those FF_API_* defines are not part of public API.

@@ -1,3 +1,8 @@
+FFmbc-0.6.1:
+- Fix compilation on OSX with Xcode 4.1
+- MPEG-2 3:2 pulldown encoding is now supported
+- Fix > 16bit pcm stream copy in wav
+
 FFmbc-0.6:
 - Sync on FFmpeg git 1762d9ced70ccc46c5d3e5d64e56a48d0fbbd4f7
 - Fix auto-rotate iphone 4 files
