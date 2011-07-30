@@ -70,7 +70,8 @@ do_lavf mxf '-ar 48000 -r 30000/1001 -timecode 02:56:14;13' '' 'lavf_ntsc_tc.mxf
 fi
 
 if [ -n "$do_mxf_d10" ]; then
-do_lavf mxf_d10 "-ar 48000 -ac 2 -r 25 -s 720x576 -vf pad=720:608:0:32 -vcodec mpeg2video -intra -flags +low_delay -dc 10 -flags2 +ivlc+non_linear_q -qscale 1 -ps 1 -qmin 1 -rc_max_vbv_use 1 -rc_min_vbv_use 1 -pix_fmt yuv422p -minrate 30000k -maxrate 30000k -b 30000k -bufsize 1200000 -tff -rc_init_occupancy 1200000 -qmax 12 -f mxf_d10"
+do_lavf mxf_d10 "-ar 48000 -ac 2 -r 25 -target imx30 -f mxf_d10"
+do_lavf mxf_d10 "-ar 48000 -ac 2 -r 30000/1001 -target imx50" '' 'lavf_ntsc_d10.mxf'
 fi
 
 if [ -n "$do_ts" ] ; then
@@ -92,6 +93,7 @@ fi
 if [ -n "$do_mov" ] ; then
 do_lavf mov "-acodec pcm_alaw"
 do_lavf mov "-acodec pcm_s24le -timecode 11:02:53:20" "" "lavf_tc.mov"
+do_lavf mov "-target imx50" "" "lavf_imx50.mov"
 fi
 
 if [ -n "$do_dv_fmt" ] ; then

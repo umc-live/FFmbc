@@ -84,7 +84,8 @@ int ff_avfilter_graph_check_validity(AVFilterGraph *graph, AVClass *log_ctx)
 
     for (i = 0; i < graph->filter_count; i++) {
         filt = graph->filters[i];
-
+        if (!filt)
+            continue;
         for (j = 0; j < filt->input_count; j++) {
             if (!filt->inputs[j] || !filt->inputs[j]->src) {
                 av_log(log_ctx, AV_LOG_ERROR,
@@ -114,7 +115,8 @@ int ff_avfilter_graph_config_links(AVFilterGraph *graph, AVClass *log_ctx)
 
     for (i=0; i < graph->filter_count; i++) {
         filt = graph->filters[i];
-
+        if (!filt)
+            continue;
         if (!filt->output_count) {
             if ((ret = avfilter_config_links(filt)))
                 return ret;
@@ -129,6 +131,8 @@ AVFilterContext *avfilter_graph_get_filter(AVFilterGraph *graph, char *name)
     int i;
 
     for (i = 0; i < graph->filter_count; i++)
+        if (!graph->filters[i])
+            continue;
         if (graph->filters[i]->name && !strcmp(name, graph->filters[i]->name))
             return graph->filters[i];
 
@@ -143,6 +147,8 @@ static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
 
     /* ask all the sub-filters for their supported media formats */
     for (i = 0; i < graph->filter_count; i++) {
+        if (!graph->filters[i])
+            continue;
         if (graph->filters[i]->filter->query_formats)
             graph->filters[i]->filter->query_formats(graph->filters[i]);
         else
@@ -152,7 +158,8 @@ static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
     /* go through and merge as many format lists as possible */
     for (i = 0; i < graph->filter_count; i++) {
         AVFilterContext *filter = graph->filters[i];
-
+        if (!filter)
+            continue;
         for (j = 0; j < filter->input_count; j++) {
             AVFilterLink *link = filter->inputs[j];
             if (link && link->in_formats != link->out_formats) {
@@ -217,7 +224,8 @@ static void pick_formats(AVFilterGraph *graph)
 
     for (i = 0; i < graph->filter_count; i++) {
         AVFilterContext *filter = graph->filters[i];
-
+        if (!filter)
+            continue;
         for (j = 0; j < filter->input_count; j++)
             pick_format(filter->inputs[j]);
         for (j = 0; j < filter->output_count; j++)

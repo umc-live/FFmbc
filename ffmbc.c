@@ -438,7 +438,8 @@ static int configure_video_filters(InputStream *ist, OutputStream *ost)
                  codec->height,
                  ost->sws_flags);
         if ((ret = avfilter_graph_create_filter(&filter, avfilter_get_by_name("scale"),
-                                                NULL, args, NULL, ost->graph)) < 0)
+                                                "auto-inserted scaler",
+                                                args, NULL, ost->graph)) < 0)
             return ret;
         if ((ret = avfilter_link(last_filter, 0, filter, 0)) < 0)
             return ret;
@@ -2249,6 +2250,72 @@ static void validate_audio_target(OutputStream *ost)
     }
 }
 
+static void avfilter_graph_remove_auto_scalers(AVFilterGraph *graph)
+{
+    int i;
+    for (i = 0; i < graph->filter_count; i++) {
+        AVFilterContext *filter = graph->filters[i];
+        if (!filter)
+            continue;
+        if (!strncmp(filter->name, "auto-inserted scaler", 20)) {
+            AVFilterContext *src = filter->inputs[0]->src;
+            AVFilterContext *dst = filter->outputs[0]->dst;
+            avfilter_free(filter);
+            avfilter_link(src, 0, dst, 0);
+            graph->filters[i] = NULL;
+            return;
+        }
+    }
+}
+
+static int auto_scale_pad(OutputStream *ost, int width, int scale_height, int pad_height)
+{
+    AVFilterContext *filter, *last;
+    AVCodecContext *codec = ost->st->codec;
+    char scale_args[128], pad_args[128];
+
+    fprintf(stderr, "Auto-rescaling to %s resolution\n", ost->target);
+
+    avfilter_graph_remove_auto_scalers(ost->graph);
+    last = ost->output_video_filter->inputs[0]->src;
+    av_freep(&last->outputs[0]);
+    ost->output_video_filter->inputs[0] = NULL;
+
+    scale_args[0] = 0;
+    pad_args[0] = 0;
+
+    if (scale_height > 0 && (ost->st->codec->width != width ||
+                             ost->st->codec->height != scale_height)) {
+        snprintf(scale_args, sizeof(scale_args),
+                 "%d:%d:flags=0x%X", width, scale_height, ost->sws_flags);
+        avfilter_graph_create_filter(&filter, avfilter_get_by_name("scale"),
+                                     "target-scale", scale_args, NULL, ost->graph);
+        avfilter_link(last, 0, filter, 0);
+        last = filter;
+    }
+
+    if (pad_height > 0 && pad_height > scale_height && pad_height != scale_height) {
+        snprintf(pad_args, sizeof(pad_args), "%d:%d:0:%d:black:1", width,
+                 pad_height, pad_height - scale_height);
+        avfilter_graph_create_filter(&filter, avfilter_get_by_name("pad"),
+                                     "target-pad", pad_args, NULL, ost->graph);
+        avfilter_link(last, 0, filter, 0);
+        last = filter;
+    }
+
+    avfilter_link(last, 0, ost->output_video_filter, 0);
+    if (avfilter_graph_config(ost->graph, NULL) < 0)
+        ffmpeg_exit(1);
+
+    codec->width  = ost->output_video_filter->inputs[0]->w;
+    codec->height = ost->output_video_filter->inputs[0]->h;
+    codec->sample_aspect_ratio = ost->st->sample_aspect_ratio =
+        ost->frame_aspect_ratio.num ? // overriden by the -aspect cli option
+        av_mul_q(ost->frame_aspect_ratio, (AVRational){codec->height, codec->width}) :
+        ost->output_video_filter->inputs[0]->sample_aspect_ratio;
+    return 0;
+}
+
 static void validate_video_target(OutputStream *ost)
 {
     enum { NTSC_FILM, FILM, PAL, NTSC, HD50P, HD60P, UNKNOWN } norm = UNKNOWN;
@@ -2272,7 +2339,7 @@ static void validate_video_target(OutputStream *ost)
 
     if (!strcmp(ost->target, "vcd") || !strcmp(ost->target, "svcd") ||
         !strcmp(ost->target, "dvd") || !strcmp(ost->target, "dv50") ||
-        !strcmp(ost->target, "dv")) {
+        !strcmp(ost->target, "dv") || !strncmp(ost->target, "imx", 3)) {
         if (norm != PAL && norm != NTSC) {
             fprintf(stderr, "Error, target %s only supports ntsc "
                     "or pal frame rate\n", ost->target);
@@ -2304,6 +2371,21 @@ static void validate_video_target(OutputStream *ost)
             fprintf(stderr, "Error, target %s only supports 720x576(pal) "
                     "or 720x480(ntsc) resolutions\n", ost->target);
             ffmpeg_exit(1);
+        }
+    } else if (!strncmp(ost->target, "imx", 3)) {
+        if (ost->st->codec->width != 720 ||
+            (norm == PAL && ost->st->codec->height != 608 ||
+             norm == NTSC && ost->st->codec->height != 512)) {
+            if (CONFIG_AVFILTER && !ost->st->stream_copy) {
+                if (norm == PAL)
+                    auto_scale_pad(ost, 720, 576, 608);
+                else
+                    auto_scale_pad(ost, 720, 486, 512);
+            } else {
+                fprintf(stderr, "Error, target %s only supports 720x608(pal) "
+                        "or 720x512(ntsc) resolutions\n", ost->target);
+                ffmpeg_exit(1);
+            }
         }
     }
 }
@@ -4380,6 +4462,38 @@ static int opt_streamid(const char *opt, const char *arg)
     return 0;
 }
 
+static int opt_bsf(const char *opt, const char *arg)
+{
+    AVBitStreamFilterContext *bsfc;
+    AVBitStreamFilterContext **bsfp;
+    char *name = av_strdup(arg);
+    char *args = strchr(name, '=');
+
+    if (args) {
+        *args = 0;
+        args++;
+    }
+
+    bsfc = av_bitstream_filter_init(name, args);
+
+    av_free(name);
+
+    if(!bsfc){
+        fprintf(stderr, "Error opening bitstream filter %s\n", name);
+        ffmpeg_exit(1);
+    }
+
+    bsfp= *opt == 'v' ? &video_bitstream_filters :
+          *opt == 'a' ? &audio_bitstream_filters :
+                        &subtitle_bitstream_filters;
+    while(*bsfp)
+        bsfp= &(*bsfp)->next;
+
+    *bsfp= bsfc;
+
+    return 0;
+}
+
 static int opt_output_file(const char *opt, const char *filename)
 {
     AVFormatContext *oc;
@@ -4394,6 +4508,13 @@ static int opt_output_file(const char *opt, const char *filename)
 
     if (!strcmp(filename, "-"))
         filename = "pipe:";
+
+    if (target && !strncmp(target, "imx", 3)) {
+        if (av_match_ext(filename, "mov"))
+            opt_bsf("vbsf", "imxdump");
+        else if (av_match_ext(filename, "mxf"))
+            last_asked_format = "mxf_d10";
+    }
 
     err = avformat_alloc_output_context2(&oc, NULL, last_asked_format, filename);
     last_asked_format = NULL;
@@ -4658,11 +4779,38 @@ static int opt_help(const char *opt, const char *arg)
     return 0;
 }
 
+static int opt_vf(const char *opt, const char *arg)
+{
+    if (vfilters) {
+        vfilters = av_realloc(vfilters, strlen(vfilters)+strlen(arg)+2);
+        strcat(vfilters, ",");
+        strcat(vfilters, arg);
+    } else {
+        vfilters = strdup(arg);
+    }
+    return 0;
+}
+
 static int opt_target(const char *opt, const char *arg)
 {
     enum { NTSC_FILM, FILM, PAL, NTSC, HD50P, HD60P, UNKNOWN } norm = UNKNOWN;
     int fr = (int)(frame_rate.num * 1000.0 / frame_rate.den);
     /* Calculate FR via float to avoid int overflow */
+    if (!frame_rate.num) {
+        int i;
+        if (!nb_input_streams) {
+            fprintf(stderr, "please put input file before -target\n");
+            ffmpeg_exit(1);
+        }
+        for (i = 0; i < nb_input_streams; i++) {
+            AVStream *st = input_streams[i].st;
+            if (st->codec->codec_type != AVMEDIA_TYPE_VIDEO)
+                continue;
+            fr = (int)(st->r_frame_rate.num * 1000.0 / st->r_frame_rate.den);
+            break;
+        }
+    }
+
     if (fr == 23976) {
         norm = NTSC_FILM;
     } else if (fr == 24000) {
@@ -4765,7 +4913,56 @@ static int opt_target(const char *opt, const char *arg)
 
         audio_sample_rate = 48000;
         audio_channels = 2;
+    } else if(!strcmp(arg, "imx30") || !strcmp(arg, "imx50")) {
+        if (norm != PAL && norm != NTSC) {
+            fprintf(stderr, "Error, imx targets only support ntsc or pal frame rate\n");
+            ffmpeg_exit(1);
+        }
 
+        opt_codec("vcodec", "mpeg2video");
+        opt_codec("acodec", "pcm_s16le");
+        opt_default("flags2", "+ivlc+non_linear_q");
+        opt_default("flags", "+ildct+low_delay");
+        opt_default("ps", "1");
+        opt_default("qmin", "1");
+        opt_default("rc_max_vbv_use", "1");
+        opt_default("rc_min_vbv_use", "1");
+        opt_default("g", "1");
+        opt_qscale("qscale", "1");
+        opt_frame_pix_fmt("pix_fmt", "yuv422p");
+
+        interlaced = 1;
+        intra_dc_precision = 10;
+
+        if (!strncmp(arg+3, "50", 2)) {
+            opt_default("b", "50000000");
+            opt_default("maxrate", "50000000");
+            opt_default("minrate", "50000000");
+            if (norm == PAL) {
+                opt_default("bufsize", "2000000");
+                opt_default("rc_init_occupancy", "2000000");
+                opt_codec_tag("vtag", "mx5p");
+            } else {
+                opt_default("bufsize", "1668334");
+                opt_default("rc_init_occupancy", "1668334");
+                opt_codec_tag("vtag", "mx5n");
+            }
+        } else if (!strncmp(arg+3, "30", 2)) {
+            opt_default("b", "30000000");
+            opt_default("maxrate", "30000000");
+            opt_default("minrate", "30000000");
+            if (norm == PAL) {
+                opt_default("bufsize", "1200000");
+                opt_default("rc_init_occupancy", "1200000");
+                opt_codec_tag("vtag", "mx3p");
+            } else {
+                opt_default("bufsize", "1001000");
+                opt_default("rc_init_occupancy", "1001000");
+                opt_codec_tag("vtag", "mx3n");
+            }
+        }
+
+        audio_sample_rate = 48000;
     } else {
         fprintf(stderr, "Unknown target: %s\n", arg);
         return AVERROR(EINVAL);
@@ -4792,38 +4989,6 @@ static int opt_vstats(const char *opt, const char *arg)
     snprintf(filename, sizeof(filename), "vstats_%02d%02d%02d.log", today->tm_hour, today->tm_min,
              today->tm_sec);
     return opt_vstats_file(opt, filename);
-}
-
-static int opt_bsf(const char *opt, const char *arg)
-{
-    AVBitStreamFilterContext *bsfc;
-    AVBitStreamFilterContext **bsfp;
-    char *name = av_strdup(arg);
-    char *args = strchr(name, '=');
-
-    if (args) {
-        *args = 0;
-        args++;
-    }
-
-    bsfc = av_bitstream_filter_init(name, args);
-
-    av_free(name);
-
-    if(!bsfc){
-        fprintf(stderr, "Error opening bitstream filter %s\n", name);
-        ffmpeg_exit(1);
-    }
-
-    bsfp= *opt == 'v' ? &video_bitstream_filters :
-          *opt == 'a' ? &audio_bitstream_filters :
-                        &subtitle_bitstream_filters;
-    while(*bsfp)
-        bsfp= &(*bsfp)->next;
-
-    *bsfp= bsfc;
-
-    return 0;
 }
 
 static int opt_preset(const char *opt, const char *arg)
@@ -4916,7 +5081,7 @@ static const OptionDef options[] = {
     { "loop_input", OPT_BOOL | OPT_EXPERT, {(void*)&loop_input}, "deprecated, use -loop" },
     { "loop_output", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&loop_output}, "deprecated, use -loop", "" },
     { "v", HAS_ARG, {(void*)opt_verbose}, "set ffmpeg verbosity level", "number" },
-    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dv\", \"dv50\")", "type" },
+    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dv\", \"dv50\", \"imx30\", \"imx50\")", "type" },
     { "threads",  HAS_ARG | OPT_EXPERT, {(void*)opt_thread_count}, "thread count", "count" },
     { "vsync", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&video_sync_method}, "video sync method", "" },
     { "async", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&audio_sync_method}, "audio sync method", "" },
@@ -4960,7 +5125,7 @@ static const OptionDef options[] = {
     { "vstats", OPT_EXPERT | OPT_VIDEO, {(void*)&opt_vstats}, "dump video coding statistics to file" },
     { "vstats_file", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_vstats_file}, "dump video coding statistics to file", "file" },
 #if CONFIG_AVFILTER
-    { "vf", OPT_STRING | HAS_ARG, {(void*)&vfilters}, "video filters", "filter list" },
+    { "vf", HAS_ARG, {(void*)&opt_vf}, "add video filter", "filter list" },
 #endif
     { "intra_matrix", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_intra_matrix}, "specify intra matrix coeffs", "matrix" },
     { "inter_matrix", HAS_ARG | OPT_EXPERT | OPT_VIDEO, {(void*)opt_inter_matrix}, "specify inter matrix coeffs", "matrix" },
