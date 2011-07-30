@@ -917,12 +917,13 @@ static void mpegts_write_pes(AVFormatContext *s, AVStream *st,
 static int mpegts_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVStream *st = s->streams[pkt->stream_index];
-    int i, size = pkt->size;
+    int i, left, size = pkt->size;
     uint8_t *buf= pkt->data;
     uint8_t *data= NULL;
     MpegTSWriteStream *ts_st = st->priv_data;
     const uint64_t delay = av_rescale(s->max_delay, 90000, AV_TIME_BASE)*2;
     int64_t dts = AV_NOPTS_VALUE, pts = AV_NOPTS_VALUE;
+    int flags = pkt->flags;
 
     if (pkt->pts != AV_NOPTS_VALUE)
         pts = pkt->pts + delay;
@@ -1008,21 +1009,28 @@ static int mpegts_write_packet(AVFormatContext *s, AVPacket *pkt)
         return 0;
     }
 
-    if (ts_st->payload_index + size > DEFAULT_PES_PAYLOAD_SIZE) {
-        mpegts_write_pes(s, st, ts_st->payload, ts_st->payload_index,
-                         ts_st->payload_pts, ts_st->payload_dts,
-                         ts_st->payload_flags & AV_PKT_FLAG_KEY);
-        ts_st->payload_index = 0;
-    }
+    for (left = size; left > 0;) {
+        if (ts_st->payload_index > 0 &&
+            ts_st->payload_index + size > DEFAULT_PES_PAYLOAD_SIZE) {
+            mpegts_write_pes(s, st, ts_st->payload, ts_st->payload_index,
+                             ts_st->payload_pts, ts_st->payload_dts, 1);
+            ts_st->payload_index = 0;
+        }
 
-    if (!ts_st->payload_index) {
-        ts_st->payload_pts = pts;
-        ts_st->payload_dts = dts;
-        ts_st->payload_flags = pkt->flags;
-    }
+        if (!ts_st->payload_index) {
+            ts_st->payload_pts = pts;
+            ts_st->payload_dts = dts;
+            ts_st->payload_flags = flags;
+            flags = 0;
+            dts = AV_NOPTS_VALUE;
+            pts = AV_NOPTS_VALUE;
+        }
 
-    memcpy(ts_st->payload + ts_st->payload_index, buf, size);
-    ts_st->payload_index += size;
+        size = FFMIN(left, DEFAULT_PES_PAYLOAD_SIZE);
+        memcpy(ts_st->payload + ts_st->payload_index, buf, size);
+        ts_st->payload_index += size;
+        left -= size;
+    }
 
     av_free(data);
 
