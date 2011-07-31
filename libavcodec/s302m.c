@@ -50,8 +50,14 @@ static int s302m_parse_frame_header(AVCodecContext *avctx, const uint8_t *buf,
     channels   = ((h >> 14) & 0x0003) * 2 +  2;
     bits       = ((h >>  4) & 0x0003) * 4 + 16;
 
-    if (AES3_HEADER_LEN + frame_size != buf_size || bits > 24) {
+    if (bits > 24) {
         av_log(avctx, AV_LOG_ERROR, "frame has invalid header\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    if (AES3_HEADER_LEN + frame_size != buf_size) {
+        av_log(avctx, AV_LOG_ERROR, "frame is truncated: size %d < expected size %d\n",
+               buf_size, AES3_HEADER_LEN + frame_size);
         return AVERROR_INVALIDDATA;
     }
 
