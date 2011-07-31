@@ -451,6 +451,8 @@ sigterm_handler(int sig)
 {
     received_sigterm = sig;
     q_pressed++;
+    if (q_pressed > 3)
+        exit(1);
     term_exit();
 }
 
