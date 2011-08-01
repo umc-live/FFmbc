@@ -157,54 +157,17 @@ static void read_ttag(AVFormatContext *s, AVIOContext *pb, int taglen, const cha
     } else if (*dst)
         val = dst;
 
-    if (val)
-        av_dict_set(&s->metadata, key, val, AV_DICT_DONT_OVERWRITE);
-}
-
-static int is_number(const char *str)
-{
-    while (*str >= '0' && *str <= '9') str++;
-    return !*str;
-}
-
-static AVDictionaryEntry* get_date_tag(AVDictionary *m, const char *tag)
-{
-    AVDictionaryEntry *t;
-    if ((t = av_dict_get(m, tag, NULL, AV_DICT_MATCH_CASE)) &&
-        strlen(t->value) == 4 && is_number(t->value))
-        return t;
-    return NULL;
-}
-
-static void merge_date(AVDictionary **m)
-{
-    AVDictionaryEntry *t;
-    char date[17] = {0};      // YYYY-MM-DD hh:mm
-
-    if (!(t = get_date_tag(*m, "TYER")) &&
-        !(t = get_date_tag(*m, "TYE")))
-        return;
-    av_strlcpy(date, t->value, 5);
-    av_dict_set(m, "TYER", NULL, 0);
-    av_dict_set(m, "TYE",  NULL, 0);
-
-    if (!(t = get_date_tag(*m, "TDAT")) &&
-        !(t = get_date_tag(*m, "TDA")))
-        goto finish;
-    snprintf(date + 4, sizeof(date) - 4, "-%.2s-%.2s", t->value + 2, t->value);
-    av_dict_set(m, "TDAT", NULL, 0);
-    av_dict_set(m, "TDA",  NULL, 0);
-
-    if (!(t = get_date_tag(*m, "TIME")) &&
-        !(t = get_date_tag(*m, "TIM")))
-        goto finish;
-    snprintf(date + 10, sizeof(date) - 10, " %.2s:%.2s", t->value, t->value + 2);
-    av_dict_set(m, "TIME", NULL, 0);
-    av_dict_set(m, "TIM",  NULL, 0);
-
-finish:
-    if (date[0])
-        av_dict_set(m, "date", date, 0);
+    if (val) {
+        int i;
+        const char *name = key;
+        for (i = 0; ff_id3v2_tags[i].tag; i++) {
+            if (!strcmp(ff_id3v2_tags[i].tag, key)) {
+                name = ff_id3v2_tags[i].name;
+                break;
+            }
+        }
+        av_dict_set(&s->metadata, name, val, 0);
+    }
 }
 
 static int read_uslt(AVFormatContext *s, int taglen, const char *key)
@@ -223,7 +186,7 @@ static int read_uslt(AVFormatContext *s, int taglen, const char *key)
         return AVERROR(ENOMEM);
     read_id3v2_string(s, s->pb, key, taglen, encoding, data, taglen-1);
 
-    if (av_dict_set_custom(&s->metadata, &tag, METADATA_STRING, key, data,
+    if (av_dict_set_custom(&s->metadata, &tag, METADATA_STRING, "lyrics", data,
                            strlen(data), AV_DICT_DONT_STRDUP_VAL) < 0)
         return -1;
     av_metadata_set_attribute(tag, "language", lang);
@@ -252,7 +215,7 @@ static int read_apic(AVFormatContext *s, int taglen, const char *key)
         return AVERROR(ENOMEM);
     avio_read(s->pb, data, len);
 
-    if (av_dict_set_custom(&s->metadata, &tag, METADATA_BYTEARRAY, "APIC",
+    if (av_dict_set_custom(&s->metadata, &tag, METADATA_BYTEARRAY, "cover",
                            data, len, AV_DICT_DONT_STRDUP_VAL) < 0)
         return -1;
     av_metadata_set_attribute(tag, "mime", mime);
@@ -406,75 +369,47 @@ void ff_id3v2_read(AVFormatContext *s, const char *magic)
             avio_seek(s->pb, off, SEEK_SET);
         }
     } while (found_header);
-    ff_metadata_conv(&s->metadata, NULL, ff_id3v2_34_metadata_conv);
-    ff_metadata_conv(&s->metadata, NULL, ff_id3v2_2_metadata_conv);
-    ff_metadata_conv(&s->metadata, NULL, ff_id3v2_4_metadata_conv);
-    merge_date(&s->metadata);
 }
 
-const AVMetadataConv ff_id3v2_34_metadata_conv[] = {
-    { "APIC", "cover"},
-    { "TALB", "album"},
-    { "TCOM", "composer"},
-    { "TCON", "genre"},
-    { "TCOP", "copyright"},
-    { "TENC", "encoder"},
-    { "TIT2", "title"},
-    { "TLAN", "language"},
-    { "TPE1", "artist"},
-    { "TPE2", "album_artist"},
-    { "TPE3", "performer"},
-    { "TPOS", "disc"},
-    { "TPUB", "publisher"},
-    { "TRCK", "track"},
-    { "TSSE", "encoder"},
-    { "TYER", "year"},
-    { "USLT", "lyrics"},
+/*
+ * 0 - v2.2
+ * 1 - v2.3
+ * 2 - v2.4
+*/
+const ID3v2Tag ff_id3v2_tags[] = {
+    { "APIC", "cover", 3},
+    { "TALB", "album", 3},
+    { "TCOM", "composer", 3},
+    { "TCON", "genre", 3},
+    { "TCOP", "copyright", 3},
+    { "TENC", "encoder", 3},
+    { "TIT2", "title", 3},
+    { "TLAN", "language", 3},
+    { "TPE1", "artist", 3},
+    { "TPE2", "album_artist", 3},
+    { "TPE3", "performer", 3},
+    { "TPOS", "disc", 3},
+    { "TPUB", "publisher", 3},
+    { "TRCK", "track", 3},
+    { "TSSE", "encoder", 3},
+    { "TYER", "year", 1},
+    { "USLT", "lyrics", 3},
+    { "TDRC", "date", 2},
+    { "TDRL", "release_date", 2},
+    { "TDEN", "creation_time", 2},
+    { "TSOA", "album-sort", 2},
+    { "TSOP", "artist-sort", 2},
+    { "TSOT", "title-sort", 2},
+    { "TAL",  "album", 0},
+    { "TCM",  "composer", 0},
+    { "TCO",  "genre", 0},
+    { "TT2",  "title", 0},
+    { "TEN",  "encoder", 0},
+    { "TP1",  "artist", 0},
+    { "TP2",  "album_artist", 0},
+    { "TP3",  "performer", 0},
+    { "TRK",  "track", 0},
+    { "ULT",  "lyrics", 0},
+    { "TYE",  "year", 0},
     { 0 }
-};
-
-const AVMetadataConv ff_id3v2_4_metadata_conv[] = {
-    { "TDRC", "date"},
-    { "TDRL", "release_date"},
-    { "TDEN", "creation_time"},
-    { "TSOA", "album-sort"},
-    { "TSOP", "artist-sort"},
-    { "TSOT", "title-sort"},
-    { 0 }
-};
-
-const AVMetadataConv ff_id3v2_2_metadata_conv[] = {
-    { "TAL",  "album"},
-    { "TCM",  "composer"},
-    { "TCO",  "genre"},
-    { "TT2",  "title"},
-    { "TEN",  "encoder"},
-    { "TP1",  "artist"},
-    { "TP2",  "album_artist"},
-    { "TP3",  "performer"},
-    { "TRK",  "track"},
-    { "ULT",  "lyrics"},
-    { "TYE",  "year"},
-    { 0 }
-};
-
-
-const char ff_id3v2_tags[][4] = {
-   "TALB", "TBPM", "TCOM", "TCON", "TCOP", "TDLY", "TENC", "TEXT",
-   "TFLT", "TIT1", "TIT2", "TIT3", "TKEY", "TLAN", "TLEN", "TMED",
-   "TOAL", "TOFN", "TOLY", "TOPE", "TOWN", "TPE1", "TPE2", "TPE3",
-   "TPE4", "TPOS", "TPUB", "TRCK", "TRSN", "TRSO", "TSRC", "TSSE",
-   "APIC", "USLT",
-   { 0 },
-};
-
-const char ff_id3v2_4_tags[][4] = {
-   "TDEN", "TDOR", "TDRC", "TDRL", "TDTG", "TIPL", "TMCL", "TMOO",
-   "TPRO", "TSOA", "TSOP", "TSOT", "TSST",
-   { 0 },
-};
-
-const char ff_id3v2_3_tags[][4] = {
-   "TDAT", "TIME", "TORY", "TRDA", "TSIZ", "TYER",
-   { 0 },
 };

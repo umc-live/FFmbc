@@ -206,27 +206,24 @@ static const AVClass mp3_muxer_class = {
     .version        = LIBAVUTIL_VERSION_INT,
 };
 
-static int id3v2_check_write_tag(AVFormatContext *s, AVDictionaryEntry *t,
-                                 const char table[][4], int version)
+static int id3v2_write_tag(AVFormatContext *s, AVDictionaryEntry *t)
 {
     MP3Context *mp3 = s->priv_data;
-    int i;
+    int version = mp3->id3v2_version;
+    int version_flags, i;
 
-    if (!strcmp(t->key, "APIC"))
+    if (!strcmp(t->key, "cover"))
         return id3v2_put_apic(s, t, version);
-    else if (!strcmp(t->key, "USLT"))
+    else if (!strcmp(t->key, "lyrics"))
         return id3v2_put_uslt(s, t, version);
-    else if (t->key[0] != 'T' || strlen(t->key) != 4)
-        return 0;
 
-    if (!table) {
-        table = mp3->id3v2_version == 3 ?
-            ff_id3v2_3_tags : ff_id3v2_4_tags;
-    }
+    version_flags = version == 4 ? 2 : 1;
 
-    for (i = 0; *table[i]; i++) {
-        if (AV_RB32(t->key) == AV_RB32(table[i]))
-            return id3v2_put_tag(s, t->key, t->value, version);
+    for (i = 0; ff_id3v2_tags[i].tag; i++) {
+        if (!strcmp(t->key, ff_id3v2_tags[i].name) &&
+            ff_id3v2_tags[i].valid_version & version_flags) {
+            return id3v2_put_tag(s, ff_id3v2_tags[i].tag, t->value, version);
+        }
     }
     return 0;
 }
@@ -387,16 +384,8 @@ static int mp3_write_header(struct AVFormatContext *s)
     size_pos = avio_tell(s->pb);
     avio_wb32(s->pb, 0);
 
-    ff_metadata_conv(&s->metadata, ff_id3v2_34_metadata_conv, NULL);
-    if (mp3->id3v2_version == 4)
-        ff_metadata_conv(&s->metadata, ff_id3v2_4_metadata_conv, NULL);
-
-    while ((t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX))) {
-        int ret = id3v2_check_write_tag(s, t, ff_id3v2_tags, mp3->id3v2_version);
-        if (ret <= 0)
-            ret = id3v2_check_write_tag(s, t, NULL, mp3->id3v2_version);
-        totlen += ret;
-    }
+    while ((t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX)))
+        totlen += id3v2_write_tag(s, t);
 
     cur_pos = avio_tell(s->pb);
     avio_seek(s->pb, size_pos, SEEK_SET);
