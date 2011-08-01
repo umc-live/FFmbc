@@ -154,7 +154,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
         }
     }
 
-    av_log(ctx, AV_LOG_INFO, "w:%d h:%d pixfmt:%s tb:%d/%d sar:%d/%d sws_param:%s\n",
+    av_log(ctx, AV_LOG_DEBUG, "w:%d h:%d pixfmt:%s tb:%d/%d sar:%d/%d sws_param:%s\n",
            c->w, c->h, av_pix_fmt_descriptors[c->pix_fmt].name,
            c->time_base.num, c->time_base.den,
            c->sample_aspect_ratio.num, c->sample_aspect_ratio.den, c->sws_param);
