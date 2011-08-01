@@ -1038,6 +1038,10 @@ av_cold int ff_h264_decode_init(AVCodecContext *avctx){
     MPV_decode_defaults(s);
 
     s->avctx = avctx;
+
+    h->pixel_shift = 0;
+    h->sps.bit_depth_luma = avctx->bits_per_raw_sample = 8;
+
     common_init(h);
 
     s->out_format = FMT_H264;
@@ -1052,9 +1056,6 @@ av_cold int ff_h264_decode_init(AVCodecContext *avctx){
     avctx->chroma_sample_location = AVCHROMA_LOC_LEFT;
 
     ff_h264_decode_init_vlc();
-
-    h->pixel_shift = 0;
-    h->sps.bit_depth_luma = avctx->bits_per_raw_sample = 8;
 
     h->thread_context[0] = h;
     h->outputed_poc = h->next_outputed_poc = INT_MIN;
