@@ -838,6 +838,8 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 }
             }
         }
+        if (st->codec->codec_type == AVMEDIA_TYPE_DATA)
+            continue;
         /* TODO: drop PictureEssenceCoding and SoundEssenceCompression, only check EssenceContainer */
         codec_ul = mxf_get_codec_ul(ff_mxf_codec_uls, &descriptor->essence_codec_ul);
         st->codec->codec_id = codec_ul->id;
@@ -878,7 +880,7 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 st->need_parsing = AVSTREAM_PARSE_FULL;
             }
         }
-        if (st->codec->codec_type != AVMEDIA_TYPE_DATA && (*essence_container_ul)[15] > 0x01) {
+        if ((*essence_container_ul)[15] > 0x01) {
             av_log(mxf->fc, AV_LOG_WARNING, "only frame wrapped mappings are correctly supported\n");
             st->need_parsing = AVSTREAM_PARSE_FULL;
         }

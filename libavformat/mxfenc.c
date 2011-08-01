@@ -218,7 +218,7 @@ static const uint8_t index_table_segment_key[]     = { 0x06,0x0E,0x2B,0x34,0x02,
 static const uint8_t random_index_pack_key[]       = { 0x06,0x0E,0x2B,0x34,0x02,0x05,0x01,0x01,0x0D,0x01,0x02,0x01,0x01,0x11,0x01,0x00 };
 static const uint8_t header_open_partition_key[]   = { 0x06,0x0E,0x2B,0x34,0x02,0x05,0x01,0x01,0x0D,0x01,0x02,0x01,0x01,0x02,0x01,0x00 }; // OpenIncomplete
 static const uint8_t header_closed_partition_key[] = { 0x06,0x0E,0x2B,0x34,0x02,0x05,0x01,0x01,0x0D,0x01,0x02,0x01,0x01,0x02,0x04,0x00 }; // ClosedComplete
-static const uint8_t klv_fill_key[]                = { 0x06,0x0E,0x2B,0x34,0x01,0x01,0x01,0x01,0x03,0x01,0x02,0x10,0x01,0x00,0x00,0x00 };
+static const uint8_t klv_fill_key[]                = { 0x06,0x0E,0x2B,0x34,0x01,0x01,0x01,0x02,0x03,0x01,0x02,0x10,0x01,0x00,0x00,0x00 };
 static const uint8_t body_partition_key[]          = { 0x06,0x0E,0x2B,0x34,0x02,0x05,0x01,0x01,0x0D,0x01,0x02,0x01,0x01,0x03,0x04,0x00 }; // ClosedComplete
 
 /**
@@ -348,6 +348,7 @@ static int klv_ber_length(uint64_t len)
         return (av_log2(len) >> 3) + 2;
 }
 
+#if 0
 static int klv_encode_ber_length(AVIOContext *pb, uint64_t len)
 {
     // Determine the best BER size
@@ -368,6 +369,7 @@ static int klv_encode_ber_length(AVIOContext *pb, uint64_t len)
     }
     return 0;
 }
+#endif
 
 static void klv_encode_ber4_length(AVIOContext *pb, int len)
 {
@@ -395,7 +397,7 @@ static void mxf_write_primer_pack(AVFormatContext *s)
     local_tag_number = FF_ARRAY_ELEMS(mxf_local_tag_batch);
 
     avio_write(pb, primer_pack_key, 16);
-    klv_encode_ber_length(pb, local_tag_number * 18 + 8);
+    klv_encode_ber4_length(pb, local_tag_number * 18 + 8);
 
     avio_wb32(pb, local_tag_number); // local_tag num
     avio_wb32(pb, 18); // item size, always 18 according to the specs
@@ -443,14 +445,16 @@ static void mxf_write_essence_container_refs(AVFormatContext *s)
 {
     MXFContext *c = s->priv_data;
     AVIOContext *pb = s->pb;
+    int count = FFMAX(c->essence_container_count - 1, 1);
     int i;
 
     mxf_write_refs_count(pb, c->essence_container_count);
-    av_log(s,AV_LOG_DEBUG, "essence container count:%d\n", c->essence_container_count);
-    for (i = 0; i < c->essence_container_count; i++) {
+    for (i = 0; i < count; i++) {
         MXFStreamContext *sc = s->streams[i]->priv_data;
         avio_write(pb, mxf_essence_container_uls[sc->index].container_ul, 16);
     }
+    if (count > 1)
+        avio_write(pb, multiple_desc_ul, 16);
 }
 
 static void mxf_write_preface(AVFormatContext *s)
@@ -460,7 +464,7 @@ static void mxf_write_preface(AVFormatContext *s)
 
     mxf_write_metadata_key(pb, 0x012f00);
     PRINT_KEY(s, "preface key", pb->buf_ptr - 16);
-    klv_encode_ber_length(pb, 130 + 16 * mxf->essence_container_count);
+    klv_encode_ber4_length(pb, 130 + 16 * mxf->essence_container_count);
 
     // write preface set uid
     mxf_write_local_tag(pb, 16, 0x3C0A);
@@ -523,7 +527,7 @@ static void mxf_write_identification(AVFormatContext *s)
     version = s->streams[0]->codec->flags & CODEC_FLAG_BITEXACT ?
         "0.0.0" : AV_STRINGIFY(LIBAVFORMAT_VERSION);
     length = 84 + (strlen(company)+strlen(product)+strlen(version))*2; // utf-16
-    klv_encode_ber_length(pb, length);
+    klv_encode_ber4_length(pb, length);
 
     // write uid
     mxf_write_local_tag(pb, 16, 0x3C0A);
@@ -553,7 +557,7 @@ static void mxf_write_content_storage(AVFormatContext *s)
 
     mxf_write_metadata_key(pb, 0x011800);
     PRINT_KEY(s, "content storage key", pb->buf_ptr - 16);
-    klv_encode_ber_length(pb, 92);
+    klv_encode_ber4_length(pb, 92);
 
     // write uid
     mxf_write_local_tag(pb, 16, 0x3C0A);
@@ -580,7 +584,7 @@ static void mxf_write_track(AVFormatContext *s, AVStream *st, enum MXFMetadataSe
 
     mxf_write_metadata_key(pb, 0x013b00);
     PRINT_KEY(s, "track key", pb->buf_ptr - 16);
-    klv_encode_ber_length(pb, 80);
+    klv_encode_ber4_length(pb, 80);
 
     // write track uid
     mxf_write_local_tag(pb, 16, 0x3C0A);
@@ -640,7 +644,7 @@ static void mxf_write_sequence(AVFormatContext *s, AVStream *st, enum MXFMetadat
 
     mxf_write_metadata_key(pb, 0x010f00);
     PRINT_KEY(s, "sequence key", pb->buf_ptr - 16);
-    klv_encode_ber_length(pb, 80);
+    klv_encode_ber4_length(pb, 80);
 
     mxf_write_local_tag(pb, 16, 0x3C0A);
     mxf_write_uuid(pb, type == MaterialPackage ? Sequence: Sequence + TypeBottom, st->index);
@@ -666,7 +670,7 @@ static void mxf_write_timecode_component(AVFormatContext *s, AVStream *st, enum 
     AVIOContext *pb = s->pb;
 
     mxf_write_metadata_key(pb, 0x011400);
-    klv_encode_ber_length(pb, 75);
+    klv_encode_ber4_length(pb, 75);
 
     // UID
     mxf_write_local_tag(pb, 16, 0x3C0A);
@@ -695,7 +699,7 @@ static void mxf_write_structural_component(AVFormatContext *s, AVStream *st, enu
 
     mxf_write_metadata_key(pb, 0x011100);
     PRINT_KEY(s, "sturctural component key", pb->buf_ptr - 16);
-    klv_encode_ber_length(pb, 108);
+    klv_encode_ber4_length(pb, 108);
 
     // write uid
     mxf_write_local_tag(pb, 16, 0x3C0A);
@@ -733,7 +737,7 @@ static void mxf_write_multi_descriptor(AVFormatContext *s)
 
     mxf_write_metadata_key(pb, 0x014400);
     PRINT_KEY(s, "multiple descriptor key", pb->buf_ptr - 16);
-    klv_encode_ber_length(pb, 64 + 16 * s->nb_streams);
+    klv_encode_ber4_length(pb, 64 + 16 * s->nb_streams);
 
     mxf_write_local_tag(pb, 16, 0x3C0A);
     mxf_write_uuid(pb, MultipleDescriptor, 0);
@@ -952,11 +956,11 @@ static void mxf_write_package(AVFormatContext *s, enum MXFMetadataSetType type)
     if (type == MaterialPackage) {
         mxf_write_metadata_key(pb, 0x013600);
         PRINT_KEY(s, "Material Package key", pb->buf_ptr - 16);
-        klv_encode_ber_length(pb, 92 + 16*track_count);
+        klv_encode_ber4_length(pb, 92 + 16*track_count);
     } else {
         mxf_write_metadata_key(pb, 0x013700);
         PRINT_KEY(s, "Source Package key", pb->buf_ptr - 16);
-        klv_encode_ber_length(pb, 112 + 16*track_count); // 20 bytes length for descriptor reference
+        klv_encode_ber4_length(pb, 112 + 16*track_count); // 20 bytes length for descriptor reference
     }
 
     // write uid
@@ -1019,7 +1023,7 @@ static int mxf_write_essence_container_data(AVFormatContext *s)
     AVIOContext *pb = s->pb;
 
     mxf_write_metadata_key(pb, 0x012300);
-    klv_encode_ber_length(pb, 72);
+    klv_encode_ber4_length(pb, 72);
 
     mxf_write_local_tag(pb, 16, 0x3C0A); // Instance UID
     mxf_write_uuid(pb, EssenceContainerData, 0);
@@ -1068,13 +1072,19 @@ static void mxf_write_index_table_segment(AVFormatContext *s)
     if (!mxf->edit_units_count && !mxf->edit_unit_byte_count)
         return;
 
+    if (!mxf->edit_unit_byte_count &&
+        8 + mxf->edit_units_count*(11+mxf->slice_count*4) > 65535) {
+        av_log(s, AV_LOG_ERROR, "error, index table segment is too big\n");
+        return;
+    }
+
     avio_write(pb, index_table_segment_key, 16);
 
     if (mxf->edit_unit_byte_count) {
-        klv_encode_ber_length(pb, 80);
+        klv_encode_ber4_length(pb, 80);
     } else {
-        klv_encode_ber_length(pb, 85 + 12+(s->nb_streams+1)*6 +
-                              12+mxf->edit_units_count*(11+mxf->slice_count*4));
+        klv_encode_ber4_length(pb, 85 + 12+(s->nb_streams+1)*6 +
+                               12+mxf->edit_units_count*(11+mxf->slice_count*4));
     }
 
     // instance id
@@ -1234,7 +1244,7 @@ static void mxf_write_partition(AVFormatContext *s, int bodysid,
 
     // write klv
     avio_write(pb, key, 16);
-    klv_encode_ber_length(pb, 88 + 16 * mxf->essence_container_count);
+    klv_encode_ber4_length(pb, 88 + 16 * mxf->essence_container_count);
 
     // write partition value
     avio_wb16(pb, 1); // majorVersion
@@ -1548,9 +1558,10 @@ static int mxf_write_header(AVFormatContext *s)
         present[sc->index]++;
     }
 
-    if (s->oformat == &ff_mxf_d10_muxer) {
+    if (s->oformat == &ff_mxf_d10_muxer)
         mxf->essence_container_count = 1;
-    }
+    else if (mxf->essence_container_count > 1)
+        mxf->essence_container_count++; // account for multiple essence UL
 
     if (!(s->streams[0]->codec->flags & CODEC_FLAG_BITEXACT))
         mxf_gen_umid(s);
@@ -1802,7 +1813,7 @@ static void mxf_write_random_index_pack(AVFormatContext *s)
     int i;
 
     avio_write(pb, random_index_pack_key, 16);
-    klv_encode_ber_length(pb, 28 + 12*mxf->body_partitions_count);
+    klv_encode_ber4_length(pb, 28 + 12*mxf->body_partitions_count);
 
     if (mxf->edit_unit_byte_count)
         avio_wb32(pb, 1); // BodySID of header partition
