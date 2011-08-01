@@ -176,9 +176,18 @@ static int asf_read_cover(AVFormatContext *s, int type, int len)
 static void get_tag(AVFormatContext *s, const char *key, int type, int len)
 {
     int64_t off = avio_tell(s->pb);
+    const char *name = key;
+    int i;
 
     if ((unsigned)len >= (UINT_MAX - 1)/2)
         return;
+
+    for (i = 0; ff_asf_metadata_conv[i].native; i++) {
+        if (!strcmp(ff_asf_metadata_conv[i].native, key)) {
+            name = ff_asf_metadata_conv[i].generic;
+            break;
+        }
+    }
 
     if (type == 0) {         // UTF16-LE
         char *value;
@@ -186,18 +195,18 @@ static void get_tag(AVFormatContext *s, const char *key, int type, int len)
         if (!value)
             goto finish;
         avio_get_str16le(s->pb, len, value, 2*len + 1);
-        av_dict_set(&s->metadata, key, value, AV_DICT_DONT_STRDUP_VAL);
+        av_dict_set(&s->metadata, name, value, AV_DICT_DONT_STRDUP_VAL);
     } else if (type == 1) {
         uint8_t *value = av_malloc(len);
         if (!value)
             goto finish;
         avio_read(s->pb, value, len);
         if (av_dict_set_custom(&s->metadata, NULL, METADATA_BYTEARRAY,
-                               key, value, len, AV_DICT_DONT_STRDUP_VAL) < 0)
+                               name, value, len, AV_DICT_DONT_STRDUP_VAL) < 0)
             av_free(value);
     } else if (type <= 5) {  // boolean or DWORD or QWORD or WORD
         uint64_t num = get_value(s->pb, type);
-        av_dict_set_int(&s->metadata, key, num);
+        av_dict_set_int(&s->metadata, name, num);
     } else {
         av_log(s, AV_LOG_DEBUG, "Unsupported value type %d in tag %s.\n", type, key);
         goto finish;
@@ -716,8 +725,6 @@ static int asf_read_header(AVFormatContext *s, AVFormatParameters *ap)
             }
         }
     }
-
-    ff_metadata_conv(&s->metadata, NULL, ff_asf_metadata_conv);
 
     return 0;
 }

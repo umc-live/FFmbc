@@ -305,8 +305,6 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size, int64_t data
     int bit_rate;
     int64_t duration;
 
-    ff_metadata_conv(&s->metadata, ff_asf_metadata_conv, NULL);
-
     tags[0] = av_dict_get(s->metadata, "title"    , NULL, 0);
     tags[1] = av_dict_get(s->metadata, "author"   , NULL, 0);
     tags[2] = av_dict_get(s->metadata, "copyright", NULL, 0);
@@ -385,7 +383,7 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size, int64_t data
         hpos = put_header(pb, &ff_asf_extended_content_header);
         avio_wl16(pb, metadata_count);
         while ((tag = av_dict_get(s->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-            if (!strcmp(tag->key, "WM/Picture")) {
+            if (!strcmp(tag->key, "cover")) {
                 const char *mime = av_metadata_get_attribute(tag, "mime");
                 int len;
                 if (!mime) {
@@ -401,8 +399,18 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size, int64_t data
                 put_str16(pb, mime);
                 avio_wl16(pb, 0);
                 avio_write(pb, tag->value, tag->len);
-            } else if (!strncmp(tag->key, "WM/", 3)) {
-                put_str16(pb, tag->key);
+            } else {
+                const char *key = NULL;
+                int i;
+                for (i = 0; ff_asf_metadata_conv[i].native; i++) {
+                    if (!strcmp(ff_asf_metadata_conv[i].generic, tag->key)) {
+                        key = ff_asf_metadata_conv[i].native;
+                        break;
+                    }
+                }
+                if (!tag)
+                    continue;
+                put_str16(pb, key);
                 if (tag->type == METADATA_BYTEARRAY) {
                     avio_wl16(pb, 1);
                     avio_wl16(pb, tag->len);
