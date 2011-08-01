@@ -3348,12 +3348,13 @@ static int transcode(AVFormatContext **output_files,
 
         //fprintf(stderr,"read #%d.%d size=%d\n", ist->file_index, ist->index, pkt.size);
         if (output_packet(ist, ist_index, ost_table, nb_ostreams, &pkt) < 0) {
-
             if (verbose >= 0)
                 fprintf(stderr, "Error while decoding stream #%d.%d\n",
                         ist->file_index, ist->st->index);
-            if (exit_on_error)
+            if (exit_on_error) {
+                print_report(output_files, ost_table, nb_ostreams, 1, duration);
                 ffmpeg_exit(1);
+            }
             av_free_packet(&pkt);
             goto redo;
         }
