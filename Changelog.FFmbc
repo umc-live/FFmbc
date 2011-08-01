@@ -1,3 +1,38 @@
+FFmbc-0.7:
+- Sync on FFmpeg git 7cbb856efe6ccab7485bb96ad3887472a6519ffa
+- New -tff and -bff cli options, -top is removed
+- AVCIntra decoding is now supported
+- Parallel frame multi-threaded decoding is now enabled
+- Prores 422 and Prores 4444 decoding
+- When writing MXF files, use more correct key for KLV Fill packets
+- DVCPROHD encoding in Quicktime or MXF format is now supported
+- Fix detection of some DVCAM files
+- Fix decoding artefact in bottom rows of Quantel DVCPROHD 1080i files
+- Support reading AVID MXF OpAtom DNxHD files
+- New video filter 'sub' to burn ASS and SRT subtitles
+- New 'dvcam', 'dvcpro', 'dvcpro50', 'dvcprohd' targets
+- Detect right to left languages in subtitle burning filter
+- Correctly write drop frame system timecode and continuity count in MXF files
+- Correctly use global file duration when displaying information about Quicktime files
+- Correctly compute aspect ratio from clean aperture in Quicktime files
+- Display starting system timecode for MXF files
+- FFprobe now correctly displays width and height for files using h264 cropping.
+- DV muxer changed to only accept big endian pcm
+- Audio sync disabled by default for GXF files
+- Prores encoder with support for interlaced, 422 and 444
+- Support writing AFD information in MXF files
+- Support reading V210 and uncompressed 4:2:2 UYVY in MXF files
+- Support reading P2 MXF files
+- Support reading and creating Op1a MXF DNxHD files
+- Fix avisynth RGB24/32 upside-down decoding
+- Fix DPX encoding, now compatible with Nuke
+- Improved MXF muxer compatibility with Sony Vegas Pro 11
+- Support encoding H.264 10 bit and 4:2:2 with x264
+- Improved Quicktime muxer compatibility with Final Cut Pro and XDCAMHD 422
+- Commandline options -vcodec,-acodec,-scodec are not reset anymore between streams
+- Faster V210 decoding
+- .mpg extension will now produce MPEG-2 PS by default
+
 FFmbc-0.6.1:
 - Fix compilation on OSX with Xcode 4.1
 - MPEG-2 3:2 pulldown encoding is now supported
