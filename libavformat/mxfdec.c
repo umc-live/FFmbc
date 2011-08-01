@@ -318,6 +318,10 @@ static int mxf_read_packet(AVFormatContext *s, AVPacket *pkt)
     while (!url_feof(s->pb)) {
         if (klv_read_packet(&klv, s->pb) < 0)
             return -1;
+        if (klv.length > 50*1024*1024) {
+            av_log(s, AV_LOG_ERROR, "klv packet too big, clip wrapping unsupported\n");
+            return AVERROR(EINVAL);
+        }
         PRINT_KEY(s, "read packet", klv.key);
         av_dlog(s, "size %"PRIu64" offset %#"PRIx64"\n", klv.length, klv.offset);
         if (IS_KLV_KEY(klv.key, mxf_encrypted_triplet_key)) {
