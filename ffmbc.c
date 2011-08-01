@@ -1665,15 +1665,14 @@ static void print_report(AVFormatContext **output_files,
                   nb_frames_dup, nb_frames_drop);
 
         if (verbose >= 0)
-            fprintf(stderr, "%s    \r", buf);
+            av_log(NULL, AV_LOG_INFO, "%s    \r", buf);
 
         fflush(stderr);
     }
 
     if (is_last_report && verbose >= 0){
         int64_t raw= audio_size + video_size + extra_size;
-        fprintf(stderr, "\n");
-        fprintf(stderr, "video:%1.0fkB audio:%1.0fkB global headers:%1.0fkB muxing overhead %f%%\n",
+        av_log(NULL, AV_LOG_INFO, "video:%1.0fkB audio:%1.0fkB global headers:%1.0fkB muxing overhead %f%%\n",
                 video_size/1024.0,
                 audio_size/1024.0,
                 extra_size/1024.0,
@@ -3380,8 +3379,6 @@ static int transcode(AVFormatContext **output_files,
         }
     }
 
-    term_exit();
-
     /* write the trailer if needed and close file */
     for(i=0;i<nb_output_files;i++) {
         os = output_files[i];
@@ -3390,6 +3387,8 @@ static int transcode(AVFormatContext **output_files,
 
     /* dump report by using the first video and audio streams */
     print_report(output_files, ost_table, nb_ostreams, 1, 0);
+
+    term_exit();
 
     /* close each encoder */
     for(i=0;i<nb_ostreams;i++) {
@@ -4644,6 +4643,7 @@ static int opt_output_file(const char *opt, const char *filename)
                         fprintf(stderr, "Not overwriting - exiting\n");
                         ffmpeg_exit(1);
                     }
+                    fprintf(stderr, "\r");
                 }
                 else {
                     fprintf(stderr,"File '%s' already exists. Exiting.\n", filename);

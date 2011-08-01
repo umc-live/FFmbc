@@ -89,16 +89,20 @@ static void sanitize(uint8_t *line){
 
 void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
 {
-    static int print_prefix=1;
     static int count;
     static char prev[1024];
     char line[1024];
     static int is_atty;
     AVClass* avc= ptr ? *(AVClass**)ptr : NULL;
+    int len, prev_len, print_prefix;
+
     if(level>av_log_level)
         return;
     line[0]=0;
 #undef fprintf
+    prev_len = strlen(prev);
+    print_prefix = !prev_len || prev[prev_len-1] == '\n' || prev[prev_len-1] == '\r';
+
     if(print_prefix && avc) {
         if (avc->parent_log_context_offset) {
             AVClass** parent= *(AVClass***)(((uint8_t*)ptr) + avc->parent_log_context_offset);
@@ -110,12 +114,14 @@ void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
     }
 
     vsnprintf(line + strlen(line), sizeof(line) - strlen(line), fmt, vl);
-
-    print_prefix = strlen(line) && line[strlen(line)-1] == '\n';
+    len = strlen(line);
 
 #if HAVE_ISATTY
     if(!is_atty) is_atty= isatty(2) ? 1 : -1;
 #endif
+
+    if(len && line[len-1] != '\r' && prev_len > 1 && prev[prev_len-1] == '\r')
+        fprintf(stderr, "\n");
 
     if(print_prefix && (flags & AV_LOG_SKIP_REPEATED) && !strcmp(line, prev)){
         count++;
@@ -127,7 +133,8 @@ void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
         fprintf(stderr, "    Last message repeated %d times\n", count);
         count=0;
     }
-    strcpy(prev, line);
+    if(len)
+        strcpy(prev, line);
     sanitize(line);
     colored_fputs(av_clip(level>>3, 0, 6), line);
 }
