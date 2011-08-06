@@ -218,6 +218,18 @@ static av_cold int encode_init(AVCodecContext *avctx)
         s->timecode_drop_frame = drop;
     }
 
+    if (s->pulldown) {
+        if (strcmp(s->pulldown, "3:2")) {
+            av_log(s, AV_LOG_ERROR, "error, unknown pulldown value\n");
+            return -1;
+        }
+        if (s->frame_rate_index != 1) {
+            av_log(s, AV_LOG_ERROR, "error, pulldown only works with 24000/1001 fps\n");
+            return -1;
+        }
+        s->frame_rate_index = 4; // override frame rate to 30000/1001
+    }
+
     return 0;
 }
 
@@ -450,8 +462,7 @@ void mpeg1_encode_picture_header(MpegEncContext *s, int picture_number)
         put_bits(&s->pb, 1, s->q_scale_type);
         put_bits(&s->pb, 1, s->intra_vlc_format);
         put_bits(&s->pb, 1, s->alternate_scan);
-        put_bits(&s->pb, 1, s->repeat_first_field);
-        s->progressive_frame = s->progressive_sequence;
+        put_bits(&s->pb, 1, s->current_picture_ptr->f.repeat_first_field);
         put_bits(&s->pb, 1, s->chroma_format == CHROMA_420 ? s->progressive_frame : 0); /* chroma_420_type */
         put_bits(&s->pb, 1, s->progressive_frame);
         put_bits(&s->pb, 1, 0); //composite_display_flag
@@ -971,6 +982,8 @@ static void mpeg1_encode_block(MpegEncContext *s,
 static const AVOption options[] = {
     { "timecode", "Set timecode value: 00:00:00[:;]00, use ';' before frame number for drop frame",
       offsetof(MpegEncContext, timecode), FF_OPT_TYPE_STRING, {.str = 0}, 0, 0, AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM},
+    { "pulldown", "Encode with pulldown: 3:2",
+      offsetof(MpegEncContext, pulldown), FF_OPT_TYPE_STRING, {.str = 0}, 0, 0, AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM},
     { NULL },
 };
 

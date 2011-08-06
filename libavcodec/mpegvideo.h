@@ -650,6 +650,8 @@ typedef struct MpegEncContext {
     int first_slice;
     int first_field;         ///< is 1 for the first field of a field picture 0 otherwise
 
+    const char *pulldown;
+
     /* RTP specific */
     int rtp_mode;
 

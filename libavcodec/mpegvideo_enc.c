@@ -183,6 +183,7 @@ static void copy_picture_attributes(MpegEncContext *s, AVFrame *dst, AVFrame *sr
     dst->pts                    = src->pts;
     dst->interlaced_frame       = src->interlaced_frame;
     dst->top_field_first        = src->top_field_first;
+    dst->repeat_first_field     = src->repeat_first_field;
 
     if(s->avctx->me_threshold){
         if(!src->motion_val[0])
@@ -682,6 +683,14 @@ av_cold int MPV_encode_init(AVCodecContext *avctx)
 
     s->progressive_frame=
     s->progressive_sequence= !(avctx->flags & (CODEC_FLAG_INTERLACED_DCT|CODEC_FLAG_INTERLACED_ME|CODEC_FLAG_ALT_SCAN));
+    if (s->pulldown) {
+        if (!s->progressive_sequence) {
+            av_log(s, AV_LOG_ERROR, "error, pulldown only works with progressive sequences\n");
+            return -1;
+        }
+        s->progressive_sequence = 0;
+        s->progressive_frame = 1;
+    }
 
     /* init */
     if (MPV_common_init(s) < 0)
@@ -800,6 +809,12 @@ static int get_intra_count(MpegEncContext *s, uint8_t *src, uint8_t *ref, int st
     return acc;
 }
 
+static struct {
+    int tff;
+    int rff;
+} pulldown_pattern[] = {
+    { 1, 0 }, { 1, 1 }, { 0, 0 }, { 0, 1 }, { 1, 0 }
+};
 
 static int load_input_picture(MpegEncContext *s, AVFrame *pic_arg){
     AVFrame *pic=NULL;
@@ -907,6 +922,11 @@ static int load_input_picture(MpegEncContext *s, AVFrame *pic_arg){
         s->input_picture[i-1]= s->input_picture[i];
 
     s->input_picture[encoding_delay]= (Picture*)pic;
+
+    if (s->pulldown && pic) {
+        pic->top_field_first = pulldown_pattern[(s->input_picture_number-1) % 4].tff;
+        pic->repeat_first_field = pulldown_pattern[(s->input_picture_number-1) % 4].rff;
+    }
 
     return 0;
 }

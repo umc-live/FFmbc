@@ -1018,7 +1018,7 @@ typedef struct AVFrame {
 
     /**
      * If the content is interlaced, is top field displayed first.
-     * - encoding: Set by user.
+     * - encoding: Set by user, can be overriden by pulldown option
      * - decoding: Set by libavcodec.
      */
     int top_field_first;
@@ -1144,6 +1144,13 @@ typedef struct AVFrame {
      */
     int format;
 
+    /**
+     * If the content is interlaced, is first field repeated.
+     * If the content is progressive, is frame repeated.
+     * - encoding: Set by user, can be overriden by pulldown option
+     * - decoding: Set by libavcodec.
+     */
+    int repeat_first_field;
 } AVFrame;
 
 /**
