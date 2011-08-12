@@ -919,6 +919,20 @@ static int mov_read_extradata(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_gama(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+    double gamma;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+    st = c->fc->streams[c->fc->nb_streams-1];
+
+    gamma = avio_rb32(pb) / 65536.0;
+    av_dict_set_float(&st->metadata, "gamma", gamma);
+    return 0;
+}
+
 static int mov_read_fiel(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -2529,6 +2543,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('e','n','d','a'), mov_read_enda },
 { MKTAG('f','i','e','l'), mov_read_fiel },
 { MKTAG('f','t','y','p'), mov_read_ftyp },
+{ MKTAG('g','a','m','a'), mov_read_gama },
 { MKTAG('g','l','b','l'), mov_read_glbl },
 { MKTAG('h','d','l','r'), mov_read_hdlr },
 { MKTAG('i','l','s','t'), mov_read_ilst },
