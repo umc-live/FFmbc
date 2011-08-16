@@ -211,6 +211,12 @@ static int config_props(AVFilterLink *outlink)
     outlink->w = w;
     outlink->h = h;
 
+    av_reduce(&outlink->sample_aspect_ratio.num,
+              &outlink->sample_aspect_ratio.den,
+              (int64_t)inlink->sample_aspect_ratio.num * outlink->h * inlink->w,
+              (int64_t)inlink->sample_aspect_ratio.den * outlink->w * inlink->h,
+              INT_MAX);
+
     /* TODO: make algorithm configurable */
     av_log(ctx, AV_LOG_INFO, "w:%d h:%d fmt:%s -> w:%d h:%d fmt:%s flags:0x%0x\n",
            inlink ->w, inlink ->h, av_pix_fmt_descriptors[ inlink->format].name,

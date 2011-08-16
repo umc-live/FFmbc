@@ -53,6 +53,7 @@ typedef struct {
 
     int w, h;
     AVFilterBufferRef *picref;
+    AVRational sample_aspect_ratio;
 } MovieContext;
 
 #define OFFSET(x) offsetof(MovieContext, x)
@@ -82,6 +83,7 @@ static int movie_init(AVFilterContext *ctx)
 {
     MovieContext *movie = ctx->priv;
     AVInputFormat *iformat = NULL;
+    AVStream *vst;
     AVCodec *codec;
     int ret;
     int64_t timestamp;
@@ -157,6 +159,14 @@ static int movie_init(AVFilterContext *ctx)
            movie->seek_point, movie->format_name, movie->file_name,
            movie->stream_index);
 
+    vst = movie->format_ctx->streams[movie->stream_index];
+    if (vst->sample_aspect_ratio.num)
+        movie->sample_aspect_ratio = vst->sample_aspect_ratio;
+    else if (vst->codec->sample_aspect_ratio.num)
+        movie->sample_aspect_ratio = vst->codec->sample_aspect_ratio;
+    else
+        movie->sample_aspect_ratio = (AVRational){1,1};
+
     return 0;
 }
 
@@ -214,6 +224,7 @@ static int config_output_props(AVFilterLink *outlink)
     outlink->w = movie->w;
     outlink->h = movie->h;
     outlink->time_base = movie->format_ctx->streams[movie->stream_index]->time_base;
+    outlink->sample_aspect_ratio = movie->sample_aspect_ratio;
 
     return 0;
 }
@@ -247,8 +258,12 @@ static int movie_get_frame(AVFilterLink *outlink)
                 /* use pkt_dts if pkt_pts is not available */
                 movie->picref->pts = movie->frame->pkt_pts == AV_NOPTS_VALUE ?
                     movie->frame->pkt_dts : movie->frame->pkt_pts;
-                if (!movie->frame->sample_aspect_ratio.num)
-                    movie->picref->video->sample_aspect_ratio = st->sample_aspect_ratio;
+
+                movie->picref->video->sample_aspect_ratio = movie->sample_aspect_ratio;
+
+                movie->picref->video->interlaced      = movie->frame->interlaced_frame;
+                movie->picref->video->top_field_first = movie->frame->top_field_first;
+
                 av_dlog(outlink->src,
                         "movie_get_frame(): file:'%s' pts:%"PRId64" time:%lf pos:%"PRId64" aspect:%d/%d\n",
                         movie->file_name, movie->picref->pts,

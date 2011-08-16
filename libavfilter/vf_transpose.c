@@ -102,10 +102,8 @@ static int config_props_output(AVFilterLink *outlink)
     outlink->w = inlink->h;
     outlink->h = inlink->w;
 
-    if (inlink->sample_aspect_ratio.num){
-        outlink->sample_aspect_ratio = av_div_q((AVRational){1,1}, inlink->sample_aspect_ratio);
-    } else
-        outlink->sample_aspect_ratio = inlink->sample_aspect_ratio;
+    outlink->sample_aspect_ratio.num = inlink->sample_aspect_ratio.den;
+    outlink->sample_aspect_ratio.den = inlink->sample_aspect_ratio.num;
 
     av_log(ctx, AV_LOG_INFO, "w:%d h:%d dir:%d -> w:%d h:%d rotation:%s vflip:%d\n",
            inlink->w, inlink->h, trans->dir, outlink->w, outlink->h,

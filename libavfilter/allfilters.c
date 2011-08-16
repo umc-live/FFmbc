@@ -69,7 +69,6 @@ void avfilter_register_all(void)
     REGISTER_FILTER (ROTATE,      rotate,      vf);
     REGISTER_FILTER (SCALE,       scale,       vf);
     REGISTER_FILTER (SELECT,      select,      vf);
-    REGISTER_FILTER (SETDAR,      setdar,      vf);
     REGISTER_FILTER (SETPTS,      setpts,      vf);
     REGISTER_FILTER (SETSAR,      setsar,      vf);
     REGISTER_FILTER (SETTB,       settb,       vf);

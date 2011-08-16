@@ -393,10 +393,12 @@ static int configure_video_filters(InputStream *ist, OutputStream *ost)
 
     ost->graph = avfilter_graph_alloc();
 
-    if (ist->st->sample_aspect_ratio.num){
+    if (ist->st->sample_aspect_ratio.num)
         sample_aspect_ratio = ist->st->sample_aspect_ratio;
-    }else
+    else if (ist->st->codec->sample_aspect_ratio.num)
         sample_aspect_ratio = ist->st->codec->sample_aspect_ratio;
+    else
+        sample_aspect_ratio = (AVRational){1,1};
 
     snprintf(args, 255, "%d:%d:%d:%d:%d:%d:%d", ist->st->codec->width,
              ist->st->codec->height, ist->st->codec->pix_fmt, 1, AV_TIME_BASE,
@@ -1844,8 +1846,6 @@ static int output_packet(InputStream *ist, int ist_index,
                     if (j == ost->nb_source_indexes)
                         continue;
 
-                    if (!picture.sample_aspect_ratio.num)
-                        picture.sample_aspect_ratio = ist->st->sample_aspect_ratio;
                     picture.pts = ist->pts;
 
                     av_vsrc_buffer_add_frame(ost->input_video_filter, &picture, AV_VSRC_BUF_FLAG_OVERWRITE);
@@ -1914,10 +1914,6 @@ static int output_packet(InputStream *ist, int ist_index,
                             do_audio_out(os, ost, ist, decoded_data_buf, decoded_data_size);
                             break;
                         case AVMEDIA_TYPE_VIDEO:
-#if CONFIG_AVFILTER
-                            if (ost->picref->video && !ost->frame_aspect_ratio.num)
-                                ost->st->codec->sample_aspect_ratio = ost->picref->video->sample_aspect_ratio;
-#endif
                             do_video_out(os, ost, ist, &picture, &frame_size,
                                          same_quality ? quality : ost->st->codec->global_quality);
                             if (vstats_filename && frame_size)

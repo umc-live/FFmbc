@@ -610,7 +610,10 @@ static int mkv_write_tracks(AVFormatContext *s)
                         put_ebml_uint(pb, MATROSKA_ID_VIDEOSTEREOMODE, st_mode);
                 }
 
-                if (st->sample_aspect_ratio.num) {
+                if (st->sample_aspect_ratio.num > 0 &&
+                    st->sample_aspect_ratio.den > 0 &&
+                    st->sample_aspect_ratio.num !=
+                    st->sample_aspect_ratio.den) {
                     int d_width = codec->width*av_q2d(st->sample_aspect_ratio);
                     put_ebml_uint(pb, MATROSKA_ID_VIDEODISPLAYWIDTH , d_width);
                     put_ebml_uint(pb, MATROSKA_ID_VIDEODISPLAYHEIGHT, codec->height);

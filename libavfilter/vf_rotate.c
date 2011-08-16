@@ -101,6 +101,8 @@ static int config_props_output(AVFilterLink *link)
     rot->output_h = rot->transy + FFMAX(0, rot->cosx*link->src->inputs[0]->h) +
         FFMAX(0,  rot->sinx*link->src->inputs[0]->w);
 
+    link->sample_aspect_ratio.num = link->sample_aspect_ratio.den;
+    link->sample_aspect_ratio.den = link->sample_aspect_ratio.num;
     link->w = rot->output_w;
     link->h = rot->output_h;
 

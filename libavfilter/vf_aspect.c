@@ -62,56 +62,6 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     return 0;
 }
 
-static void start_frame(AVFilterLink *link, AVFilterBufferRef *picref)
-{
-    AspectContext *aspect = link->dst->priv;
-
-    picref->video->sample_aspect_ratio = aspect->aspect;
-    avfilter_start_frame(link->dst->outputs[0], picref);
-}
-
-#if CONFIG_SETDAR_FILTER
-/* for setdar filter, convert from frame aspect ratio to pixel aspect ratio */
-static int setdar_config_props(AVFilterLink *inlink)
-{
-    AspectContext *aspect = inlink->dst->priv;
-    AVRational dar = aspect->aspect;
-
-    av_reduce(&aspect->aspect.num, &aspect->aspect.den,
-               aspect->aspect.num * inlink->h,
-               aspect->aspect.den * inlink->w, 100);
-
-    av_log(inlink->dst, AV_LOG_INFO, "w:%d h:%d -> dar:%d/%d sar:%d/%d\n",
-           inlink->w, inlink->h, dar.num, dar.den, aspect->aspect.num, aspect->aspect.den);
-
-    inlink->sample_aspect_ratio = aspect->aspect;
-
-    return 0;
-}
-
-AVFilter avfilter_vf_setdar = {
-    .name      = "setdar",
-    .description = NULL_IF_CONFIG_SMALL("Set the frame display aspect ratio."),
-
-    .init      = init,
-
-    .priv_size = sizeof(AspectContext),
-
-    .inputs    = (AVFilterPad[]) {{ .name             = "default",
-                                    .type             = AVMEDIA_TYPE_VIDEO,
-                                    .config_props     = setdar_config_props,
-                                    .get_video_buffer = avfilter_null_get_video_buffer,
-                                    .start_frame      = start_frame,
-                                    .end_frame        = avfilter_null_end_frame },
-                                  { .name = NULL}},
-
-    .outputs   = (AVFilterPad[]) {{ .name             = "default",
-                                    .type             = AVMEDIA_TYPE_VIDEO, },
-                                  { .name = NULL}},
-};
-#endif /* CONFIG_SETDAR_FILTER */
-
-#if CONFIG_SETSAR_FILTER
 /* for setdar filter, convert from frame aspect ratio to pixel aspect ratio */
 static int setsar_config_props(AVFilterLink *inlink)
 {
@@ -134,7 +84,7 @@ AVFilter avfilter_vf_setsar = {
                                     .type             = AVMEDIA_TYPE_VIDEO,
                                     .config_props     = setsar_config_props,
                                     .get_video_buffer = avfilter_null_get_video_buffer,
-                                    .start_frame      = start_frame,
+                                    .start_frame      = avfilter_null_start_frame,
                                     .end_frame        = avfilter_null_end_frame },
                                   { .name = NULL}},
 
@@ -142,5 +92,3 @@ AVFilter avfilter_vf_setsar = {
                                     .type             = AVMEDIA_TYPE_VIDEO, },
                                   { .name = NULL}},
 };
-#endif /* CONFIG_SETSAR_FILTER */
-
