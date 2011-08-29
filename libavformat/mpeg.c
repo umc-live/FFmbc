@@ -425,14 +425,16 @@ static int mpegps_read_packet(AVFormatContext *s,
     enum AVMediaType type;
     int64_t pts, dts, dummy_pos; //dummy_pos is needed for the index building to work
     uint8_t av_uninit(dvdaudio_substream_type);
+    int sub_id;
 
  redo:
     len = mpegps_read_pes_header(s, &dummy_pos, &startcode, &pts, &dts);
     if (len < 0)
         return len;
 
+    sub_id = startcode;
     if(startcode == 0x1bd) {
-        dvdaudio_substream_type = avio_r8(s->pb);
+        sub_id = dvdaudio_substream_type = avio_r8(s->pb);
         avio_skip(s->pb, 3);
         len -= 4;
     }
@@ -440,7 +442,7 @@ static int mpegps_read_packet(AVFormatContext *s,
     /* now find stream */
     for(i=0;i<s->nb_streams;i++) {
         st = s->streams[i];
-        if (st->id == startcode)
+        if (st->id == sub_id)
             goto found;
     }
 
@@ -529,7 +531,7 @@ static int mpegps_read_packet(AVFormatContext *s,
         goto redo;
     }
     /* no stream found: add a new stream */
-    st = av_new_stream(s, startcode);
+    st = av_new_stream(s, sub_id);
     if (!st)
         goto skip;
     st->codec->codec_type = type;
