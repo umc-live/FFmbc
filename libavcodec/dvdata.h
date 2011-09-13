@@ -29,6 +29,8 @@
 
 #include "libavutil/rational.h"
 #include "avcodec.h"
+#include "dsputil.h"
+#include "get_bits.h"
 
 typedef struct DVwork_chunk {
     uint16_t  buf_offset;
@@ -64,6 +66,20 @@ typedef struct DVprofile {
                                             /* in each frame in a 5 frames window */
     const uint8_t  (*audio_shuffle)[9];     /* PCM shuffling table */
 } DVprofile;
+
+typedef struct DVVideoContext {
+    const DVprofile *sys;
+    AVFrame          picture;
+    AVCodecContext  *avctx;
+    uint8_t         *buf;
+
+    uint8_t  dv_zigzag[2][64];
+
+    void (*get_pixels)(DCTELEM *block, const uint8_t *pixels, int line_size);
+    void (*fdct[2])(DCTELEM *block);
+    void (*idct_put[2])(uint8_t *dest, int line_size, DCTELEM *block);
+    me_cmp_func ildct_cmp;
+} DVVideoContext;
 
 /* unquant tables (not used directly) */
 static const uint8_t dv_quant_shifts[22][4] = {
@@ -312,5 +328,101 @@ static inline int dv_write_ssyb_id(uint8_t syb_num, uint8_t fr, uint8_t* buf)
     buf[2] = 0xff;             /* reserved -- always 1 */
     return 3;
 }
+
+static inline void dv_calculate_mb_xy(DVVideoContext *s, DVwork_chunk *work_chunk, int m, int *mb_x, int *mb_y)
+{
+     *mb_x = work_chunk->mb_coordinates[m] & 0xff;
+     *mb_y = work_chunk->mb_coordinates[m] >> 8;
+
+     /* We work with 720p frames split in half. The odd half-frame (chan==2,3) is displaced :-( */
+     if (s->sys->height == 720 && !(s->buf[1]&0x0C)) {
+         *mb_y -= (*mb_y>17)?18:-72; /* shifting the Y coordinate down by 72/2 macro blocks */
+     }
+}
+
+static inline int dv_work_pool_size(const DVprofile *d)
+{
+    int size = d->n_difchan*d->difseg_size*27;
+    if (DV_PROFILE_IS_1080i50(d))
+        size -= 3*27;
+    if (DV_PROFILE_IS_720p50(d))
+        size -= 4*27;
+    return size;
+}
+
+#define TEX_VLC_BITS 9
+
+void ff_dv_init_vlc(RL_VLC_ELEM dv_rl_vlc[1184]);
+
+#if CONFIG_SMALL
+#define DV_VLC_MAP_RUN_SIZE 15
+#define DV_VLC_MAP_LEV_SIZE 23
+#else
+#define DV_VLC_MAP_RUN_SIZE  64
+#define DV_VLC_MAP_LEV_SIZE 512 //FIXME sign was removed so this should be /2 but needs check
+#endif
+
+/* VLC encoding lookup table */
+typedef struct dv_vlc_pair {
+   uint32_t vlc;
+   uint32_t size;
+} dv_vlc_pair;
+
+extern dv_vlc_pair dv_vlc_map[DV_VLC_MAP_RUN_SIZE][DV_VLC_MAP_LEV_SIZE];
+
+#if CONFIG_SMALL
+/* Converts run and level (where level != 0) pair into VLC, returning bit size */
+static av_always_inline int dv_rl2vlc(int run, int level, int sign, uint32_t* vlc)
+{
+    int size;
+    if (run < DV_VLC_MAP_RUN_SIZE && level < DV_VLC_MAP_LEV_SIZE) {
+        *vlc = dv_vlc_map[run][level].vlc | sign;
+        size = dv_vlc_map[run][level].size;
+    } else {
+        if (level < DV_VLC_MAP_LEV_SIZE) {
+            *vlc = dv_vlc_map[0][level].vlc | sign;
+            size = dv_vlc_map[0][level].size;
+        } else {
+            *vlc = 0xfe00 | (level << 1) | sign;
+            size = 16;
+        }
+        if (run) {
+            *vlc |= ((run < 16) ? dv_vlc_map[run-1][0].vlc :
+                                  (0x1f80 | (run - 1))) << size;
+            size +=  (run < 16) ? dv_vlc_map[run-1][0].size : 13;
+        }
+    }
+
+    return size;
+}
+
+static av_always_inline int dv_rl2vlc_size(int run, int level)
+{
+    int size;
+
+    if (run < DV_VLC_MAP_RUN_SIZE && level < DV_VLC_MAP_LEV_SIZE) {
+        size = dv_vlc_map[run][level].size;
+    } else {
+        size = (level < DV_VLC_MAP_LEV_SIZE) ? dv_vlc_map[0][level].size : 16;
+        if (run)
+            size += (run < 16) ? dv_vlc_map[run-1][0].size : 13;
+    }
+    return size;
+}
+#else
+static av_always_inline int dv_rl2vlc(int run, int l, int sign, uint32_t* vlc)
+{
+    *vlc = dv_vlc_map[run][l].vlc | sign;
+    return dv_vlc_map[run][l].size;
+}
+
+static av_always_inline int dv_rl2vlc_size(int run, int l)
+{
+    return dv_vlc_map[run][l].size;
+}
+#endif
+
+int ff_dv_init_dynamic_tables(const DVprofile *d);
+void ff_dv_vlc_map_tableinit(void);
 
 #endif /* AVCODEC_DVDATA_H */
