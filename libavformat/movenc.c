@@ -679,10 +679,14 @@ static int mov_get_dv_codec_tag(AVFormatContext *s, MOVTrack *track)
     else if (track->enc->height == 720) /* HD 720 line */
         if  (track->enc->time_base.den == 50)            tag = MKTAG('d','v','h','q');
         else                                             tag = MKTAG('d','v','h','p');
-    else if (track->enc->height == 1080) /* HD 1080 line */
-        if  (track->enc->time_base.den == 25)            tag = MKTAG('d','v','h','5');
-        else                                             tag = MKTAG('d','v','h','6');
-    else {
+    else if (track->enc->height == 1080) { /* HD 1080 line */
+        if      (track->enc->width == 1440)              tag = MKTAG('d','v','h','5');
+        else if (track->enc->width == 1280)              tag = MKTAG('d','v','h','6');
+        else {
+            av_log(s, AV_LOG_ERROR, "unsupported width for dvcpro hd codec\n");
+            return 0;
+        }
+    } else {
         av_log(s, AV_LOG_ERROR, "unsupported height for dv codec\n");
         return 0;
     }

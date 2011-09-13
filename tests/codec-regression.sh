@@ -213,6 +213,16 @@ do_video_encoding dv50.dv "-dct int -s pal -pix_fmt yuv422p -an -sws_flags neigh
 do_video_decoding "" "-s cif -pix_fmt yuv420p -sws_flags neighbor+bitexact"
 fi
 
+if [ -n "$do_dvhd_1080i" ] ; then
+do_video_encoding dvhd-1080i.dv "-dct int -tff -s 1440x1080 -pix_fmt yuv422p -vframes 5 -an"
+do_video_decoding "" "-s cif -pix_fmt yuv420p"
+fi
+
+if [ -n "$do_dvhd_720p" ] ; then
+do_video_encoding dvhd-720p.dv "-dct int -s 960x720 -pix_fmt yuv422p -vframes 5 -an"
+do_video_decoding "" "-s cif -pix_fmt yuv420p"
+fi
+
 if [ -n "$do_dnxhd_1080i" ] ; then
 do_video_encoding dnxhd-1080i.dnxhd "-vcodec dnxhd -tff -s hd1080 -b 120M -pix_fmt yuv422p -vframes 5 -an"
 do_video_decoding "" "-s cif -pix_fmt yuv420p"

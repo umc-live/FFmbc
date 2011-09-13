@@ -1535,7 +1535,7 @@ test_deps _encoder _decoder                                             \
     asv2                                                                \
     bmp                                                                 \
     dnxhd="dnxhd_1080i dnxhd_720p dnxhd_720p_rd"                        \
-    dvvideo="dv dv50"                                                   \
+    dvvideo="dv dv50 dvhd_1080i dvhd_720p"                              \
     ffv1                                                                \
     flac                                                                \
     flashsv                                                             \

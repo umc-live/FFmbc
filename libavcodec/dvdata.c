@@ -387,8 +387,13 @@ const DVprofile* ff_dv_codec_profile(AVCodecContext* codec)
     for (i=0; i<FF_ARRAY_ELEMS(dv_profiles); i++)
        if (codec->height  == dv_profiles[i].height  &&
            codec->pix_fmt == dv_profiles[i].pix_fmt &&
-           codec->width   == dv_profiles[i].width)
+           codec->width   == dv_profiles[i].width) {
+           if (codec->height == 720) // 720p special case
+               if ((codec->time_base.den == 25 || codec->time_base.den == 50)
+                   && codec->time_base.num == 1)
+                   i++;
                return &dv_profiles[i];
+       }
 
     return NULL;
 }

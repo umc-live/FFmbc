@@ -203,6 +203,11 @@ static int dv_extract_audio_info(DVDemuxContext* c, uint8_t* frame)
     stype = (as_pack[3] & 0x1f);      /* 0 - 2CH, 2 - 4CH, 3 - 8CH */
     quant =  as_pack[4] & 0x07;       /* 0 - 16bit linear, 1 - 12bit nonlinear */
 
+    if (stype > 3) {
+        av_log(c->fctx, AV_LOG_ERROR, "invalid stype\n");
+        return -1;
+    }
+
     /* note: ach counts PAIRS of channels (i.e. stereo channels) */
     ach = ((int[4]){  1,  0,  2,  4})[stype];
     if (ach == 1 && quant && freq == 2)
@@ -331,6 +336,8 @@ int dv_produce_packet(DVDemuxContext *c, AVPacket *pkt,
     /* Queueing audio packet */
     /* FIXME: in case of no audio/bad audio we have to do something */
     size = dv_extract_audio_info(c, buf);
+    if (size < 0)
+        return -1;
     for (i = 0; i < c->ach; i++) {
        c->audio_pkt[i].pos  = pos;
        c->audio_pkt[i].size = size;
