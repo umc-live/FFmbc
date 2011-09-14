@@ -54,7 +54,6 @@ static RL_VLC_ELEM dv_rl_vlc[1184];
 static av_cold int dvvideo_init(AVCodecContext *avctx)
 {
     DVVideoContext *s = avctx->priv_data;
-    DSPContext dsp;
     static int done = 0;
     int i;
 
@@ -65,24 +64,22 @@ static av_cold int dvvideo_init(AVCodecContext *avctx)
     }
 
     /* Generic DSP setup */
-    dsputil_init(&dsp, avctx);
-    ff_set_cmp(&dsp, dsp.ildct_cmp, avctx->ildct_cmp);
-    s->get_pixels = dsp.get_pixels;
-    s->ildct_cmp = dsp.ildct_cmp[5];
+    dsputil_init(&s->dsp, avctx);
+    ff_set_cmp(&s->dsp, s->dsp.ildct_cmp, avctx->ildct_cmp);
 
     /* 88DCT setup */
-    s->fdct[0]     = dsp.fdct;
-    s->idct_put[0] = dsp.idct_put;
+    s->fdct[0]     = s->dsp.fdct;
+    s->idct_put[0] = s->dsp.idct_put;
     for (i = 0; i < 64; i++)
-       s->dv_zigzag[0][i] = dsp.idct_permutation[ff_zigzag_direct[i]];
+       s->dv_zigzag[0][i] = s->dsp.idct_permutation[ff_zigzag_direct[i]];
 
     /* 248DCT setup */
-    s->fdct[1]     = dsp.fdct248;
+    s->fdct[1]     = s->dsp.fdct248;
     s->idct_put[1] = ff_simple_idct248_put;  // FIXME: need to add it to DSP
     if (avctx->lowres){
         for (i = 0; i < 64; i++){
             int j = ff_zigzag248_direct[i];
-            s->dv_zigzag[1][i] = dsp.idct_permutation[(j & 7) + (j & 8) * 4 + (j & 48) / 2];
+            s->dv_zigzag[1][i] = s->dsp.idct_permutation[(j & 7) + (j & 8) * 4 + (j & 48) / 2];
         }
     }else
         memcpy(s->dv_zigzag[1], ff_zigzag248_direct, 64);
@@ -173,6 +170,49 @@ static inline void bit_copy(PutBitContext *pb, GetBitContext *gb)
     if (bits_left > 0) {
         put_bits(pb, bits_left, get_bits(gb, bits_left));
     }
+}
+
+static av_always_inline void put_block_8x4(DCTELEM *block, uint8_t *restrict p, int linesize)
+{
+    int i, j;
+    uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;
+
+    for (i = 0; i < 4; i++) {
+        for (j = 0; j < 8; j++)
+            p[j] = cm[block[j]];
+        block += 8;
+        p += linesize;
+    }
+}
+
+static void dv100_idct_put_last_row_field_chroma(DVVideoContext *s, uint8_t *data,
+                                                 int linesize, DCTELEM *blocks)
+{
+    s->dsp.idct(blocks + 0*64);
+    s->dsp.idct(blocks + 1*64);
+
+    put_block_8x4(blocks+0*64,       data,                linesize*2);
+    put_block_8x4(blocks+0*64 + 4*8, data + 8,            linesize*2);
+    put_block_8x4(blocks+1*64,       data + linesize,     linesize*2);
+    put_block_8x4(blocks+1*64 + 4*8, data + 8 + linesize, linesize*2);
+}
+
+static void dv100_idct_put_last_row_field_luma(DVVideoContext *s, uint8_t *data,
+                                               int linesize, DCTELEM *blocks)
+{
+    s->dsp.idct(blocks + 0*64);
+    s->dsp.idct(blocks + 1*64);
+    s->dsp.idct(blocks + 2*64);
+    s->dsp.idct(blocks + 3*64);
+
+    put_block_8x4(blocks+0*64,       data,                 linesize*2);
+    put_block_8x4(blocks+0*64 + 4*8, data + 16,            linesize*2);
+    put_block_8x4(blocks+1*64,       data + 8,             linesize*2);
+    put_block_8x4(blocks+1*64 + 4*8, data + 24,            linesize*2);
+    put_block_8x4(blocks+2*64,       data + linesize,      linesize*2);
+    put_block_8x4(blocks+2*64 + 4*8, data + 16 + linesize, linesize*2);
+    put_block_8x4(blocks+3*64,       data + 8  + linesize, linesize*2);
+    put_block_8x4(blocks+3*64 + 4*8, data + 24 + linesize, linesize*2);
 }
 
 /* mb_x and mb_y are in units of 8 pixels */
@@ -310,14 +350,18 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
             y_stride = (2 << log2_blocksize);
         }
         y_ptr = s->picture.data[0] + ((mb_y * s->picture.linesize[0] + mb_x) << log2_blocksize);
-        linesize = s->picture.linesize[0] << is_field_mode[mb_index];
-        mb[0]    .idct_put(y_ptr                                   , linesize, block + 0*64);
-        if (s->sys->video_stype == 4) { /* SD 422 */
-            mb[2].idct_put(y_ptr + (1 << log2_blocksize)           , linesize, block + 2*64);
+        if (mb_y == 134 && is_field_mode[mb_index]) {
+            dv100_idct_put_last_row_field_luma(s, y_ptr, s->picture.linesize[0], block);
         } else {
-            mb[1].idct_put(y_ptr + (1 << log2_blocksize)           , linesize, block + 1*64);
-            mb[2].idct_put(y_ptr                         + y_stride, linesize, block + 2*64);
-            mb[3].idct_put(y_ptr + (1 << log2_blocksize) + y_stride, linesize, block + 3*64);
+            linesize = s->picture.linesize[0] << is_field_mode[mb_index];
+            mb[0]    .idct_put(y_ptr                                   , linesize, block + 0*64);
+            if (s->sys->video_stype == 4) { /* SD 422 */
+                mb[2].idct_put(y_ptr + (1 << log2_blocksize)           , linesize, block + 2*64);
+            } else {
+                mb[1].idct_put(y_ptr + (1 << log2_blocksize)           , linesize, block + 1*64);
+                mb[2].idct_put(y_ptr                         + y_stride, linesize, block + 2*64);
+                mb[3].idct_put(y_ptr + (1 << log2_blocksize) + y_stride, linesize, block + 3*64);
+            }
         }
         mb += 4;
         block += 4*64;
@@ -351,10 +395,16 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
             } else {
                   y_stride = (mb_y == 134) ? (1 << log2_blocksize) :
                                              s->picture.linesize[j] << ((!is_field_mode[mb_index]) * log2_blocksize);
-                  linesize = s->picture.linesize[j] << is_field_mode[mb_index];
-                  (mb++)->    idct_put(c_ptr           , linesize, block); block += 64;
-                  if (s->sys->bpm == 8) {
-                      (mb++)->idct_put(c_ptr + y_stride, linesize, block); block += 64;
+                  if (mb_y == 134 && is_field_mode[mb_index]) {
+                      dv100_idct_put_last_row_field_chroma(s, c_ptr, s->picture.linesize[j], block);
+                      mb += 2;
+                      block += 2*64;
+                  } else {
+                      linesize = s->picture.linesize[j] << is_field_mode[mb_index];
+                      (mb++)->    idct_put(c_ptr           , linesize, block); block += 64;
+                      if (s->sys->bpm == 8) {
+                          (mb++)->idct_put(c_ptr + y_stride, linesize, block); block += 64;
+                      }
                   }
             }
         }

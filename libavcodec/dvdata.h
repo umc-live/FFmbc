@@ -75,10 +75,9 @@ typedef struct DVVideoContext {
 
     uint8_t  dv_zigzag[2][64];
 
-    void (*get_pixels)(DCTELEM *block, const uint8_t *pixels, int line_size);
+    DSPContext dsp;
     void (*fdct[2])(DCTELEM *block);
     void (*idct_put[2])(uint8_t *dest, int line_size, DCTELEM *block);
-    me_cmp_func ildct_cmp;
 } DVVideoContext;
 
 /* unquant tables (not used directly) */

@@ -46,21 +46,18 @@
 static av_cold int dvvideo_init(AVCodecContext *avctx)
 {
     DVVideoContext *s = avctx->priv_data;
-    DSPContext dsp;
 
     ff_dv_vlc_map_tableinit();
 
     /* Generic DSP setup */
-    dsputil_init(&dsp, avctx);
-    ff_set_cmp(&dsp, dsp.ildct_cmp, avctx->ildct_cmp);
-    s->get_pixels = dsp.get_pixels;
-    s->ildct_cmp = dsp.ildct_cmp[5];
+    dsputil_init(&s->dsp, avctx);
+    ff_set_cmp(&s->dsp, s->dsp.ildct_cmp, avctx->ildct_cmp);
 
     /* 88DCT setup */
-    s->fdct[0] = dsp.fdct;
+    s->fdct[0] = s->dsp.fdct;
 
     /* 248DCT setup */
-    s->fdct[1] = dsp.fdct248;
+    s->fdct[1] = s->dsp.fdct248;
 
     avctx->coded_frame = &s->picture;
     s->avctx = avctx;
@@ -162,10 +159,10 @@ static av_always_inline PutBitContext *dv_encode_ac(EncBlockInfo *bi,
 
 static av_always_inline int dv_guess_dct_mode(DVVideoContext *s, uint8_t *data, int linesize) {
     if (s->avctx->flags & CODEC_FLAG_INTERLACED_DCT) {
-        int ps = s->ildct_cmp(NULL, data, NULL, linesize, 8) - 400;
+        int ps = s->dsp.ildct_cmp[5](NULL, data, NULL, linesize, 8) - 400;
         if (ps > 0) {
-            int is = s->ildct_cmp(NULL, data           , NULL, linesize<<1, 4) +
-                     s->ildct_cmp(NULL, data + linesize, NULL, linesize<<1, 4);
+            int is = s->dsp.ildct_cmp[5](NULL, data           , NULL, linesize<<1, 4) +
+                     s->dsp.ildct_cmp[5](NULL, data + linesize, NULL, linesize<<1, 4);
             return ps > is;
         }
     }
@@ -315,11 +312,11 @@ static av_always_inline int dv_init_enc_block(EncBlockInfo* bi, uint8_t *data, i
 
     if (data) {
         if (DV_PROFILE_IS_HD(s->sys)) {
-            s->get_pixels(blk, data, linesize << bi->dct_mode);
+            s->dsp.get_pixels(blk, data, linesize << bi->dct_mode);
             s->fdct[0](blk);
         } else {
             bi->dct_mode = dv_guess_dct_mode(s, data, linesize);
-            s->get_pixels(blk, data, linesize);
+            s->dsp.get_pixels(blk, data, linesize);
             s->fdct[bi->dct_mode](blk);
         }
     } else {
