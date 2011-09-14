@@ -322,6 +322,12 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
         mb += 4;
         block += 4*64;
 
+        if (s->avctx->flags & CODEC_FLAG_GRAY) {
+            mb += s->sys->bpm - 4;
+            block += (s->sys->bpm - 4)*64;
+            continue;
+        }
+
         /* idct_put'ting chrominance */
         c_offset = (((mb_y >>  (s->sys->pix_fmt == PIX_FMT_YUV420P)) * s->picture.linesize[1] +
                      (mb_x >> ((s->sys->pix_fmt == PIX_FMT_YUV411P) ? 2 : 1))) << log2_blocksize);
