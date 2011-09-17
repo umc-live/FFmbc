@@ -4,3 +4,6 @@
 437924d1c0c0ec95e0b774c7f867c2c6 *./tests/data/lavf/lavf_ntsc_tc.mxf
 524348 ./tests/data/lavf/lavf_ntsc_tc.mxf
 ./tests/data/lavf/lavf_ntsc_tc.mxf CRC=0x2e58fe6a
+2bfa5b006a38a999eb76be7cc45cb417 *./tests/data/lavf/lavf_dvhd.mxf
+14831664 ./tests/data/lavf/lavf_dvhd.mxf
+./tests/data/lavf/lavf_dvhd.mxf CRC=0x1cba236d

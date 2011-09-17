@@ -20,6 +20,17 @@ do_lavf()
     do_ffmpeg_crc $file $DEC_OPTS -i $target_path/$file $3
 }
 
+do_lavf_extra()
+{
+    file=${outfile}lavf.$1
+    file=${outfile}$4
+    [ -z $4 ] && file=${outfile}lavf.$1
+    run_ffmpeg $DEC_OPTS -f image2 -vcodec pgmyuv -i $raw_src $DEC_OPTS -ar 44100 -f s16le -i $pcm_src $ENC_OPTS -t 1 -qscale 10 $2 $target_path/$file $5
+    do_md5sum ${outfile}$4
+    wc -c $file
+    do_ffmpeg_crc $file $DEC_OPTS -i $target_path/$file $3
+}
+
 do_streamed_images()
 {
     file=${outfile}${1}pipe.$1
@@ -67,6 +78,7 @@ fi
 if [ -n "$do_mxf" ] ; then
 do_lavf mxf '-ar 48000 -bf 2 -timecode 02:56:14:13'
 do_lavf mxf '-ar 48000 -r 30000/1001 -timecode 02:56:14;13' '' 'lavf_ntsc_tc.mxf'
+do_lavf_extra mxf '-ar 48k -pix_fmt yuv422p -dct int -vcodec dvvideo -s 1440x1080' '' 'lavf_dvhd.mxf' '-ar 48k -newaudio -newaudio -newaudio'
 fi
 
 if [ -n "$do_mxf_d10" ]; then
