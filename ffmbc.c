@@ -2430,7 +2430,7 @@ static int transcode(AVFormatContext **output_files,
                      int nb_input_files,
                      StreamMap *stream_maps, int nb_stream_maps)
 {
-    int ret = 0, i, j, k, n, nb_ostreams = 0, step;
+    int ret = 0, i, j, k, n, nb_ostreams = 0, nb_max_ostreams = 0, step;
 
     AVFormatContext *is, *os;
     AVCodecContext *codec, *icodec;
@@ -2440,6 +2440,8 @@ static int transcode(AVFormatContext **output_files,
     int want_sdp = 1;
     uint8_t no_packet[MAX_FILES]={0};
     int no_packet_count=0;
+    int *audio_mapped_streams = NULL;
+    int nb_audio_mapped_streams = nb_stream_maps;
     int nb_frame_threshold[AVMEDIA_TYPE_NB]={0};
     int nb_streams[AVMEDIA_TYPE_NB]={0};
 
@@ -2458,8 +2460,45 @@ static int transcode(AVFormatContext **output_files,
             goto fail;
         }
         nb_ostreams += os->nb_streams;
+        nb_max_ostreams = FFMAX(nb_max_ostreams, os->nb_streams);
     }
-    if (nb_stream_maps > 0 && nb_stream_maps != nb_ostreams) {
+
+    /* Track streams mapped in audio channel mapping so we can count them towards
+       the total of mapped streams */
+    audio_mapped_streams = av_mallocz(nb_output_files*nb_max_ostreams*sizeof(int));
+    if (!audio_mapped_streams)
+        goto fail;
+
+    /* Sanity check audio channel mapping */
+    for (i = 0; i < nb_audio_channel_maps; i++) {
+        int fi = audio_channel_maps[i].file_index;
+        int si = audio_channel_maps[i].stream_index;
+        int ci = audio_channel_maps[i].channel_index;
+        int fo = audio_channel_maps[i].out_file_index;
+        int so = audio_channel_maps[i].out_stream_index;
+
+        /* Build array of streams touched by audio_channel_mapping */
+        if (!audio_mapped_streams[fo*nb_max_ostreams+so])
+            nb_audio_mapped_streams++;
+        audio_mapped_streams[fo*nb_max_ostreams+so] = 1;
+
+        if (fi < 0 || fi > nb_input_files - 1 ||
+            si < 0 || si > input_files[fi].ctx->nb_streams - 1) {
+            fprintf(stderr, "Could not find input stream #%d.%d\n", fi, si);
+            exit(1);
+        }
+        if (ci < 0 || ci >= input_files[fi].ctx->streams[si]->codec->channels) {
+            fprintf(stderr, "Could not find audio channel #%d.%d:%d\n", fi, si, ci);
+            exit(1);
+        }
+        if (fo < 0 || fo > nb_output_files - 1 ||
+            so < 0 || so > output_files[fo]->nb_streams - 1) {
+            fprintf(stderr, "Could not find output stream #%d.%d\n", fo, so);
+            exit(1);
+        }
+    }
+
+    if (nb_stream_maps > 0 && nb_audio_mapped_streams != nb_ostreams) {
         fprintf(stderr, "Number of stream maps must match number of output streams\n");
         ret = AVERROR(EINVAL);
         goto fail;
@@ -2483,30 +2522,6 @@ static int transcode(AVFormatContext **output_files,
             fprintf(stderr,"Could not find sync stream #%d.%d\n", fi, si);
             ret = AVERROR(EINVAL);
             goto fail;
-        }
-    }
-
-    /* Sanity check audio channel mapping */
-    for(i=0;i<nb_audio_channel_maps;i++) {
-        int fi = audio_channel_maps[i].file_index;
-        int si = audio_channel_maps[i].stream_index;
-        int ci = audio_channel_maps[i].channel_index;
-        int fo = audio_channel_maps[i].out_file_index;
-        int so = audio_channel_maps[i].out_stream_index;
-
-        if (fi < 0 || fi > nb_input_files - 1 ||
-            si < 0 || si > input_files[fi].ctx->nb_streams - 1) {
-            fprintf(stderr,"Could not find input stream #%d.%d\n", fi, si);
-            exit(1);
-        }
-        if (ci < 0 || ci >= input_files[fi].ctx->streams[si]->codec->channels) {
-            fprintf(stderr,"Could not find audio channel #%d.%d:%d\n", fi, si, ci);
-            exit(1);
-        }
-        if (fo < 0 || fo > nb_output_files - 1 ||
-            so < 0 || so > output_files[fo]->nb_streams - 1) {
-            fprintf(stderr,"Could not find output stream #%d.%d\n", fo, so);
-            exit(1);
         }
     }
 
@@ -2556,7 +2571,9 @@ static int transcode(AVFormatContext **output_files,
         for(i=0;i<os->nb_streams;i++,n++) {
             int found;
             ost = ost_table[n] = output_streams_for_file[k][i];
-            if (nb_stream_maps > 0) {
+            if (nb_stream_maps > 0 &&
+                /* if we're audio mapping the stream, don't go looking for an ordinary map */
+                !audio_mapped_streams[ost->file_index*nb_max_ostreams+ost->index]) {
                 ost->source_index[0] = input_files[stream_maps[n].file_index].ist_index +
                     stream_maps[n].stream_index;
                 ost->nb_source_indexes = 1;
@@ -2570,7 +2587,7 @@ static int transcode(AVFormatContext **output_files,
                         ost->file_index, ost->index);
                     ffmpeg_exit(1);
                 }
-            } else if (ost->st->codec->codec_type == AVMEDIA_TYPE_AUDIO && nb_audio_channel_maps > 0) {
+            } else if (audio_mapped_streams[ost->file_index*nb_max_ostreams+ost->index]) {
                 for(j=0;j<nb_audio_channel_maps;j++) {
                     AudioChannelMap *m = &audio_channel_maps[j];
                     if (ost->file_index == m->out_file_index &&
@@ -2661,11 +2678,15 @@ static int transcode(AVFormatContext **output_files,
                         ost->file_index, ost->index);
                 ffmpeg_exit(1);
             }
-            ost->sync_ist = (nb_stream_maps > 0) ?
+            ost->sync_ist = (nb_stream_maps > 0 &&
+                             /* if we're audio_mapping the stream, don't go looking for an ordinary map */
+                             !audio_mapped_streams[ost->file_index*nb_max_ostreams+ost->index]) ?
                 &input_streams[input_files[stream_maps[n].sync_file_index].ist_index +
                                stream_maps[n].sync_stream_index] : &input_streams[ost->source_index[0]];
         }
     }
+
+    av_freep(&audio_mapped_streams);
 
     /* for each output stream, we compute the right encoding parameters */
     for(i=0;i<nb_ostreams;i++) {
