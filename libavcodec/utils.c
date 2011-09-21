@@ -1052,19 +1052,16 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
         /* fake mpeg2 transport stream codec (currently not
            registered) */
         codec_name = "mpeg2ts";
-    } else if (enc->codec_name[0] != '\0') {
-        codec_name = enc->codec_name;
     } else {
         if(   isprint(enc->codec_tag&0xFF) && isprint((enc->codec_tag>>8)&0xFF)
            && isprint((enc->codec_tag>>16)&0xFF) && isprint((enc->codec_tag>>24)&0xFF)){
-            snprintf(buf1, sizeof(buf1), "%c%c%c%c / 0x%04X",
+            snprintf(buf1, sizeof(buf1), "unknown (%c%c%c%c)",
                      enc->codec_tag & 0xff,
                      (enc->codec_tag >> 8) & 0xff,
                      (enc->codec_tag >> 16) & 0xff,
-                     (enc->codec_tag >> 24) & 0xff,
-                      enc->codec_tag);
+                     (enc->codec_tag >> 24) & 0xff);
         } else {
-            snprintf(buf1, sizeof(buf1), "0x%04x", enc->codec_tag);
+            snprintf(buf1, sizeof(buf1), "unknown (0x%04x)", enc->codec_tag);
         }
         codec_name = buf1;
     }
