@@ -159,6 +159,7 @@ External library support:
   --enable-bzlib           enable bzlib [autodetect]
   --enable-libcelt         enable CELT/Opus decoding via libcelt [no]
   --enable-frei0r          enable frei0r video filtering
+  --enable-libass          enable libass font rendering [no]
   --enable-libopencv       enable video filtering via libopencv [no]
   --enable-libdc1394       enable IIDC-1394 grabbing using libdc1394
                            and libraw1394 [no]
@@ -921,6 +922,7 @@ CONFIG_LIST="
     h264pred
     hardcoded_tables
     huffman
+    libass
     libcelt
     libdc1394
     libdirac
@@ -1491,6 +1493,7 @@ mp_filter_deps="gpl avcodec"
 negate_filter_deps="lut_filter"
 ocv_filter_deps="libopencv"
 scale_filter_deps="swscale"
+sub_filter_deps="libass"
 tinterlace_filter_deps="gpl"
 yadif_filter_deps="gpl"
 
@@ -2869,6 +2872,7 @@ check_mathfunc truncf
 enabled avisynth   && require2 vfw32 "windows.h vfw.h" AVIFileInit -lavifil32
 enabled libcelt    && require libcelt celt/celt.h celt_decode -lcelt0
 enabled frei0r     && { check_header frei0r.h || die "ERROR: frei0r.h header not found"; }
+enabled libass     && require_pkg_config libass ass/ass.h ass_library_init
 enabled libdc1394  && require_pkg_config libdc1394-2 dc1394/dc1394.h dc1394_new
 enabled libdirac   && require_pkg_config dirac                          \
     "libdirac_decoder/dirac_parser.h libdirac_encoder/dirac_encoder.h"  \
