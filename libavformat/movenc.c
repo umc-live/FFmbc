@@ -967,14 +967,14 @@ static int mov_write_rtp_tag(AVIOContext *pb, MOVTrack *track)
 }
 
 static int mov_write_mac_string(AVIOContext *pb, const char *name,
-                                const char *value, const char *lang)
+                                const char *value, const char *lang, int utf8)
 {
     int64_t pos = avio_tell(pb);
     unsigned len = strlen(value);
     avio_wb32(pb, 0); /* size */
     avio_wtag(pb, name);
     avio_wb16(pb, len); /* string length */
-    avio_wb16(pb, ff_mov_iso639_to_lang(lang, 0));
+    avio_wb16(pb, ff_mov_iso639_to_lang(lang, utf8));
     avio_write(pb, value, len);
     return updateSize(pb, pos);
 }
@@ -994,9 +994,10 @@ static int mov_write_tmcd_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tra
     avio_wb32(pb, track->enc->time_base.num); /* frame duration */
     avio_w8(pb, av_rescale_rnd(track->timescale, 1, track->enc->time_base.num, AV_ROUND_UP)); /* number of frames */
     avio_w8(pb, 0);
-    if (t)
-        mov_write_mac_string(pb, "name", t->value,
-                             av_metadata_get_attribute(t, "language"));
+    if (t) {
+        const char *language = av_metadata_get_attribute(t, "language");
+        mov_write_mac_string(pb, "name", t->value, language, 0);
+    }
     return updateSize(pb, pos);
 }
 
@@ -1687,7 +1688,8 @@ static int mov_write_3gp_metadata(AVFormatContext *s, AVIOContext *pb,
     if (!strcmp(tag, "yrrc"))
         avio_wb16(pb, atoi(t->value));
     else {
-        avio_wb16(pb, ff_mov_iso639_to_lang(av_metadata_get_attribute(t, "language"), 1));
+        const char *language = av_metadata_get_attribute(t, "language");
+        avio_wb16(pb, ff_mov_iso639_to_lang(language, 1));
         avio_write(pb, t->value, len+1); /* UTF8 string value */
         if (!strcmp(tag, "albm") &&
             (t = av_dict_get(s->metadata, "track", NULL, 0)))
@@ -1715,10 +1717,10 @@ static int mov_write_metadata(AVFormatContext *s, AVIOContext *pb,
     if (!t || !t->value || !strlen(t->value))
         return 0;
 
-    if (mov->mode & MODE_MOV)
-        return mov_write_mac_string(pb, name, t->value,
-                                    av_metadata_get_attribute(t, "language"));
-    else
+    if (mov->mode & MODE_MOV) {
+        const char *language = av_metadata_get_attribute(t, "language");
+        return mov_write_mac_string(pb, name, t->value, language, 1);
+    } else
         return mov_write_itunes_string(pb, name, t->value);
 }
 
@@ -2498,11 +2500,10 @@ static int mov_write_header(AVFormatContext *s)
         AVStream *st= s->streams[i];
         MOVTrack *track= &mov->tracks[i];
         AVDictionaryEntry *lang = av_dict_get(st->metadata, "language", NULL,0);
+        const char *language = lang ? lang->value : NULL;
 
         track->enc = st->codec;
-        track->language = ff_mov_iso639_to_lang(lang?lang->value:"und", mov->mode!=MODE_MOV);
-        if (track->language < 0)
-            track->language = 0;
+        track->language = ff_mov_iso639_to_lang(language, !(mov->mode & (MODE_MOV|MODE_IPOD)));
         track->mode = mov->mode;
         track->tag = mov_find_codec_tag(s, track);
         if (!track->tag) {

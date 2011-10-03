@@ -34,7 +34,8 @@ extern const AVCodecTag codec_movvideo_tags[];
 extern const AVCodecTag codec_movaudio_tags[];
 extern const AVCodecTag ff_codec_movsubtitle_tags[];
 
-int ff_mov_iso639_to_lang(const char *lang, int mp4);
+/* iso code is wanted when metadata is utf-8 */
+int ff_mov_iso639_to_lang(const char *lang, int iso_code);
 int ff_mov_lang_to_iso639(unsigned code, char to[4]);
 
 /* the QuickTime file format is quite convoluted...

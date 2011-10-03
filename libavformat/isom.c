@@ -27,6 +27,7 @@
 #include "internal.h"
 #include "isom.h"
 #include "riff.h"
+#include "avlanguage.h"
 #include "libavcodec/mpeg4audio.h"
 #include "libavcodec/mpegaudiodata.h"
 
@@ -275,13 +276,13 @@ const AVCodecTag ff_codec_movsubtitle_tags[] = {
     { CODEC_ID_NONE, 0 },
 };
 
-/* map numeric codes from mdhd atom to ISO 639 */
+/* map numeric codes from mdhd atom to ISO 639-2/B */
 /* cf. QTFileFormat.pdf p253, qtff.pdf p205 */
 /* http://developer.apple.com/documentation/mac/Text/Text-368.html */
 /* deprecated by putting the code as 3*5bit ascii */
 static const char mov_mdhd_language_map[][4] = {
     /* 0-9 */
-    "eng", "fra", "ger", "ita", "dut", "sve", "spa", "dan", "por", "nor",
+    "eng", "fre", "ger", "ita", "dut", "sve", "spa", "dan", "por", "nor",
     "heb", "jpn", "ara", "fin", "gre", "ice", "mlt", "tur", "hr "/*scr*/, "chi"/*ace?*/,
     "urd", "hin", "tha", "kor", "lit", "pol", "hun", "est", "lav",    "",
     "fo ",    "", "rus", "chi",    "", "iri", "alb", "ron", "ces", "slk",
@@ -301,18 +302,20 @@ static const char mov_mdhd_language_map[][4] = {
     "cat", "lat", "que", "grn", "aym", "tat", "uig", "dzo", "jav"
 };
 
-int ff_mov_iso639_to_lang(const char *lang, int mp4)
+int ff_mov_iso639_to_lang(const char *lang, int iso_code)
 {
     int i, code = 0;
 
-    /* old way, only for QT? */
-    for (i = 0; lang && !mp4 && i < FF_ARRAY_ELEMS(mov_mdhd_language_map); i++) {
-        if (!strcmp(lang, mov_mdhd_language_map[i]))
-            return i;
+    if (!iso_code) {
+        lang = av_convert_lang_to(lang, AV_LANG_ISO639_2_BIBL);
+        for (i = 0; lang && i < FF_ARRAY_ELEMS(mov_mdhd_language_map); i++) {
+            if (!strcmp(lang, mov_mdhd_language_map[i]))
+                return i;
+        }
+        return 0;
     }
-    /* XXX:can we do that in mov too? */
-    if (!mp4)
-        return -1;
+    if (lang)
+        lang = av_convert_lang_to(lang, AV_LANG_ISO639_2_TERM);
     /* handle undefined as such */
     if (!lang)
         lang = "und";

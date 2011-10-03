@@ -1,4 +1,4 @@
-fa99ca82366d0f9231608599fbad1275 *./tests/data/acodec/alac.m4a
+6aa0f554992f5235b8d93cd197639ae7 *./tests/data/acodec/alac.m4a
 389422 ./tests/data/acodec/alac.m4a
 95e54b261530a1bcf6de6fe3b21dc5f6 *./tests/data/alac.acodec.out.wav
 stddev:    0.00 PSNR:999.99 MAXDIFF:    0 bytes:  1058400/  1058400
