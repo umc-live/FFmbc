@@ -1,0 +1,4 @@
+dfe1fd8a63c1a38ef1213d7fc2bf4c59 *./tests/data/vsynth2/prores-422.mov
+890369 ./tests/data/vsynth2/prores-422.mov
+d331419b4b591f4758fbcaca0e5a25eb *./tests/data/prores_422.vsynth2.out.yuv
+stddev:    0.39 PSNR: 56.28 MAXDIFF:    5 bytes:   760320/  7603200

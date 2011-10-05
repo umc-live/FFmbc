@@ -1,0 +1,4 @@
+e0cad248c8e999fe07ce0e9457c9bc09 *./tests/data/vsynth1/prores-444.mov
+1356794 ./tests/data/vsynth1/prores-444.mov
+558515827a1bc039d0456e66bb6777a8 *./tests/data/prores_444.vsynth1.out.yuv
+stddev:    2.71 PSNR: 39.47 MAXDIFF:   37 bytes:   760320/  7603200

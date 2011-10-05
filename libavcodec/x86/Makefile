@@ -59,6 +59,7 @@ OBJS-$(HAVE_MMX)                       += x86/dsputil_mmx.o             \
                                           x86/idct_mmx_xvid.o           \
                                           x86/idct_sse2_xvid.o          \
                                           x86/idct10_sse2_xvid.o        \
+                                          x86/fdct10_mmx.o              \
                                           x86/motion_est_mmx.o          \
                                           x86/mpegvideo_mmx.o           \
                                           x86/simple_idct_mmx.o         \

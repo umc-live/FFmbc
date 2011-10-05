@@ -54,6 +54,7 @@ void ff_wmv2_idct_c(DCTELEM *data);
 void ff_fdct_mmx(DCTELEM *block);
 void ff_fdct_mmx2(DCTELEM *block);
 void ff_fdct_sse2(DCTELEM *block);
+void ff_fdct_10_sse2(DCTELEM *block);
 
 #define H264_IDCT(depth) \
 void ff_h264_idct8_add_ ## depth ## _c(uint8_t *dst, DCTELEM *block, int stride);\

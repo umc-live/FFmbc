@@ -1560,6 +1560,7 @@ test_deps _encoder _decoder                                             \
     pgm="pgm pgmpipe"                                                   \
     png                                                                 \
     ppm="ppm ppmpipe"                                                   \
+    prores="prores_422 prores_444"                                      \
     rawvideo="rgb yuv"                                                  \
     roq                                                                 \
     rv10                                                                \

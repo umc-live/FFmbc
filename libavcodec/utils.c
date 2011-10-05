@@ -1024,6 +1024,7 @@ static int encoder_supports_global_quality(AVCodecContext *avctx)
         avctx->codec_id == CODEC_ID_MSMPEG4V1 ||
         avctx->codec_id == CODEC_ID_MSMPEG4V2 ||
         avctx->codec_id == CODEC_ID_MSMPEG4V3 ||
+        avctx->codec_id == CODEC_ID_PRORES ||
         avctx->codec_id == CODEC_ID_RV10 ||
         avctx->codec_id == CODEC_ID_RV20 ||
         avctx->codec_id == CODEC_ID_WMV1 ||
