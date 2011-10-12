@@ -362,9 +362,8 @@ static int wav_parse_bext_tag(AVFormatContext *s, int64_t size)
             return ret;
 
         coding_history[size] = 0;
-        if ((ret = av_dict_set(&s->metadata, "coding_history", coding_history,
-                               AV_DICT_DONT_STRDUP_VAL)) < 0)
-            return ret;
+        av_dict_set(&s->metadata, "coding_history", coding_history,
+                    AV_DICT_DONT_STRDUP_VAL);
     }
 
     return 0;
