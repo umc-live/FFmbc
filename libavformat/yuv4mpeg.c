@@ -189,7 +189,7 @@ AVOutputFormat ff_yuv4mpegpipe_muxer = {
 #endif
 
 /* Header size increased to allow room for optional flags */
-#define MAX_YUV4_HEADER 80
+#define MAX_YUV4_HEADER 150
 #define MAX_FRAME_HEADER 80
 
 static int yuv4_read_header(AVFormatContext *s, AVFormatParameters *ap)
