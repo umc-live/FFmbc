@@ -224,22 +224,22 @@ do_video_decoding "" "-s cif -pix_fmt yuv420p"
 fi
 
 if [ -n "$do_dnxhd_1080i" ] ; then
-do_video_encoding dnxhd-1080i.dnxhd "-vcodec dnxhd -tff -s hd1080 -b 120M -pix_fmt yuv422p -vframes 5 -an"
+do_video_encoding dnxhd-1080i.dnxhd "-dct int -vcodec dnxhd -tff -s hd1080 -b 120M -pix_fmt yuv422p -vframes 5 -an"
 do_video_decoding "" "-s cif -pix_fmt yuv420p"
 fi
 
 if [ -n "$do_dnxhd_720p" ] ; then
-do_video_encoding dnxhd-720p.dnxhd "-s hd720 -b 90M -pix_fmt yuv422p -vframes 5 -an"
+do_video_encoding dnxhd-720p.dnxhd "-dct int -s hd720 -b 90M -pix_fmt yuv422p -vframes 5 -an"
 do_video_decoding "" "-s cif -pix_fmt yuv420p"
 fi
 
 if [ -n "$do_dnxhd_720p_rd" ] ; then
-do_video_encoding dnxhd-720p-rd.dnxhd "-threads 4 -mbd rd -s hd720 -b 90M -pix_fmt yuv422p -vframes 5 -an"
+do_video_encoding dnxhd-720p-rd.dnxhd "-dct int -threads 4 -mbd rd -s hd720 -b 90M -pix_fmt yuv422p -vframes 5 -an"
 do_video_decoding "" "-s cif -pix_fmt yuv420p"
 fi
 
 if [ -n "$do_dnxhd_720p_10bit" ] ; then
-do_video_encoding dnxhd-720p-10bit.dnxhd "-s hd720 -b 90M -pix_fmt yuv422p10 -vframes 5 -an"
+do_video_encoding dnxhd-720p-10bit.dnxhd "-dct int -s hd720 -b 90M -pix_fmt yuv422p10 -vframes 5 -an"
 do_video_decoding "" "-s cif -pix_fmt yuv420p"
 fi
 

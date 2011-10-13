@@ -25,8 +25,8 @@
 #define AVCODEC_DNXHDENC_H
 
 #include <stdint.h>
-
-#include "mpegvideo.h"
+#include "dsputil.h"
+#include "put_bits.h"
 #include "dnxhddata.h"
 
 typedef struct {
@@ -51,7 +51,7 @@ typedef struct DNXHDEncContext {
     uint32_t *slice_size;
     uint32_t *slice_offs;
 
-    struct DNXHDEncContext *thread[MAX_THREADS];
+    struct DNXHDEncContext **thread;
 
     // Because our samples are either 8 or 16 bits for 8-bit and 10-bit
     // encoding respectively, these refer either to bytes or to two-byte words.

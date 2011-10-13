@@ -2875,7 +2875,8 @@ av_cold void dsputil_init(DSPContext* c, AVCodecContext *avctx)
         c->idct_permutation_type= FF_NO_IDCT_PERM;
     }else{
         if (avctx->bits_per_raw_sample == 10) {
-            if (avctx->codec_id == CODEC_ID_PRORES)
+            if (avctx->codec_id == CODEC_ID_PRORES ||
+                avctx->codec_id == CODEC_ID_DNXHD)
                 c->idct_put          = ff_simple_idct_put_clamped_10;
             else
                 c->idct_put          = ff_simple_idct_put_10;

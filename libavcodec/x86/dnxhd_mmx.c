@@ -52,6 +52,27 @@ static void get_pixels_8x4_sym_sse2(DCTELEM *block, const uint8_t *pixels, int l
     );
 }
 
+static void get_pixels_8x4_sym_sse2_10(DCTELEM *block, const uint8_t *pixels, int line_size)
+{
+    __asm__ volatile(
+        "movdqu (%0),      %%xmm0       \n\t"
+        "movdqu (%0,%2),   %%xmm1       \n\t"
+        "movdqu (%0,%2,2), %%xmm2       \n\t"
+        "movdqu (%0,%3),   %%xmm3       \n\t"
+        "lea (%0,%2,4), %0              \n\t"
+        "movdqa %%xmm0,   0(%1)         \n\t"
+        "movdqa %%xmm1,  16(%1)         \n\t"
+        "movdqa %%xmm2,  32(%1)         \n\t"
+        "movdqa %%xmm3,  48(%1)         \n\t"
+        "movdqa %%xmm3,  64(%1)         \n\t"
+        "movdqa %%xmm2,  80(%1)         \n\t"
+        "movdqa %%xmm1,  96(%1)         \n\t"
+        "movdqa %%xmm0, 112(%1)         \n\t"
+        : "+r" (pixels)
+        : "r" (block), "r" ((x86_reg)line_size), "r" ((x86_reg)line_size*3)
+    );
+}
+
 #if HAVE_SSSE3
 #define HAVE_SSSE3_BAK
 #endif
@@ -115,5 +136,8 @@ void ff_dnxhd_init_mmx(DNXHDEncContext *ctx)
                     ctx->dct_quantize = dct_quantize_MMX;
                 }
         }
+    } else if (ctx->cid_table->bit_depth == 10) {
+        if (mm_flags & AV_CPU_FLAG_SSE2)
+            ctx->get_pixels_8x4_sym = get_pixels_8x4_sym_sse2_10;
     }
 }

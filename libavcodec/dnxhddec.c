@@ -30,6 +30,10 @@
 #include "get_bits.h"
 #include "dnxhddata.h"
 #include "dsputil.h"
+#include "simple_idct.h"
+#include "libavutil/x86_cpu.h"
+#include "x86/dsputil_mmx.h"
+#include "x86/idct_xvid.h"
 
 typedef struct DNXHDContext {
     AVCodecContext *avctx;
@@ -44,9 +48,8 @@ typedef struct DNXHDContext {
     int last_dc[3];
     DSPContext dsp;
     DECLARE_ALIGNED(16, DCTELEM, blocks)[8][64];
-    ScanTable scantable;
+    uint8_t scan[64];
     const CIDEntry *cid_table;
-    int bit_depth; // 8, 10 or 0 if not initialized at all.
     void (*decode_dct_block)(struct DNXHDContext *ctx, DCTELEM *block,
                              int n, int qscale);
 } DNXHDContext;
@@ -56,6 +59,13 @@ typedef struct DNXHDContext {
 
 static void dnxhd_decode_dct_block_8(DNXHDContext *ctx, DCTELEM *block, int n, int qscale);
 static void dnxhd_decode_dct_block_10(DNXHDContext *ctx, DCTELEM *block, int n, int qscale);
+
+static void permute(uint8_t *dst, const uint8_t *src, const uint8_t permutation[64])
+{
+    int i;
+    for (i = 0; i < 64; i++)
+        dst[i] = permutation[src[i]];
+}
 
 static av_cold int dnxhd_decode_init(AVCodecContext *avctx)
 {
@@ -87,14 +97,13 @@ static int dnxhd_init_vlc(DNXHDContext *ctx, int cid)
         init_vlc(&ctx->ac_vlc, DNXHD_VLC_BITS, 257,
                  ctx->cid_table->ac_bits, 1, 1,
                  ctx->cid_table->ac_codes, 2, 2, 0);
-        init_vlc(&ctx->dc_vlc, DNXHD_DC_VLC_BITS, ctx->bit_depth + 4,
+        init_vlc(&ctx->dc_vlc, DNXHD_DC_VLC_BITS, ctx->cid_table->bit_depth + 4,
                  ctx->cid_table->dc_bits, 1, 1,
                  ctx->cid_table->dc_codes, 1, 1, 0);
         init_vlc(&ctx->run_vlc, DNXHD_VLC_BITS, 62,
                  ctx->cid_table->run_bits, 1, 1,
                  ctx->cid_table->run_codes, 2, 2, 0);
 
-        ff_init_scantable(ctx->dsp.idct_permutation, &ctx->scantable, ff_zigzag_direct);
         ctx->cid = cid;
     }
     return 0;
@@ -127,20 +136,16 @@ static int dnxhd_decode_header(DNXHDContext *ctx, const uint8_t *buf, int buf_si
     if (buf[0x21] & 0x40) {
         ctx->avctx->pix_fmt = PIX_FMT_YUV422P10;
         ctx->avctx->bits_per_raw_sample = 10;
-        if (ctx->bit_depth != 10) {
-            dsputil_init(&ctx->dsp, ctx->avctx);
-            ctx->bit_depth = 10;
-            ctx->decode_dct_block = dnxhd_decode_dct_block_10;
-        }
+        ctx->decode_dct_block = dnxhd_decode_dct_block_10;
     } else {
         ctx->avctx->pix_fmt = PIX_FMT_YUV422P;
         ctx->avctx->bits_per_raw_sample = 8;
-        if (ctx->bit_depth != 8) {
-            dsputil_init(&ctx->dsp, ctx->avctx);
-            ctx->bit_depth = 8;
-            ctx->decode_dct_block = dnxhd_decode_dct_block_8;
-        }
+        ctx->decode_dct_block = dnxhd_decode_dct_block_8;
     }
+
+    dsputil_init(&ctx->dsp, ctx->avctx);
+
+    permute(ctx->scan, ff_zigzag_direct, ctx->dsp.idct_permutation);
 
     cid = AV_RB32(buf + 0x28);
     av_dlog(ctx->avctx, "compression id %d\n", cid);
@@ -242,16 +247,16 @@ static av_always_inline void dnxhd_decode_dct_block(DNXHDContext *ctx,
             break;
         }
 
-        j = ctx->scantable.permutated[i];
+        j = ff_zigzag_direct[i];
         //av_log(ctx->avctx, AV_LOG_DEBUG, "j %d\n", j);
-        //av_log(ctx->avctx, AV_LOG_DEBUG, "level %d, weight %d\n", level, weight_matrix[i]);
-        level = (2*level+1) * qscale * weight_matrix[i];
-        if (level_bias < 32 || weight_matrix[i] != level_bias)
+        //av_log(ctx->avctx, AV_LOG_DEBUG, "level %d, weight %d\n", level, weight_matrix[j]);
+        level = (2*level+1) * qscale * weight_matrix[j];
+        if (weight_matrix[j] != level_bias)
             level += level_bias;
         level >>= level_shift;
 
         //av_log(NULL, AV_LOG_DEBUG, "i %d, j %d, end level %d\n", i, j, level);
-        block[j] = (level^sign) - sign;
+        block[ctx->scan[i]] = (level^sign) - sign;
     }
 
     CLOSE_READER(bs, &ctx->gb);
@@ -271,7 +276,7 @@ static void dnxhd_decode_dct_block_10(DNXHDContext *ctx, DCTELEM *block,
 
 static int dnxhd_decode_macroblock(DNXHDContext *ctx, int x, int y)
 {
-    int shift1 = ctx->bit_depth == 10;
+    int shift1 = ctx->cid_table->bit_depth == 10;
     int dct_linesize_luma   = ctx->picture.linesize[0];
     int dct_linesize_chroma = ctx->picture.linesize[1];
     uint8_t *dest_y, *dest_u, *dest_v;
@@ -326,7 +331,7 @@ static int dnxhd_decode_macroblocks(DNXHDContext *ctx, const uint8_t *buf, int b
     for (y = 0; y < ctx->mb_height; y++) {
         ctx->last_dc[0] =
         ctx->last_dc[1] =
-        ctx->last_dc[2] = 1 << (ctx->bit_depth + 2); // for levels +2^(bitdepth-1)
+        ctx->last_dc[2] = 1 << (ctx->cid_table->bit_depth + 2); // for levels +2^(bitdepth-1)
         init_get_bits(&ctx->gb, buf + ctx->mb_scan_index[y], (buf_size - ctx->mb_scan_index[y]) << 3);
         for (x = 0; x < ctx->mb_width; x++) {
             //START_TIMER;

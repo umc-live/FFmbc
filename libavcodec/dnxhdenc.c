@@ -28,11 +28,9 @@
 
 #include "libavutil/opt.h"
 #include "avcodec.h"
-#include "dsputil.h"
 #include "dnxhdenc.h"
 
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
-#define DNX10BIT_QMAT_SHIFT 18 // The largest value that will not lead to overflow for 10bit samples.
 
 static const AVOption options[]={
     {"nitris_compat", "encode with Avid Nitris compatibility", offsetof(DNXHDEncContext, nitris_compat), FF_OPT_TYPE_INT, {.dbl = 0}, 0, 1, VE},
@@ -40,6 +38,10 @@ static const AVOption options[]={
 {NULL}
 };
 static const AVClass class = { "dnxhd", av_default_item_name, options, LIBAVUTIL_VERSION_INT };
+
+#define QUANT_BIAS_SHIFT 8
+#define QMAT_SHIFT_MMX 16
+#define QMAT_SHIFT 18
 
 static int dnxhd_dct_quantize(DNXHDEncContext *ctx, DCTELEM *block, int qscale)
 {
@@ -52,11 +54,14 @@ static int dnxhd_dct_quantize(DNXHDEncContext *ctx, DCTELEM *block, int qscale)
 
     ctx->dsp.fdct(block);
 
-    block[0] = (block[0] + 4) >> 3;
+    if (ctx->cid_table->bit_depth == 8)
+        block[0] = (block[0] + 4) >> 3;
+    else
+        block[0] = (block[0] + 2) >> 2;
 
     for (int i = 1; i < 64; ++i) {
         int j = scantable[i];
-        int level = block[j] * qmat[j];
+        int level = block[j] * qmat[ff_zigzag_direct[i]];
         if ((unsigned)(level+threshold1) > threshold2) {
             if (level > 0) {
                 level = (bias + level)>>QMAT_SHIFT;
@@ -71,12 +76,16 @@ static int dnxhd_dct_quantize(DNXHDEncContext *ctx, DCTELEM *block, int qscale)
         }
     }
 
+    /* we need this permutation so that we correct the IDCT, we only permute the !=0 elements */
+    if (ctx->dsp.idct_permutation_type != FF_NO_IDCT_PERM)
+        ff_block_permute(block, ctx->dsp.idct_permutation, scantable, last_non_zero);
+
     return last_non_zero;
 }
 
 #define LAMBDA_FRAC_BITS 10
 
-static void dnxhd_8bit_get_pixels_8x4_sym(DCTELEM *restrict block, const uint8_t *pixels, int line_size)
+static void dnxhd_get_pixels_8x4_sym_8(DCTELEM *restrict block, const uint8_t *pixels, int line_size)
 {
     int i;
     for (i = 0; i < 4; i++) {
@@ -93,7 +102,7 @@ static void dnxhd_8bit_get_pixels_8x4_sym(DCTELEM *restrict block, const uint8_t
     memcpy(block + 24, block - 32, sizeof(*block) * 8);
 }
 
-static av_always_inline void dnxhd_10bit_get_pixels_8x4_sym(DCTELEM *restrict block, const uint8_t *pixels, int line_size)
+static void dnxhd_get_pixels_8x4_sym_10(DCTELEM *restrict block, const uint8_t *pixels, int line_size)
 {
     int i;
 
@@ -103,33 +112,6 @@ static av_always_inline void dnxhd_10bit_get_pixels_8x4_sym(DCTELEM *restrict bl
         memcpy(block + i     * 8, pixels + i * line_size, 8 * sizeof(*block));
         memcpy(block - (i+1) * 8, pixels + i * line_size, 8 * sizeof(*block));
     }
-}
-
-static int dnxhd_10bit_dct_quantize(DNXHDEncContext *ctx, DCTELEM *block, int qscale)
-{
-    const uint8_t *scantable= ctx->intra_scantable.scantable;
-    const int *qmat = ctx->q_intra_matrix[qscale];
-    int last_non_zero = 0;
-
-    ctx->dsp.fdct(block);
-
-    // Divide by 4 with rounding, to compensate scaling of DCT coefficients
-    block[0] = (block[0] + 2) >> 2;
-
-    for (int i = 1; i < 64; ++i) {
-        int j = scantable[i];
-        int sign = block[j] >> 31;
-        int level = (block[j] ^ sign) - sign;
-        if (level) {
-            level = level * qmat[j] >> DNX10BIT_QMAT_SHIFT;
-            block[j] = (level ^ sign) - sign;
-            last_non_zero = i;
-        } else {
-            block[j] = 0;
-        }
-    }
-
-    return last_non_zero;
 }
 
 static int dnxhd_init_vlc(DNXHDEncContext *ctx)
@@ -189,11 +171,8 @@ static int dnxhd_init_vlc(DNXHDEncContext *ctx)
 
 static int dnxhd_init_qmat(DNXHDEncContext *ctx, int lbias, int cbias)
 {
-    // init first elem to 1 to avoid div by 0 in convert_matrix
-    uint16_t weight_matrix[64] = {1,}; // convert_matrix needs uint16_t*
-    int qscale, i;
-    const uint8_t *luma_weight_table   = ctx->cid_table->luma_weight;
-    const uint8_t *chroma_weight_table = ctx->cid_table->chroma_weight;
+    int64_t num = ctx->cid_table->bit_depth == 8 ? 4 : 2;
+    int q, i;
 
     if (!ctx->qmax)
         ctx->avctx->qmax = ctx->qmax = ctx->avctx->mb_decision == FF_MB_DECISION_RD ? 31 : 1024;
@@ -203,36 +182,16 @@ static int dnxhd_init_qmat(DNXHDEncContext *ctx, int lbias, int cbias)
     FF_ALLOCZ_OR_GOTO(ctx->avctx, ctx->qmatrix_l16, (ctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
     FF_ALLOCZ_OR_GOTO(ctx->avctx, ctx->qmatrix_c16, (ctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
 
-    if (ctx->cid_table->bit_depth == 8) {
+    for (q = 1; q <= ctx->qmax; q++) {
         for (i = 1; i < 64; i++) {
-            int j = ctx->dsp.idct_permutation[ff_zigzag_direct[i]];
-            weight_matrix[j] = ctx->cid_table->luma_weight[i];
-        }
-        ff_convert_matrix(&ctx->dsp, ctx->qmatrix_l, ctx->qmatrix_l16, NULL, weight_matrix,
-                          ctx->intra_quant_bias, 1, ctx->avctx->qmax, 1, 4);
-        for (i = 1; i < 64; i++) {
-            int j = ctx->dsp.idct_permutation[ff_zigzag_direct[i]];
-            weight_matrix[j] = ctx->cid_table->chroma_weight[i];
-        }
-        ff_convert_matrix(&ctx->dsp, ctx->qmatrix_c, ctx->qmatrix_c16, NULL, weight_matrix,
-                          ctx->intra_quant_bias, 1, ctx->avctx->qmax, 1, 4);
-    } else {
-        // 10-bit
-        for (qscale = 1; qscale <= ctx->avctx->qmax; qscale++) {
-            for (i = 1; i < 64; i++) {
-                int j = ctx->dsp.idct_permutation[ff_zigzag_direct[i]];
+            const int bias = ctx->intra_quant_bias;
+            ctx->qmatrix_l[q][i] = (num << QMAT_SHIFT) / (q * ctx->cid_table->luma_weight[i]);
+            ctx->qmatrix_c[q][i] = (num << QMAT_SHIFT) / (q * ctx->cid_table->chroma_weight[i]);
 
-                // The quantization formula from the VC-3 standard is:
-                // quantized = sign(block[i]) * floor(abs(block[i]/s) * p / (qscale * weight_table[i]))
-                // Where p is 32 for 8-bit samples and 8 for 10-bit ones.
-                // The s factor compensates scaling of DCT coefficients done by the DCT routines,
-                // and therefore is not present in standard.  It's 8 for 8-bit samples and 4 for 10-bit ones.
-                // We want values of ctx->qtmatrix_l and ctx->qtmatrix_r to be:
-                // ((1 << DNX10BIT_QMAT_SHIFT) * (p / s)) / (qscale * weight_table[i])
-                // For 10-bit samples, p / s == 2
-                ctx->qmatrix_l[qscale][j] = (1 << (DNX10BIT_QMAT_SHIFT + 1)) / (qscale * luma_weight_table[i]);
-                ctx->qmatrix_c[qscale][j] = (1 << (DNX10BIT_QMAT_SHIFT + 1)) / (qscale * chroma_weight_table[i]);
-            }
+            ctx->qmatrix_l16[q][0][i]= (num << QMAT_SHIFT_MMX) / (q * ctx->cid_table->luma_weight[i]);
+            ctx->qmatrix_l16[q][1][i] = ROUNDED_DIV(bias<<(16-QUANT_BIAS_SHIFT), ctx->qmatrix_l16[q][0][i]);
+            ctx->qmatrix_c16[q][0][i]= (num << QMAT_SHIFT_MMX) / (q * ctx->cid_table->chroma_weight[i]);
+            ctx->qmatrix_c16[q][1][i] = ROUNDED_DIV(bias<<(16-QUANT_BIAS_SHIFT), ctx->qmatrix_c16[q][0][i]);
         }
     }
 
@@ -324,6 +283,14 @@ static int dnxhd_encode_init(AVCodecContext *avctx)
 
     avctx->bits_per_raw_sample = ctx->cid_table->bit_depth;
 
+    if (avctx->dct_algo != FF_DCT_INT && avctx->dct_algo != FF_DCT_AUTO) {
+        av_log(avctx, AV_LOG_ERROR, "error, dct algorithm not supported\n");
+        return -1;
+    }
+    if (avctx->idct_algo != FF_IDCT_SIMPLE && avctx->idct_algo != FF_IDCT_AUTO) {
+        av_log(avctx, AV_LOG_ERROR, "error, idct algorithm not supported\n");
+        return -1;
+    }
     dsputil_init(&ctx->dsp, avctx);
 
     ff_init_scantable(ctx->dsp.idct_permutation, &ctx->intra_scantable, ff_zigzag_direct);
@@ -332,11 +299,10 @@ static int dnxhd_encode_init(AVCodecContext *avctx)
         ctx->dct_quantize = dnxhd_dct_quantize;
 
     if (ctx->cid_table->bit_depth == 10) {
-       ctx->dct_quantize = dnxhd_10bit_dct_quantize;
-       ctx->get_pixels_8x4_sym = dnxhd_10bit_get_pixels_8x4_sym;
+       ctx->get_pixels_8x4_sym = dnxhd_get_pixels_8x4_sym_10;
        ctx->block_width_l2 = 4;
     } else {
-       ctx->get_pixels_8x4_sym = dnxhd_8bit_get_pixels_8x4_sym;
+       ctx->get_pixels_8x4_sym = dnxhd_get_pixels_8x4_sym_8;
        ctx->block_width_l2 = 3;
     }
 
@@ -380,8 +346,14 @@ static int dnxhd_encode_init(AVCodecContext *avctx)
     ctx->frame.pict_type = AV_PICTURE_TYPE_I;
     ctx->avctx->coded_frame = &ctx->frame;
 
-    if (avctx->thread_count > MAX_THREADS) {
-        av_log(avctx, AV_LOG_ERROR, "too many threads\n");
+    if (avctx->thread_count <= 0) {
+        av_log(avctx, AV_LOG_ERROR, "error, invalid thread count\n");
+        return -1;
+    }
+
+    ctx->thread = av_malloc(avctx->thread_count*sizeof(*ctx->thread));
+    if (!ctx->thread) {
+        av_log(avctx, AV_LOG_ERROR, "could not allocate thread contexts\n");
         return -1;
     }
 
@@ -476,25 +448,25 @@ static av_always_inline void dnxhd_unquantize_c(DNXHDEncContext *ctx, DCTELEM *b
         level = block[j];
         if (level) {
             if (level < 0) {
-                level = (1-2*level) * qscale * weight_matrix[i];
+                level = (1-2*level) * qscale * weight_matrix[j];
                 if (ctx->cid_table->bit_depth == 10) {
-                    if (weight_matrix[i] != 8)
+                    if (weight_matrix[j] != 8)
                         level += 8;
                     level >>= 4;
                 } else {
-                    if (weight_matrix[i] != 32)
+                    if (weight_matrix[j] != 32)
                         level += 32;
                     level >>= 6;
                 }
                 level = -level;
             } else {
-                level = (2*level+1) * qscale * weight_matrix[i];
+                level = (2*level+1) * qscale * weight_matrix[j];
                 if (ctx->cid_table->bit_depth == 10) {
-                    if (weight_matrix[i] != 8)
+                    if (weight_matrix[j] != 8)
                         level += 8;
                     level >>= 4;
                 } else {
-                    if (weight_matrix[i] != 32)
+                    if (weight_matrix[j] != 32)
                         level += 32;
                     level >>= 6;
                 }

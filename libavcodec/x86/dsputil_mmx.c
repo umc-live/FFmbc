@@ -2464,7 +2464,8 @@ void dsputil_init_mmx(DSPContext* c, AVCodecContext *avctx)
         } else if (avctx->lowres == 0 && avctx->bits_per_raw_sample == 10) {
             if(idct_algo==FF_IDCT_AUTO || idct_algo==FF_IDCT_XVIDMMX){
                 if(mm_flags & AV_CPU_FLAG_SSE2){
-                    if (avctx->codec_id == CODEC_ID_PRORES) {
+                    if (avctx->codec_id == CODEC_ID_PRORES ||
+                        avctx->codec_id == CODEC_ID_DNXHD) {
                         c->idct_put= ff_idct_10_xvid_put_clamped_sse2;
                         c->idct    = ff_idct_10_xvid_sse2;
                         c->idct_permutation_type= FF_SSE2_IDCT_PERM;
