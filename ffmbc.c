@@ -2330,8 +2330,9 @@ static void validate_video_target(AVFormatContext *s, OutputStream *ost)
     }
 
     if (!strcmp(ost->target, "vcd") || !strcmp(ost->target, "svcd") ||
-        !strcmp(ost->target, "dvd") || !strcmp(ost->target, "dv50") ||
-        !strcmp(ost->target, "dv") || !strncmp(ost->target, "imx", 3)) {
+        !strcmp(ost->target, "dvd") || !strcmp(ost->target, "dvcpro50") ||
+        !strcmp(ost->target, "dvcpro") || !strcmp(ost->target, "dvcam") ||
+        !strncmp(ost->target, "imx", 3)) {
         if (norm != PAL && norm != NTSC) {
             fprintf(stderr, "Error, target %s only supports ntsc "
                     "or pal frame rate\n", ost->target);
@@ -2355,14 +2356,46 @@ static void validate_video_target(AVFormatContext *s, OutputStream *ost)
                     "or 480x480(ntsc) resolutions\n");
             ffmpeg_exit(1);
         }
-    } else if (!strcmp(ost->target, "dvd") || !strcmp(ost->target, "dv50") ||
-               !strcmp(ost->target, "dv")) {
+    } else if (!strcmp(ost->target, "dvd") || !strcmp(ost->target, "dvcpro50") ||
+               !strcmp(ost->target, "dvcpro") || !strcmp(ost->target, "dvcam")) {
         if (ost->st->codec->width != 720 ||
             (norm == PAL && ost->st->codec->height != 576) ||
             (norm == NTSC && ost->st->codec->height != 480)) {
-            fprintf(stderr, "Error, target %s only supports 720x576(pal) "
-                    "or 720x480(ntsc) resolutions\n", ost->target);
-            ffmpeg_exit(1);
+            if (CONFIG_AVFILTER && !ost->st->stream_copy) {
+                if (norm == PAL)
+                    auto_scale_pad(ost, 720, 576, 0);
+                else
+                    auto_scale_pad(ost, 720, 480, 0);
+            } else {
+                fprintf(stderr, "Error, target %s only supports 720x576(pal) "
+                        "or 720x480(ntsc) resolutions\n", ost->target);
+                ffmpeg_exit(1);
+            }
+        }
+    } else if (!strcmp(ost->target, "dvcprohd")) {
+        if ((norm == PAL && (ost->st->codec->width != 1440 ||
+                             ost->st->codec->height != 1080)) ||
+            (norm == NTSC && (ost->st->codec->width != 1280 ||
+                              ost->st->codec->width != 1080)) ||
+            ((norm == HD50P || norm == HD60P) && (ost->st->codec->width != 960 ||
+                                                  ost->st->codec->height != 720))) {
+            if (CONFIG_AVFILTER && !ost->st->stream_copy) {
+                if (norm == HD50P || norm == HD60P)
+                    auto_scale_pad(ost, 960, 720, 0);
+                else if (norm == PAL)
+                    auto_scale_pad(ost, 1440, 1080, 0);
+                else if (norm == NTSC)
+                    auto_scale_pad(ost, 1280, 1080, 0);
+                else {
+                    fprintf(stderr, "Error, target %s only supports pal, ntsc, 50p or 60p "
+                            "frame rate\n", ost->target);
+                    ffmpeg_exit(1);
+                }
+            } else {
+                fprintf(stderr, "Error, target %s only supports 1440x1080(pal), "
+                        "1280x1080(ntsc) or 960x720(50p,60p) resolutions\n", ost->target);
+                ffmpeg_exit(1);
+            }
         }
     } else if (!strncmp(ost->target, "imx", 3)) {
         if (ost->st->codec->width != 720 ||
@@ -4980,17 +5013,30 @@ static int opt_target(const char *opt, const char *arg)
         opt_default("ab", "448000");
         audio_sample_rate = 48000;
 
-    } else if(!strcmp(arg, "dv") || !strcmp(arg, "dv50")) {
+    } else if(!strcmp(arg, "dvcpro") || !strcmp(arg, "dvcpro50") ||
+              !strcmp(arg, "dvcam") || !strcmp(arg, "dvcprohd")) {
+        if (!strcmp(arg, "dvcprohd")) {
+            if (norm == FILM || norm == NTSC_FILM) {
+                fprintf(stderr, "Error, dvcprohd target only supports ntsc, pal, "
+                        "50p or 60p frame rate\n");
+                ffmpeg_exit(1);
+            }
+        } else if (norm != PAL && norm != NTSC) {
+            fprintf(stderr, "Error, dv targets only support ntsc or pal frame rate\n");
+            ffmpeg_exit(1);
+        }
 
-        opt_format("f", "dv");
+        opt_codec("vcodec", "dvvideo");
+        opt_codec("acodec", "pcm_s16le");
 
-        opt_frame_size("s", norm == PAL ? "720x576" : "720x480");
-        opt_frame_pix_fmt("pix_fmt", !strncmp(arg, "dv50", 4) ? "yuv422p" :
-                          norm == PAL ? "yuv420p" : "yuv411p");
-        frame_rate = frame_rate_tab[norm];
+        if (norm == PAL && !strcmp(arg, "dvcam"))
+            opt_frame_pix_fmt("pix_fmt", "yuv420p");
+        else if (!strcmp(arg, "dvcpro") || !strcmp(arg, "dvcam"))
+            opt_frame_pix_fmt("pix_fmt", "yuv411p");
+        else
+            opt_frame_pix_fmt("pix_fmt", "yuv422p");
 
         audio_sample_rate = 48000;
-        audio_channels = 2;
     } else if(!strcmp(arg, "imx30") || !strcmp(arg, "imx50")) {
         if (norm != PAL && norm != NTSC) {
             fprintf(stderr, "Error, imx targets only support ntsc or pal frame rate\n");
@@ -5187,7 +5233,7 @@ static const OptionDef options[] = {
     { "loop_input", OPT_BOOL | OPT_EXPERT, {(void*)&loop_input}, "deprecated, use -loop" },
     { "loop_output", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&loop_output}, "deprecated, use -loop", "" },
     { "v", HAS_ARG, {(void*)opt_verbose}, "set ffmpeg verbosity level", "number" },
-    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dv\", \"dv50\", \"imx30\", \"imx50\", \"xdcamhd422\")", "type" },
+    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dvcam\", \"dvcpro\", \"dvcpro50\", \"dvcprohd\", \"imx30\", \"imx50\", \"xdcamhd422\")", "type" },
     { "threads",  HAS_ARG | OPT_EXPERT, {(void*)opt_thread_count}, "thread count", "count" },
     { "vsync", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&video_sync_method}, "video sync method", "" },
     { "async", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&audio_sync_method}, "audio sync method", "" },
