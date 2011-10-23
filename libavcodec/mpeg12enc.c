@@ -191,6 +191,30 @@ static av_cold int encode_init(AVCodecContext *avctx)
     if(MPV_encode_init(avctx) < 0)
         return -1;
 
+    if (avctx->sample_aspect_ratio.num > 0 &&
+        avctx->sample_aspect_ratio.den > 0) {
+        float best_aspect_error = 1E10;
+        float aspect_ratio = av_q2d(s->avctx->sample_aspect_ratio);
+        int i;
+        for (i = 1; i < 15; i++) {
+            float error = aspect_ratio;
+            if (s->codec_id == CODEC_ID_MPEG1VIDEO || i <= 1)
+                error -= 1.0/ff_mpeg1_aspect[i];
+            else
+                error -= av_q2d(ff_mpeg2_aspect[i])*s->height/s->width;
+
+            error = FFABS(error);
+
+            // <= so square pixels can match 4:3 or 16:9
+            if (error <= best_aspect_error) {
+                best_aspect_error = error;
+                s->aspect_ratio_info = i;
+            }
+        }
+    }
+    if (!s->aspect_ratio_info)
+        s->aspect_ratio_info = 1;
+
     if(find_frame_rate_index(s) < 0){
         if(s->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL){
             av_log(avctx, AV_LOG_ERROR, "MPEG1/2 does not support %d/%d fps\n", avctx->time_base.den, avctx->time_base.num);
@@ -245,13 +269,8 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
 {
         unsigned int vbv_buffer_size;
         unsigned int fps, v;
-        int i;
         uint64_t time_code;
-        float best_aspect_error= 1E10;
-        float aspect_ratio= av_q2d(s->avctx->sample_aspect_ratio);
         int constraint_parameter_flag;
-
-        if(aspect_ratio==0.0) aspect_ratio= 1.0; //pixel aspect 1:1 (VGA)
 
         if (s->current_picture.f.key_frame) {
             AVRational framerate= ff_frame_rate_tab[s->frame_rate_index];
@@ -261,22 +280,6 @@ static void mpeg1_encode_sequence_header(MpegEncContext *s)
 
             put_sbits(&s->pb, 12, s->width );
             put_sbits(&s->pb, 12, s->height);
-
-            for(i=1; i<15; i++){
-                float error= aspect_ratio;
-                if(s->codec_id == CODEC_ID_MPEG1VIDEO || i <=1)
-                    error-= 1.0/ff_mpeg1_aspect[i];
-                else
-                    error-= av_q2d(ff_mpeg2_aspect[i])*s->height/s->width;
-
-                error= FFABS(error);
-
-                // <= so square pixels can match 4:3 or 16:9
-                if(error <= best_aspect_error){
-                    best_aspect_error= error;
-                    s->aspect_ratio_info= i;
-                }
-            }
 
             put_bits(&s->pb, 4, s->aspect_ratio_info);
             put_bits(&s->pb, 4, s->frame_rate_index);
