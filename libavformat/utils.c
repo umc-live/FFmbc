@@ -1853,7 +1853,7 @@ static void update_stream_timings(AVFormatContext *ic)
                 duration = end_time - start_time;
         }
     }
-    if (duration != INT64_MIN)
+    if (ic->duration == AV_NOPTS_VALUE)
         ic->duration = duration;
     // override total bit rate if file size is set
     if (ic->duration != AV_NOPTS_VALUE) {

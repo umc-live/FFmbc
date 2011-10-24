@@ -826,6 +826,7 @@ static int mov_read_mdhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
 static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
+    int64_t duration;
     time_t creation_time;
     int version = avio_r8(pb); /* version */
     avio_rb24(pb); /* flags */
@@ -842,7 +843,8 @@ static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     av_dlog(c->fc, "time scale = %i\n", c->time_scale);
 
-    c->duration = (version == 1) ? avio_rb64(pb) : avio_rb32(pb); /* duration */
+    duration = (version == 1) ? avio_rb64(pb) : avio_rb32(pb); /* duration */
+    c->fc->duration = av_rescale(duration, AV_TIME_BASE, c->time_scale);
     avio_rb32(pb); /* preferred scale */
 
     avio_rb16(pb); /* preferred volume */

@@ -140,7 +140,6 @@ typedef struct MOVStreamContext {
 typedef struct MOVContext {
     AVFormatContext *fc;
     int time_scale;
-    int64_t duration;     ///< duration of the longest track
     int found_moov;       ///< 'moov' atom has been found
     int found_mdat;       ///< 'mdat' atom has been found
     DVDemuxContext *dv_demux;
