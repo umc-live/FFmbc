@@ -1742,6 +1742,8 @@ static void mxf_write_system_item(AVFormatContext *s)
     uint32_t time_code;
 
     frame = mxf->timecode_start + mxf->last_indexed_edit_unit + mxf->edit_units_count;
+    if (mxf->timecode_drop_frame)
+        frame = ff_framenum_to_drop_timecode(frame, mxf->timecode_base);
 
     // write system metadata pack
     avio_write(pb, system_metadata_pack_key, 16);
@@ -1750,7 +1752,7 @@ static void mxf_write_system_item(AVFormatContext *s)
     avio_w8(pb, 0x04); // content package rate
     avio_w8(pb, 0x00); // content package type
     avio_wb16(pb, 0x00); // channel handle
-    avio_wb16(pb, frame); // continuity count
+    avio_wb16(pb, mxf->last_indexed_edit_unit + mxf->edit_units_count); // continuity count
     if (mxf->essence_container_count > 1)
         avio_write(pb, multiple_desc_ul, 16);
     else {
