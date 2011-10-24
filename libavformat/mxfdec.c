@@ -173,6 +173,7 @@ typedef struct {
 static const uint8_t mxf_header_partition_pack_key[]       = { 0x06,0x0e,0x2b,0x34,0x02,0x05,0x01,0x01,0x0d,0x01,0x02,0x01,0x01,0x02 };
 static const uint8_t mxf_footer_partition_key[]            = { 0x06,0x0e,0x2b,0x34,0x02,0x05,0x01,0x01,0x0d,0x01,0x02,0x01,0x01,0x04 };
 static const uint8_t mxf_essence_element_key[]             = { 0x06,0x0e,0x2b,0x34,0x01,0x02,0x01,0x01,0x0d,0x01,0x03,0x01 };
+static const uint8_t mxf_system_metadata_pack_key[]        = { 0x06,0x0e,0x2b,0x34,0x02,0x05,0x01,0x01,0x0d,0x01,0x03,0x01,0x04,0x01,0x01,0x00 };
 static const uint8_t mxf_avid_essence_element_key[]        = { 0x06,0x0e,0x2b,0x34,0x01,0x02,0x01,0x01,0x0e,0x04,0x03,0x01 }; //0x15,0x01,0x06,0x01 };
 static const uint8_t mxf_klv_key[]                         = { 0x06,0x0e,0x2b,0x34 };
 /* complete keys to match */
@@ -405,6 +406,58 @@ static int mxf_read_clip(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
+static void mxf_parse_12m_timecode(AVFormatContext *ctx, uint32_t buf)
+{
+    int drop = (buf >> 30) & 1;
+    int f = ((buf >> 28) & 0x3) * 10 + ((buf >> 24) & 0xf);
+    int s = ((buf >> 20) & 0x7) * 10 + ((buf >> 16) & 0xf);
+    int m = ((buf >> 12) & 0x7) * 10 + ((buf >> 8) & 0xf);
+    int h = ((buf >> 4) & 0x3) * 10 + (buf & 0xf);
+    if (!av_dict_get(ctx->metadata, "system_timecode", NULL, 0)) {
+        char timecode[32];
+        snprintf(timecode, 32, "%02d:%02d:%02d%c%02d",
+                 h, m, s, drop ? ';' : ':', f);
+        av_dict_set(&ctx->metadata, "system_timecode", timecode, 0);
+    }
+    av_dlog(ctx, "%02d:%02d:%02d%c%02d\n", h, m, s, drop ? ';' : ':', f);
+}
+
+static void mxf_parse_system_metadata_pack(AVFormatContext *s, KLVPacket *klv)
+{
+    AVIOContext *pb = s->pb;
+    int64_t vl, pos = avio_tell(pb);
+    int v;
+
+    v = avio_r8(pb);
+    av_dlog(s, "present %#x\n", v);
+    v = avio_r8(pb);
+    av_dlog(s, "content package rate %#x\n", v);
+    v = avio_r8(pb);
+    av_dlog(s, "content package type %#x\n", v);
+    v = avio_rb16(pb);
+    av_dlog(s, "channel handle %#x\n", v);
+    v = avio_rb16(pb);
+    av_dlog(s, "continuity count %d\n", v);
+    avio_skip(pb, 16); // container ul
+    v = avio_r8(pb);
+    av_dlog(s, "creation date %#x\n", v);
+    vl = avio_rb64(pb);
+    av_dlog(s, "creation date %#"PRIx64"\n", vl);
+    vl = avio_rb64(pb);
+    av_dlog(s, "creation date %#"PRIx64"\n", vl);
+    v = avio_r8(pb);
+    av_dlog(s, "type %#x\n", v);
+    v = avio_rb32(pb);
+    av_dlog(s, "timecode %#x\n", v);
+    mxf_parse_12m_timecode(s, v);
+    v = avio_rb32(pb);
+    av_dlog(s, "binary group data %#x\n", v);
+    vl = avio_rb64(pb);
+    av_dlog(s, "binary group data %#"PRIx64"\n", vl);
+
+    avio_skip(pb, klv->length - (avio_tell(pb) - pos));
+}
+
 static int mxf_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     MXFContext *mxf = s->priv_data;
@@ -422,6 +475,12 @@ static int mxf_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
         PRINT_KEY(s, "read packet", klv.key);
         av_dlog(s, "size %"PRIu64" offset %#"PRIx64"\n", klv.length, klv.offset);
+#ifdef DEBUG
+        if (IS_KLV_KEY(klv.key, mxf_system_metadata_pack_key)) {
+            mxf_parse_system_metadata_pack(s, &klv);
+            continue;
+        }
+#endif
         if (IS_KLV_KEY(klv.key, mxf_encrypted_triplet_key)) {
             int res = mxf_decrypt_triplet(s, pkt, &klv);
             if (res < 0) {
@@ -1116,6 +1175,10 @@ static int mxf_read_header(AVFormatContext *s, AVFormatParameters *ap)
             break;
         PRINT_KEY(s, "read header", klv.key);
         av_dlog(s, "size %"PRIu64" offset %#"PRIx64"\n", klv.length, klv.offset);
+        if (IS_KLV_KEY(klv.key, mxf_system_metadata_pack_key)) {
+            mxf_parse_system_metadata_pack(s, &klv);
+            continue;
+        }
         if (IS_KLV_KEY(klv.key, mxf_encrypted_triplet_key) ||
             IS_KLV_KEY(klv.key, mxf_essence_element_key)   ||
             IS_KLV_KEY(klv.key, mxf_avid_essence_element_key)) {
