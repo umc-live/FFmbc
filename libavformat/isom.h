@@ -133,6 +133,7 @@ typedef struct MOVStreamContext {
     uint32_t palette[256];
     int has_palette;
     AVRational pixel_aspect; ///< information in 'pasp' atom
+    AVRational clap_width, clap_height; ///< clean aperture info in 'clap' atom
     MOVElst *elst_data;   ///< edit list
     unsigned elst_count;
 } MOVStreamContext;

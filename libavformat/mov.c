@@ -935,6 +935,39 @@ static int mov_read_gama(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_clap(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+    AVRational width, height, choff, cvoff;
+    MOVStreamContext *sc;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+    st = c->fc->streams[c->fc->nb_streams-1];
+    sc = st->priv_data;
+
+    width.num = avio_rb32(pb);
+    width.den = avio_rb32(pb);
+    height.num = avio_rb32(pb);
+    height.den = avio_rb32(pb);
+    choff.num = avio_rb32(pb);
+    choff.den = avio_rb32(pb);
+    cvoff.num = avio_rb32(pb);
+    cvoff.den = avio_rb32(pb);
+
+    if (av_q2d(choff) != 0)
+        av_log(c->fc, AV_LOG_WARNING, "clap center horizontal offset is not 0\n");
+    if (av_q2d(cvoff) != 0)
+        av_log(c->fc, AV_LOG_WARNING, "clap center vertical offset is not 0\n");
+
+    av_reduce(&sc->clap_width.num, &sc->clap_width.den,
+              width.num, width.den, INT_MAX);
+    av_reduce(&sc->clap_height.num, &sc->clap_height.den,
+              height.num, height.den, INT_MAX);
+
+    return 0;
+}
+
 static int mov_read_fiel(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -2111,9 +2144,17 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 st->sample_aspect_ratio =
                     av_div_q((AVRational){sc->width, sc->height},
                              (AVRational){st->codec->width, st->codec->height});
-            } else if (sc->pixel_aspect.den && sc->pixel_aspect.num) {
-                // pasp
-                st->sample_aspect_ratio = sc->pixel_aspect;
+            } else if (sc->pixel_aspect.den > 0 && sc->pixel_aspect.num > 0) {
+                if (sc->clap_width.num > 0 && sc->clap_width.den > 0 &&
+                    sc->clap_height.num > 0 && sc->clap_height.den > 0) {
+                    AVRational clap_width = av_mul_q(sc->clap_width, sc->pixel_aspect);
+                    AVRational dar = av_div_q(clap_width, sc->clap_height);
+                    st->sample_aspect_ratio =
+                        av_div_q(dar, (AVRational){st->codec->width, st->codec->height});
+                } else {
+                    // pasp
+                    st->sample_aspect_ratio = sc->pixel_aspect;
+                }
             }
         }
     }
@@ -2533,6 +2574,7 @@ static int mov_read_chan(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
 static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('a','v','s','s'), mov_read_extradata },
+{ MKTAG('c','l','a','p'), mov_read_clap },
 { MKTAG('c','h','p','l'), mov_read_chpl },
 { MKTAG('c','o','6','4'), mov_read_stco },
 { MKTAG('c','o','l','r'), mov_read_colr },
