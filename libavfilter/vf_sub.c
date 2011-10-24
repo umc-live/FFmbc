@@ -62,6 +62,7 @@ typedef struct {
     ASS_Track *ass_track;
     int hsub, vsub;
     int vmargin;
+    int font_encoding;
 } SubContext;
 
 static void message_callback(int level, const char *format, va_list va, void *ctx)
@@ -109,6 +110,7 @@ static ASS_Track *ass_default_track(AVFilterContext *ctx)
     style->Name = av_strdup("Default");
     style->FontName = sub->fontpath ? sub->fontpath : av_strdup("Arial");
     style->FontSize = sub->fontsize;
+    style->Encoding = sub->font_encoding;
 
     style->PrimaryColour = (AV_RB24(sub->textcolor.rgba) << 8) | (255 - sub->textcolor.rgba[3]);
     style->OutlineColour = (AV_RB24(sub->boxcolor.rgba)  << 8) | (255 - sub->boxcolor.rgba[3]);
@@ -318,6 +320,22 @@ static const char *srt_read_ts(const char *buf, int64_t *ts_start, int64_t *ts_e
     return NULL;
 }
 
+static void detect_font_encoding(AVFilterContext *ctx, uint8_t *text)
+{
+    SubContext *sub = ctx->priv;
+    uint8_t *p = text;
+    int i;
+    for (i = 0; i < 100 && *p; i++) {
+        uint32_t code;
+        GET_UTF8(code, *p++, continue;);
+        if (code >= 0x0590 && code <= 0x05FF) {
+            sub->font_encoding = 177; // hebrew
+            return;
+        }
+    }
+    sub->font_encoding = 1; // auto
+}
+
 static int sub_parse_srt(AVFilterContext *ctx)
 {
     SubContext *sub = ctx->priv;
@@ -348,6 +366,10 @@ static int sub_parse_srt(AVFilterContext *ctx)
     }
     buf[file_size] = 0;
     end = buf+file_size;
+
+    detect_font_encoding(ctx, buf);
+
+    sub->ass_track = ass_default_track(ctx);
 
     for (p = buf; p < end && *p;) {
         Subtitle s;
@@ -481,7 +503,6 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
         if (!sub->ass_track)
             return -1;
     } else if (strstr(sub->filepath, ".srt")) {
-        sub->ass_track = ass_default_track(ctx);
         if (sub_parse_srt(ctx) < 0)
             return -1;
     } else {
