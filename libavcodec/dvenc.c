@@ -49,6 +49,14 @@ static av_cold int dvvideo_init(AVCodecContext *avctx)
 
     ff_dv_vlc_map_tableinit();
 
+    if (avctx->dct_algo != FF_DCT_INT && avctx->dct_algo != FF_DCT_AUTO) {
+        av_log(avctx, AV_LOG_ERROR, "error, dct algorithm not supported\n");
+        return -1;
+    }
+    if (avctx->idct_algo != FF_IDCT_SIMPLE && avctx->idct_algo != FF_IDCT_AUTO) {
+        av_log(avctx, AV_LOG_ERROR, "error, idct algorithm not supported\n");
+        return -1;
+    }
     /* Generic DSP setup */
     dsputil_init(&s->dsp, avctx);
     ff_set_cmp(&s->dsp, s->dsp.ildct_cmp, avctx->ildct_cmp);

@@ -109,7 +109,7 @@ do_lavf mov "-target imx50" "" "lavf_imx50.mov"
 fi
 
 if [ -n "$do_dv_fmt" ] ; then
-do_lavf dv "-ar 48000 -r 25 -s pal -ac 2"
+do_lavf dv "-dct int -ar 48000 -r 25 -s pal -ac 2"
 fi
 
 if [ -n "$do_gxf" ] ; then
