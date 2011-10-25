@@ -39,10 +39,6 @@ static av_cold int encode_init(AVCodecContext *avctx)
         return -1;
     }
 
-    if (avctx->bits_per_raw_sample != 10)
-        av_log(avctx, AV_LOG_WARNING, "bits per raw sample: %d != 10-bit\n",
-               avctx->bits_per_raw_sample);
-
     avctx->coded_frame = avcodec_alloc_frame();
 
     avctx->coded_frame->key_frame = 1;
