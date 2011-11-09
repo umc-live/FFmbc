@@ -355,7 +355,6 @@ static int update_context_from_thread(AVCodecContext *dst, AVCodecContext *src, 
 
     if (for_user) {
         dst->coded_frame   = src->coded_frame;
-        dst->has_b_frames += src->thread_count - 1;
     } else {
         if (dst->codec->update_thread_context)
             err = dst->codec->update_thread_context(dst, src);
