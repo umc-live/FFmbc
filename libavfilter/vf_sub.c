@@ -610,7 +610,47 @@ static void end_frame(AVFilterLink *link)
     ASS_Image *img = ass_render_frame(sub->ass_renderer, sub->ass_track,
                                       pts, &detect_change);
 
+    if (sub->drawbox == 1 && img) {
+        ASS_Image box, *i = img;
+        int min_x, min_y, max_x, max_y, prev_y, prev_x, last_line_y = 0;
+    compute_box:
+        min_x = link->w;
+        min_y = link->h;
+        max_x = max_y = 0;
+        prev_y = link->h;
+        prev_x = 0;
+        for (; i; i = i->next) {
+            if (i->color == sub->ass_track->styles[0].OutlineColour) {
+                if (i->dst_x < prev_x && i->dst_y > prev_y) // new line
+                    break;
+                min_x = FFMIN(i->dst_x, min_x);
+                min_y = FFMIN(i->dst_y, min_y);
+                max_x = FFMAX(i->dst_x + i->w, max_x);
+                max_y = FFMAX(i->dst_y + i->h, max_y);
+                prev_y = i->dst_y+i->h/2;
+                prev_x = i->dst_x;
+            }
+        }
+        min_y = FFMAX(last_line_y, min_y);
+        box.stride = box.w = max_x - min_x;
+        box.h = max_y - min_y;
+        box.dst_x = min_x;
+        box.dst_y = min_y;
+        box.bitmap = av_malloc(box.w * box.h);
+        box.color = sub->ass_track->styles[0].OutlineColour;
+        memset(box.bitmap, 0xff, box.w * box.h);
+        blend_ass_image(ctx, link->cur_buf, &box);
+        last_line_y = max_y;
+        av_free(box.bitmap);
+        if (i)
+            goto compute_box;
+    }
+
     for (; img; img = img->next) {
+        // skip box outline pictures
+        if (sub->drawbox == 1 &&
+            img->color == sub->ass_track->styles[0].OutlineColour)
+            continue;
         blend_ass_image(ctx, link->cur_buf, img);
     }
 
