@@ -147,11 +147,8 @@ static int dv_extract_audio(uint8_t* frame, uint8_t* ppcm[4],
                         of = sys->audio_shuffle[i][j] + (d - 8) / 2 * sys->audio_stride;
                         if (of*2 >= size)
                             continue;
-
-                        pcm[of*2]   = frame[d+1]; // FIXME: maybe we have to admit
-                        pcm[of*2+1] = frame[d];   //        that DV is a big-endian PCM
-                        if (pcm[of*2+1] == 0x80 && pcm[of*2] == 0x00)
-                            pcm[of*2+1] = 0;
+                        pcm[of*2]   = frame[d];
+                        pcm[of*2+1] = frame[d+1];
                     } else {           /* 12bit quantization */
                         lc = ((uint16_t)frame[d]   << 4) |
                              ((uint16_t)frame[d+2] >> 4);
@@ -163,13 +160,10 @@ static int dv_extract_audio(uint8_t* frame, uint8_t* ppcm[4],
                         of = sys->audio_shuffle[i%half_ch][j] + (d - 8) / 3 * sys->audio_stride;
                         if (of*2 >= size)
                             continue;
-
-                        pcm[of*2]   = lc & 0xff; // FIXME: maybe we have to admit
-                        pcm[of*2+1] = lc >> 8;   //        that DV is a big-endian PCM
+                        AV_WB16(pcm + of*2, lc);
                         of = sys->audio_shuffle[i%half_ch+half_ch][j] +
                             (d - 8) / 3 * sys->audio_stride;
-                        pcm[of*2]   = rc & 0xff; // FIXME: maybe we have to admit
-                        pcm[of*2+1] = rc >> 8;   //        that DV is a big-endian PCM
+                        AV_WB16(pcm + of*2, rc);
                         ++d;
                     }
                 }
@@ -221,7 +215,7 @@ static int dv_extract_audio_info(DVDemuxContext* c, uint8_t* frame)
                break;
            av_set_pts_info(c->ast[i], 64, 1, 30000);
            c->ast[i]->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-           c->ast[i]->codec->codec_id   = CODEC_ID_PCM_S16LE;
+           c->ast[i]->codec->codec_id   = CODEC_ID_PCM_S16BE;
 
            av_init_packet(&c->audio_pkt[i]);
            c->audio_pkt[i].size         = 0;

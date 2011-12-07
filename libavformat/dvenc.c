@@ -194,9 +194,8 @@ static void dv_inject_audio(DVMuxContext *c, int channel, uint8_t* frame_ptr)
                 of = c->sys->audio_shuffle[i][j] + (d - 8)/2 * c->sys->audio_stride;
                 if (of*2 >= size)
                     continue;
-
-                frame_ptr[d]   = av_fifo_peek(c->audio_data[channel], of*2+1); // FIXME: maybe we have to admit
-                frame_ptr[d+1] = av_fifo_peek(c->audio_data[channel], of*2);   //        that DV is a big-endian PCM
+                frame_ptr[d]   = av_fifo_peek(c->audio_data[channel], of*2);
+                frame_ptr[d+1] = av_fifo_peek(c->audio_data[channel], of*2+1);
             }
             frame_ptr += 16 * 80; /* 15 Video DIFs + 1 Audio DIF */
         }
@@ -324,7 +323,7 @@ static DVMuxContext* dv_init_mux(AVFormatContext* s)
     if (!c->vst || c->vst->codec->codec_id != CODEC_ID_DVVIDEO)
         goto bail_out;
     for (i=0; i<c->n_ast; i++) {
-        if (c->ast[i] && (c->ast[i]->codec->codec_id    != CODEC_ID_PCM_S16LE ||
+        if (c->ast[i] && (c->ast[i]->codec->codec_id    != CODEC_ID_PCM_S16BE ||
                           c->ast[i]->codec->sample_rate != 48000 ||
                           c->ast[i]->codec->channels    != 2))
             goto bail_out;
@@ -382,7 +381,7 @@ static int dv_write_header(AVFormatContext *s)
     if (!dv_init_mux(s)) {
         av_log(s, AV_LOG_ERROR, "Can't initialize DV format!\n"
                     "Make sure that you supply exactly two streams:\n"
-                    "     video: 25fps or 29.97fps, audio: 2ch/48kHz/PCM\n"
+                    "     video: 25fps or 29.97fps, audio: 2ch/48kHz/PCM BigEndian\n"
                     "     (50Mbps allows an optional second audio stream)\n");
         return -1;
     }
@@ -446,7 +445,7 @@ AVOutputFormat ff_dv_muxer = {
     .long_name         = NULL_IF_CONFIG_SMALL("DV video format"),
     .extensions        = "dv",
     .priv_data_size    = sizeof(DVMuxContext),
-    .audio_codec       = CODEC_ID_PCM_S16LE,
+    .audio_codec       = CODEC_ID_PCM_S16BE,
     .video_codec       = CODEC_ID_DVVIDEO,
     .write_header      = dv_write_header,
     .write_packet      = dv_write_packet,
