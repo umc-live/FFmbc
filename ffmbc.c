@@ -951,7 +951,6 @@ static void do_audio_out(AVFormatContext *s,
     int isize = av_get_bytes_per_sample(dec->sample_fmt);
     const int coded_bps = av_get_bits_per_sample(enc->codec->id);
 
-need_realloc:
     audio_buf_size= (allocated_for_size + isize*dec->channels - 1) / (isize*dec->channels);
     audio_buf_size= (audio_buf_size*enc->sample_rate + dec->sample_rate) / dec->sample_rate;
     audio_buf_size= audio_buf_size*2 + 10000; //safety factors for the deprecated resampling API
@@ -964,14 +963,14 @@ need_realloc:
     audio_out_size += FF_MIN_BUFFER_SIZE;
 
     if(audio_out_size > INT_MAX || audio_buf_size > INT_MAX){
-        fprintf(stderr, "Buffer sizes too large\n");
+        fprintf(stderr, "audio buffer size too small\n");
         ffmpeg_exit(1);
     }
 
     av_fast_malloc(&audio_buf, &allocated_audio_buf_size, audio_buf_size);
     av_fast_malloc(&audio_out, &allocated_audio_out_size, audio_out_size);
     if (!audio_buf || !audio_out){
-        fprintf(stderr, "Out of memory in do_audio_out\n");
+        fprintf(stderr, "out of memory in do_audio_out\n");
         ffmpeg_exit(1);
     }
 
@@ -1073,12 +1072,12 @@ need_realloc:
                     if(!size)
                         return;
                 }else{
-                    av_fast_malloc(&input_tmp, &input_tmp_size, byte_delta + size);
-
-                    if(byte_delta > allocated_for_size - size){
-                        allocated_for_size= byte_delta + (int64_t)size;
-                        goto need_realloc;
+                    if (byte_delta + size > INT_MAX/5) {
+                        av_log(NULL, AV_LOG_ERROR, "error, audio timestamps difference is too big, "
+                               "cannot compensate a/v sync\n");
+                        return;
                     }
+                    av_fast_malloc(&input_tmp, &input_tmp_size, byte_delta + size);
                     memset(input_tmp, 0, byte_delta);
                     memcpy(input_tmp + byte_delta, buf, size);
                     buf= input_tmp;
@@ -4064,30 +4063,6 @@ static int opt_input_file(const char *opt, const char *filename)
     }
     assert_avoptions(format_opts);
 
-    if(opt_programid) {
-        int i, j;
-        int found=0;
-        for(i=0; i<ic->nb_streams; i++){
-            ic->streams[i]->discard= AVDISCARD_ALL;
-        }
-        for(i=0; i<ic->nb_programs; i++){
-            AVProgram *p= ic->programs[i];
-            if(p->id != opt_programid){
-                p->discard = AVDISCARD_ALL;
-            }else{
-                found=1;
-                for(j=0; j<p->nb_stream_indexes; j++){
-                    ic->streams[p->stream_index[j]]->discard= AVDISCARD_DEFAULT;
-                }
-            }
-        }
-        if(!found){
-            fprintf(stderr, "Specified program id not found\n");
-            ffmpeg_exit(1);
-        }
-        opt_programid=0;
-    }
-
     if (loop_input) {
         av_log(NULL, AV_LOG_WARNING, "-loop_input is deprecated, use -loop 1\n");
         ic->loop_input = loop_input;
@@ -4104,6 +4079,34 @@ static int opt_input_file(const char *opt, const char *filename)
         fprintf(stderr, "%s: could not find codec parameters\n", filename);
         av_close_input_file(ic);
         ffmpeg_exit(1);
+    }
+
+    if (ic->nb_programs > 1 && !opt_programid) {
+        av_log(NULL, AV_LOG_WARNING, "Multiple programs detected, "
+               "auto-selecting program %d\n", ic->programs[0]->id);
+        opt_programid = ic->programs[0]->id;
+    }
+
+    if (opt_programid) {
+        int i, j;
+        int found = 0;
+        for (i = 0; i < ic->nb_streams; i++)
+            ic->streams[i]->discard = AVDISCARD_ALL;
+        for (i = 0; i < ic->nb_programs; i++) {
+            AVProgram *p = ic->programs[i];
+            if (p->id != opt_programid) {
+                p->discard = AVDISCARD_ALL;
+            } else {
+                found = 1;
+                for (j = 0; j < p->nb_stream_indexes; j++)
+                    ic->streams[p->stream_index[j]]->discard = AVDISCARD_DEFAULT;
+            }
+        }
+        if (!found) {
+            fprintf(stderr, "Specified program id not found\n");
+            ffmpeg_exit(1);
+        }
+        opt_programid = 0;
     }
 
     timestamp = start_time;

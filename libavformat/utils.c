@@ -1302,6 +1302,8 @@ int av_find_default_stream_index(AVFormatContext *s)
         return -1;
     for(i = 0; i < s->nb_streams; i++) {
         st = s->streams[i];
+        if (st->discard == AVDISCARD_ALL)
+            continue;
         if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             return i;
         }
