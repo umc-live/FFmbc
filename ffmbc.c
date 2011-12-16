@@ -4109,6 +4109,9 @@ static int opt_input_file(const char *opt, const char *filename)
         opt_programid = 0;
     }
 
+    if (!strcmp(ic->iformat->name, "gxf"))
+        audio_sync_method = 0;
+
     timestamp = start_time;
     /* sync on video stream */
     i = av_find_default_stream_index(ic);
