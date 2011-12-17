@@ -982,9 +982,10 @@ static void do_audio_out(AVFormatContext *s,
     if (enc->channels != in_channels)
         ost->audio_resample = 1;
 
-    resample_changed = ost->resample_sample_fmt  != dec->sample_fmt ||
-                       ost->resample_channels    != dec->channels   ||
-                       ost->resample_sample_rate != dec->sample_rate;
+    resample_changed = ost->resample_sample_fmt != dec->sample_fmt ||
+        (!ost->nb_audio_channel_maps &&
+         ost->resample_channels != dec->channels) ||
+        ost->resample_sample_rate != dec->sample_rate;
 
     if ((ost->audio_resample && !ost->resample) || resample_changed) {
         if (resample_changed) {
