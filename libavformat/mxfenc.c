@@ -197,6 +197,7 @@ typedef struct MXFContext {
     int last_key_index;  ///< index of last key frame
     uint64_t duration;
     const char *timecode;
+    int afd;
     AVStream *timecode_track;
     int timecode_base;       ///< rounded time code base (25,30,50,60)
     int timecode_start;      ///< frame number computed from mpeg-2 gop header timecode
@@ -298,6 +299,7 @@ static const MXFLocalTagPair mxf_local_tag_batch[] = {
     { 0x3212, {0x06,0x0E,0x2B,0x34,0x01,0x01,0x01,0x02,0x04,0x01,0x03,0x01,0x06,0x00,0x00,0x00}}, /* Field Dominance */
     { 0x320E, {0x06,0x0E,0x2B,0x34,0x01,0x01,0x01,0x01,0x04,0x01,0x01,0x01,0x01,0x00,0x00,0x00}}, /* Aspect Ratio */
     { 0x3201, {0x06,0x0E,0x2B,0x34,0x01,0x01,0x01,0x02,0x04,0x01,0x06,0x01,0x00,0x00,0x00,0x00}}, /* Picture Essence Coding */
+    { 0x3218, {0x06,0x0E,0x2B,0x34,0x01,0x01,0x01,0x05,0x04,0x01,0x03,0x02,0x09,0x00,0x00,0x00}}, /* Active Format Description */
     // CDCI Picture Essence Descriptor
     { 0x3301, {0x06,0x0E,0x2B,0x34,0x01,0x01,0x01,0x02,0x04,0x01,0x05,0x03,0x0A,0x00,0x00,0x00}}, /* Component Depth */
     { 0x3302, {0x06,0x0E,0x2B,0x34,0x01,0x01,0x01,0x01,0x04,0x01,0x05,0x01,0x05,0x00,0x00,0x00}}, /* Horizontal Subsampling */
@@ -803,12 +805,13 @@ static const UID mxf_generic_sound_descriptor_key = { 0x06,0x0E,0x2B,0x34,0x02,0
 static void mxf_write_cdci_common(AVFormatContext *s, AVStream *st, const UID key, unsigned size)
 {
     MXFStreamContext *sc = st->priv_data;
+    MXFContext *mxf = s->priv_data;
     AVIOContext *pb = s->pb;
     int display_width = 0, display_height = 0, stored_height = 0, stored_width = 0;
     int sampled_width = 0, sampled_height = 0;
     int f1, f2;
 
-    mxf_write_generic_desc(s, st, key, size+8+8+8+8+8+8+8+8+8+8+5+16+sc->interlaced*(4+5)+12+20);
+    mxf_write_generic_desc(s, st, key, size+8+8+8+8+8+8+8+8+8+8+5+16+sc->interlaced*(4+5)+12+20+5*(mxf->afd>=0));
 
     if (st->codec->codec_id == CODEC_ID_MPEG2VIDEO ||
         st->codec->codec_id == CODEC_ID_H264) {
@@ -919,6 +922,12 @@ static void mxf_write_cdci_common(AVFormatContext *s, AVStream *st, const UID ke
 
     mxf_write_local_tag(pb, 16, 0x3201);
     avio_write(pb, *sc->codec_ul, 16);
+
+    // active format description
+    if (mxf->afd >= 0) {
+        mxf_write_local_tag(pb, 1, 0x3218);
+        avio_w8(pb, mxf->afd);
+    }
 }
 
 static void mxf_write_cdci_desc(AVFormatContext *s, AVStream *st)
@@ -2098,6 +2107,8 @@ static int mxf_interleave(AVFormatContext *s, AVPacket *out, AVPacket *pkt, int 
 static const AVOption options[] = {
     { "timecode", "Set timecode value: 00:00:00[:;]00, use ';' before frame number for drop frame",
       offsetof(MXFContext, timecode), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, AV_OPT_FLAG_ENCODING_PARAM},
+    { "afd", "Set Active Format Descriptor value",
+      offsetof(MXFContext, afd), FF_OPT_TYPE_INT, {.dbl = -1}, -1, 255, AV_OPT_FLAG_ENCODING_PARAM},
     { NULL },
 };
 
