@@ -96,6 +96,9 @@ typedef struct {
     int height;
     int channels;
     int bits_per_sample;
+    unsigned int component_depth;
+    unsigned int horiz_subsampling;
+    unsigned int vert_subsampling;
     UID *sub_descriptors_refs;
     int sub_descriptors_count;
     int linked_track_id;
@@ -777,6 +780,7 @@ static void mxf_read_pixel_layout(AVIOContext *pb, MXFDescriptor *descriptor)
 static int mxf_read_generic_descriptor(void *arg, AVIOContext *pb, int tag, int size, UID uid)
 {
     MXFDescriptor *descriptor = arg;
+    descriptor->pix_fmt = PIX_FMT_NONE;
     switch(tag) {
     case 0x3F01:
         descriptor->sub_descriptors_count = avio_rb32(pb);
@@ -806,6 +810,15 @@ static int mxf_read_generic_descriptor(void *arg, AVIOContext *pb, int tag, int 
     case 0x320E:
         descriptor->aspect_ratio.num = avio_rb32(pb);
         descriptor->aspect_ratio.den = avio_rb32(pb);
+        break;
+    case 0x3301:
+        descriptor->component_depth = avio_rb32(pb);
+        break;
+    case 0x3302:
+        descriptor->horiz_subsampling = avio_rb32(pb);
+        break;
+    case 0x3308:
+        descriptor->vert_subsampling = avio_rb32(pb);
         break;
     case 0x3D03:
         descriptor->sample_rate.num = avio_rb32(pb);
@@ -886,6 +899,7 @@ static const MXFCodecUL mxf_essence_container_uls[] = {
     // video essence container uls
     { { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x02,0x0D,0x01,0x03,0x01,0x02,0x04,0x60,0x01 }, 14, CODEC_ID_MPEG2VIDEO }, /* MPEG-ES Frame wrapped */
     { { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x01,0x0D,0x01,0x03,0x01,0x02,0x02,0x41,0x01 }, 14,    CODEC_ID_DVVIDEO }, /* DV 625 25mbps */
+    { { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x01,0x0D,0x01,0x03,0x01,0x02,0x05,0x00,0x00 }, 14,   CODEC_ID_RAWVIDEO }, /* Uncompressed Picture */
     // sound essence container uls
     { { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x01,0x0D,0x01,0x03,0x01,0x02,0x06,0x01,0x00 }, 14, CODEC_ID_PCM_S16LE }, /* BWF Frame wrapped */
     { { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x02,0x0D,0x01,0x03,0x01,0x02,0x04,0x40,0x01 }, 14,       CODEC_ID_MP2 }, /* MPEG-ES Frame wrapped, 0x40 ??? stream id */
@@ -1057,8 +1071,28 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 st->codec->codec_id = container_ul->id;
             st->codec->width = descriptor->width;
             st->codec->height = descriptor->height;
-            if (st->codec->codec_id == CODEC_ID_RAWVIDEO)
+            if (st->codec->codec_id == CODEC_ID_RAWVIDEO) {
                 st->codec->pix_fmt = descriptor->pix_fmt;
+                if (st->codec->pix_fmt == PIX_FMT_NONE) {
+                    const MXFCodecUL *pix_fmt_ul =
+                        mxf_get_codec_ul(ff_mxf_pixel_format_uls, &descriptor->essence_codec_ul);
+                    st->codec->pix_fmt = pix_fmt_ul->id;
+                    if (st->codec->pix_fmt == PIX_FMT_NONE) {
+                        /* support files created before RP224v10 by defaulting to UYVY422
+                           if subsampling is 4:2:2 and component depth is 8-bit */
+                        if (descriptor->horiz_subsampling == 2 &&
+                            descriptor->vert_subsampling == 1 &&
+                            descriptor->component_depth == 8)
+                            st->codec->pix_fmt = PIX_FMT_UYVY422;
+                    }
+                }
+            }
+            if (st->codec->codec_id == CODEC_ID_RAWVIDEO ||
+                st->codec->codec_id == CODEC_ID_V210) {
+                st->sample_aspect_ratio = st->codec->sample_aspect_ratio =
+                    av_div_q(descriptor->aspect_ratio,
+                             (AVRational){st->codec->width, st->codec->height});
+            }
             st->need_parsing = AVSTREAM_PARSE_HEADERS;
             st->r_frame_rate = (AVRational){ material_track->edit_rate.den,
                                              material_track->edit_rate.num };
