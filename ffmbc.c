@@ -2814,6 +2814,7 @@ static int transcode(AVFormatContext **output_files,
                 codec->width = icodec->width;
                 codec->height = icodec->height;
                 codec->has_b_frames = icodec->has_b_frames;
+                codec->bits_per_coded_sample = icodec->bits_per_coded_sample;
                 if (!codec->sample_aspect_ratio.num) {
                     codec->sample_aspect_ratio =
                     ost->st->sample_aspect_ratio =
