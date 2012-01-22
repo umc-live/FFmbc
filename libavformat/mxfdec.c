@@ -128,6 +128,8 @@ typedef struct {
     unsigned edit_unit_bytecount;
     unsigned body_sid;
     unsigned index_sid;
+    uint64_t start;
+    uint64_t duration;
 } MXFIndexTableSegment;
 
 typedef struct {
@@ -339,6 +341,7 @@ static int mxf_read_clip(AVFormatContext *s, AVPacket *pkt)
     MXFTrack *track;
     AVStream *st;
     int i, index, ret;
+    unsigned size = 0;
 
     if (s->nb_streams > 1) {
         av_log(s, AV_LOG_ERROR, "more than one stream is not currently supported\n");
@@ -371,6 +374,11 @@ static int mxf_read_clip(AVFormatContext *s, AVPacket *pkt)
             for (i = 0; i < mxf->metadata_sets_count; i++) {
                 if (mxf->metadata_sets[i]->type == IndexTableSegment) {
                     index_segment = (MXFIndexTableSegment*)mxf->metadata_sets[i];
+                    // P2 files have the first frame bigger
+                    if (index_segment->start == 0 && index_segment->duration == 1) {
+                        size = index_segment->edit_unit_bytecount;
+                        continue;
+                    }
                     break;
                 }
             }
@@ -382,7 +390,6 @@ static int mxf_read_clip(AVFormatContext *s, AVPacket *pkt)
                 av_log(s, AV_LOG_ERROR, "clip wrapping with variable byte per unit is not currently supported\n");
                 return -1;
             }
-
             if ((st->codec->codec_id == CODEC_ID_PCM_S16LE ||
                  st->codec->codec_id == CODEC_ID_PCM_S24LE) && st->time_base.num == 1)
                 track->edit_unit_bytecount = index_segment->edit_unit_bytecount*1000;
@@ -400,7 +407,7 @@ static int mxf_read_clip(AVFormatContext *s, AVPacket *pkt)
         s->data_offset + track->klv.length)
         return AVERROR_EOF;
 
-    ret = av_get_packet(s->pb, pkt, track->edit_unit_bytecount);
+    ret = av_get_packet(s->pb, pkt, size ? size : track->edit_unit_bytecount);
     if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "error reading data\n");
         return ret;
@@ -752,8 +759,12 @@ static int mxf_read_index_table_segment(void *arg, AVIOContext *pb, int tag, int
         index_segment->body_sid = avio_rb32(pb);
         break;
         //case 0x3F0B: av_dlog(NULL, "IndexEditRate %d/%d\n", avio_rb32(pb), avio_rb32(pb)); break;
-        //case 0x3F0C: av_dlog(NULL, "IndexStartPosition %lld\n", avio_rb64(pb)); break;
-        //case 0x3F0D: av_dlog(NULL, "IndexDuration %lld\n", avio_rb64(pb)); break;
+    case 0x3F0C:
+        index_segment->start = avio_rb64(pb);
+        break;
+    case 0x3F0D:
+        index_segment->duration = avio_rb64(pb);
+        break;
     }
     return 0;
 }
