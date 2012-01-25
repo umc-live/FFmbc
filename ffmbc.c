@@ -230,6 +230,8 @@ static int rate_emu = 0;
 
 static const char *target;
 
+static int update_interval = 250000;
+
 static int audio_volume = 256;
 
 static int exit_on_error = 0;
@@ -1540,25 +1542,29 @@ static void print_report(AVFormatContext **output_files,
     AVFormatContext *oc;
     int64_t total_size;
     AVCodecContext *enc;
-    int frame_number, vid, i;
+    int i, frame_diff;
     double bitrate;
     int64_t pts = INT64_MAX;
+    int64_t cur_time, elapsed_time = 0;
     static int64_t last_time = -1;
     static int qp_histogram[52];
+    static int64_t prev_pts;
+    static int prev_frame_number, max_status_len;
 
-    if (!is_last_report) {
-        int64_t cur_time;
-        /* display the report every 0.5 seconds */
-        cur_time = av_gettime();
+    cur_time = av_gettime();
+    if (is_last_report) {
+        elapsed_time = cur_time - timer_start;
+    } else {
         if (last_time == -1) {
             last_time = cur_time;
             return;
         }
-        if ((cur_time - last_time) < 500000)
+        elapsed_time = cur_time - last_time;
+        /* display the report every 0.5 seconds */
+        if (elapsed_time < update_interval)
             return;
         last_time = cur_time;
     }
-
 
     oc = output_files[0];
 
@@ -1569,21 +1575,21 @@ static void print_report(AVFormatContext **output_files,
         total_size = 0;
 
     buf[0] = '\0';
-    vid = 0;
     for(i=0;i<nb_ostreams;i++) {
         float q = -1;
         ost = ost_table[i];
         enc = ost->st->codec;
-        if (vid && enc->coded_frame && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (vst && enc->coded_frame && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
             snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
                      enc->coded_frame->quality/(float)FF_QP2LAMBDA);
         }
-        if (!vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
-            float t = (av_gettime()-timer_start) / 1000000.0;
-
-            frame_number = ost->frame_number;
-            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "frame=%5d fps=%3d ",
-                     frame_number, (t>1)?(int)(frame_number/t+0.5) : 0);
+        if (!vst && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
+            float t = elapsed_time / 1000000.0;
+            frame_diff = is_last_report ? ost->frame_number :
+                ost->frame_number - prev_frame_number;
+            prev_frame_number = ost->frame_number;
+            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "frame=%5d fps=%3.0f ",
+                     ost->frame_number, frame_diff / t);
             if (enc->coded_frame) {
                 snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
                          enc->coded_frame->quality/(float)FF_QP2LAMBDA);
@@ -1607,7 +1613,7 @@ static void print_report(AVFormatContext **output_files,
                 for(j=0; j<3; j++){
                     if(is_last_report){
                         error= enc->error[j];
-                        scale= enc->width*enc->height*255.0*255.0*frame_number;
+                        scale= enc->width*enc->height*255.0*255.0*ost->frame_number;
                     }else{
                         error= enc->coded_frame->error[j];
                         scale= enc->width*enc->height*255.0*255.0;
@@ -1619,7 +1625,6 @@ static void print_report(AVFormatContext **output_files,
                 }
                 snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "*:%2.2f ", psnr(error_sum/scale_sum));
             }
-            vid = 1;
             vst = ost;
         }
         /* compute min output value */
@@ -1644,11 +1649,13 @@ static void print_report(AVFormatContext **output_files,
 
         if (!is_last_report) {
             if (vst && max_frames[AVMEDIA_TYPE_VIDEO] != INT_MAX && vst->frame_number > 0) {
-                speed = (double)vst->frame_number / (av_gettime() - timer_start);
+                speed = (double)frame_diff / elapsed_time;
                 time_left = (max_frames[AVMEDIA_TYPE_VIDEO] - vst->frame_number) / speed;
                 goto eta;
             } else if (duration > 0 && pts > 0) {
-                speed = (double)pts / (av_gettime() - timer_start);
+                float pts_diff = pts - prev_pts;
+                prev_pts = pts;
+                speed = pts_diff / elapsed_time;
                 time_left = (duration - pts) / speed;
             eta:
                 break_time(time_left, &hours, &mins, &secs, &us);
@@ -1664,8 +1671,12 @@ static void print_report(AVFormatContext **output_files,
           snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), " dup=%d drop=%d",
                   nb_frames_dup, nb_frames_drop);
 
-        if (verbose >= 0)
-            av_log(NULL, AV_LOG_INFO, "%s    \r", buf);
+        if (verbose >= 0) {
+            int len = strlen(buf);
+            max_status_len = FFMAX(max_status_len, len);
+            av_log(NULL, AV_LOG_INFO,  "%s%*s", buf, max_status_len + 1 - len,
+                   isatty(2) ? "\r" : "\n");
+        }
 
         fflush(stderr);
     }
@@ -3220,6 +3231,10 @@ static int transcode(AVFormatContext **output_files,
             fprintf(stderr, "Press [q] to stop, [?] for help\n");
         avio_set_interrupt_cb(decode_interrupt_cb);
     }
+    // if stderr is not a tty increase report interval
+    if (!isatty(2))
+        update_interval = 2000000;
+
     term_init();
 
     timer_start = av_gettime();
