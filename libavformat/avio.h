@@ -405,6 +405,16 @@ void avio_wb16(AVIOContext *s, unsigned int val);
 int avio_put_str(AVIOContext *s, const char *str);
 
 /**
+ * Write 'count' bytes with the value 'val'
+ */
+void avio_fill(AVIOContext *s, int val, int count);
+
+/**
+ * Write a NULL-terminated string without the ending 0.
+ */
+void avio_wtag(AVIOContext *s, const char *str);
+
+/**
  * Convert an UTF-8 string to UTF-16LE and write it.
  * @return number of bytes written.
  */

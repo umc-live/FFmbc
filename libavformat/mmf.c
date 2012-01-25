@@ -71,7 +71,7 @@ static int mmf_write_header(AVFormatContext *s)
         return -1;
     }
 
-    ffio_wfourcc(pb, "MMMD");
+    avio_wtag(pb, "MMMD");
     avio_wb32(pb, 0);
     pos = ff_start_tag(pb, "CNTI");
     avio_w8(pb, 0); /* class */
@@ -92,7 +92,7 @@ static int mmf_write_header(AVFormatContext *s)
     avio_w8(pb, 2); /* time base d */
     avio_w8(pb, 2); /* time base g */
 
-    ffio_wfourcc(pb, "Atsq");
+    avio_wtag(pb, "Atsq");
     avio_wb32(pb, 16);
     mmf->atsqpos = avio_tell(pb);
     /* Will be filled on close */

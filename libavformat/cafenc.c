@@ -127,11 +127,11 @@ static int caf_write_header(AVFormatContext *s)
         return AVERROR_PATCHWELCOME;
     }
 
-    ffio_wfourcc(pb, "caff"); //< mFileType
+    avio_wtag(pb, "caff"); //< mFileType
     avio_wb16(pb, 1);         //< mFileVersion
     avio_wb16(pb, 0);         //< mFileFlags
 
-    ffio_wfourcc(pb, "desc");                         //< Audio Description chunk
+    avio_wtag(pb, "desc");                         //< Audio Description chunk
     avio_wb64(pb, 32);                                //< mChunkSize
     avio_wb64(pb, av_dbl2int(enc->sample_rate));      //< mSampleRate
     avio_wl32(pb, codec_tag);                         //< mFormatID
@@ -142,12 +142,12 @@ static int caf_write_header(AVFormatContext *s)
     avio_wb32(pb, enc->bits_per_coded_sample);        //< mBitsPerChannel
 
     if (enc->channel_layout) {
-        ffio_wfourcc(pb, "chan");
+        avio_wtag(pb, "chan");
         avio_wb64(pb, 12);
         ff_mov_write_chan(pb, enc->channel_layout);
     }
 
-    ffio_wfourcc(pb, "data"); //< Audio Data chunk
+    avio_wtag(pb, "data"); //< Audio Data chunk
     caf->data = avio_tell(pb);
     avio_wb64(pb, -1);        //< mChunkSize
     avio_wb32(pb, 0);         //< mEditCount

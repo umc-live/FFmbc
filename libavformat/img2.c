@@ -438,13 +438,13 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
                 if(pkt->size < 8 || AV_RL32(pkt->data+4) != MKTAG('j','p','2','c'))
                     goto error;
                 avio_wb32(pb[0], 12);
-                ffio_wfourcc(pb[0], "jP  ");
+                avio_wtag(pb[0], "jP  ");
                 avio_wb32(pb[0], 0x0D0A870A); // signature
                 avio_wb32(pb[0], 20);
-                ffio_wfourcc(pb[0], "ftyp");
-                ffio_wfourcc(pb[0], "jp2 ");
+                avio_wtag(pb[0], "ftyp");
+                avio_wtag(pb[0], "jp2 ");
                 avio_wb32(pb[0], 0);
-                ffio_wfourcc(pb[0], "jp2 ");
+                avio_wtag(pb[0], "jp2 ");
                 avio_write(pb[0], st->codec->extradata, st->codec->extradata_size);
             }else if(pkt->size < 8 ||
                      (!st->codec->extradata_size &&

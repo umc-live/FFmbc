@@ -59,7 +59,7 @@ static inline void bwf_write_bext_string(AVFormatContext *s, const char *key, in
         avio_write(s->pb, tag->value, len);
     }
 
-    ffio_fill(s->pb, 0, maxlen - len);
+    avio_fill(s->pb, 0, maxlen - len);
 }
 
 static void bwf_write_bext_chunk(AVFormatContext *s)
@@ -90,11 +90,11 @@ static void bwf_write_bext_chunk(AVFormatContext *s)
             umidpart = strtoll(umidpart_str, NULL, 16);
             avio_wb64(s->pb, umidpart);
         }
-        ffio_fill(s->pb, 0, 64 - i*8);
+        avio_fill(s->pb, 0, 64 - i*8);
     } else
-        ffio_fill(s->pb, 0, 64); // zero UMID
+        avio_fill(s->pb, 0, 64); // zero UMID
 
-    ffio_fill(s->pb, 0, 190); // Reserved
+    avio_fill(s->pb, 0, 190); // Reserved
 
     if (tmp_tag = av_dict_get(s->metadata, "coding_history", NULL, 0))
         avio_put_str(s->pb, tmp_tag->value);
@@ -108,9 +108,9 @@ static int wav_write_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     int64_t fmt, fact;
 
-    ffio_wfourcc(pb, "RIFF");
+    avio_wtag(pb, "RIFF");
     avio_wl32(pb, 0); /* file length */
-    ffio_wfourcc(pb, "WAVE");
+    avio_wtag(pb, "WAVE");
 
     /* format header */
     fmt = ff_start_tag(pb, "fmt ");

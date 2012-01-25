@@ -76,13 +76,13 @@ static int rv10_write_header(AVFormatContext *ctx,
 
     start_ptr = s->buf_ptr;
 
-    ffio_wfourcc(s, ".RMF");
+    avio_wtag(s, ".RMF");
     avio_wb32(s,18); /* header size */
     avio_wb16(s,0);
     avio_wb32(s,0);
     avio_wb32(s,4 + ctx->nb_streams); /* num headers */
 
-    ffio_wfourcc(s,"PROP");
+    avio_wtag(s,"PROP");
     avio_wb32(s, 50);
     avio_wb16(s, 0);
     packet_max_size = 0;
@@ -125,7 +125,7 @@ static int rv10_write_header(AVFormatContext *ctx,
 
     /* comments */
 
-    ffio_wfourcc(s,"CONT");
+    avio_wtag(s,"CONT");
     size =  4 * 2 + 10;
     for(i=0; i<FF_ARRAY_ELEMS(ff_rm_metadata); i++) {
         tag = av_dict_get(ctx->metadata, ff_rm_metadata[i], NULL, 0);
@@ -153,7 +153,7 @@ static int rv10_write_header(AVFormatContext *ctx,
             codec_data_size = 34;
         }
 
-        ffio_wfourcc(s,"MDPR");
+        avio_wtag(s,"MDPR");
         size = 10 + 9 * 4 + strlen(desc) + strlen(mimetype) + codec_data_size;
         avio_wb32(s, size);
         avio_wb16(s, 0);
@@ -188,7 +188,7 @@ static int rv10_write_header(AVFormatContext *ctx,
             avio_write(s, ".ra", 3);
             avio_w8(s, 0xfd);
             avio_wb32(s, 0x00040000); /* version */
-            ffio_wfourcc(s, ".ra4");
+            avio_wtag(s, ".ra4");
             avio_wb32(s, 0x01b53530); /* stream length */
             avio_wb16(s, 4); /* unknown */
             avio_wb32(s, 0x39); /* header size */
@@ -241,11 +241,11 @@ static int rv10_write_header(AVFormatContext *ctx,
         } else {
             /* video codec info */
             avio_wb32(s,34); /* size */
-            ffio_wfourcc(s, "VIDO");
+            avio_wtag(s, "VIDO");
             if(stream->enc->codec_id == CODEC_ID_RV10)
-                ffio_wfourcc(s,"RV10");
+                avio_wtag(s,"RV10");
             else
-                ffio_wfourcc(s,"RV20");
+                avio_wtag(s,"RV20");
             avio_wb16(s, stream->enc->width);
             avio_wb16(s, stream->enc->height);
             avio_wb16(s, (int) stream->frame_rate); /* frames per seconds ? */
@@ -273,7 +273,7 @@ static int rv10_write_header(AVFormatContext *ctx,
     data_offset_ptr[3] = data_pos;
 
     /* data stream */
-    ffio_wfourcc(s, "DATA");
+    avio_wtag(s, "DATA");
     avio_wb32(s,data_size + 10 + 8);
     avio_wb16(s,0);
 

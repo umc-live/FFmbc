@@ -46,10 +46,10 @@ static int aiff_write_header(AVFormatContext *s)
         aifc = 1;
 
     /* FORM AIFF header */
-    ffio_wfourcc(pb, "FORM");
+    avio_wtag(pb, "FORM");
     aiff->form = avio_tell(pb);
     avio_wb32(pb, 0);                    /* file length */
-    ffio_wfourcc(pb, aifc ? "AIFC" : "AIFF");
+    avio_wtag(pb, aifc ? "AIFC" : "AIFF");
 
     if (aifc) { // compressed audio
         enc->bits_per_coded_sample = 16;
@@ -58,19 +58,19 @@ static int aiff_write_header(AVFormatContext *s)
             return -1;
         }
         /* Version chunk */
-        ffio_wfourcc(pb, "FVER");
+        avio_wtag(pb, "FVER");
         avio_wb32(pb, 4);
         avio_wb32(pb, 0xA2805140);
     }
 
     if (enc->channels > 2 && enc->channel_layout) {
-        ffio_wfourcc(pb, "CHAN");
+        avio_wtag(pb, "CHAN");
         avio_wb32(pb, 12);
         ff_mov_write_chan(pb, enc->channel_layout);
     }
 
     /* Common chunk */
-    ffio_wfourcc(pb, "COMM");
+    avio_wtag(pb, "COMM");
     avio_wb32(pb, aifc ? 24 : 18); /* size */
     avio_wb16(pb, enc->channels);  /* Number of channels */
 
@@ -97,7 +97,7 @@ static int aiff_write_header(AVFormatContext *s)
     }
 
     /* Sound data chunk */
-    ffio_wfourcc(pb, "SSND");
+    avio_wtag(pb, "SSND");
     aiff->ssnd = avio_tell(pb);         /* Sound chunk size */
     avio_wb32(pb, 0);                    /* Sound samples data size */
     avio_wb32(pb, 0);                    /* Data offset */

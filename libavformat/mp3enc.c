@@ -277,7 +277,7 @@ static int mp3_write_xing(AVFormatContext *s)
     }
 
     avio_wb32(s->pb, header);
-    ffio_fill(s->pb, 0, xing_offset);
+    avio_fill(s->pb, 0, xing_offset);
     avio_wb32(s->pb, MKBETAG('X', 'i', 'n', 'g'));
     avio_wb32(s->pb, 0x01 | 0x02 | 0x04);  // frames/size/toc
 
@@ -294,7 +294,7 @@ static int mp3_write_xing(AVFormatContext *s)
     for (i = 0; i < VBR_TOC_SIZE; ++i)
         avio_w8(s->pb, (uint8_t)(255 * i / VBR_TOC_SIZE));
 
-    ffio_fill(s->pb, 0, c.frame_size - needed);
+    avio_fill(s->pb, 0, c.frame_size - needed);
     avio_flush(s->pb);
 
     return 0;

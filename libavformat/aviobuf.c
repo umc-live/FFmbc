@@ -145,7 +145,7 @@ void avio_w8(AVIOContext *s, int b)
         flush_buffer(s);
 }
 
-void ffio_fill(AVIOContext *s, int b, int count)
+void avio_fill(AVIOContext *s, int b, int count)
 {
     while (count > 0) {
         int len = FFMIN(s->buf_end - s->buf_ptr, count);
@@ -310,6 +310,12 @@ void avio_wb32(AVIOContext *s, unsigned int val)
     avio_w8(s, val);
 }
 
+void avio_wtag(AVIOContext *s, const char *str)
+{
+    while (*str)
+        avio_w8(s, *str++);
+}
+
 #if FF_API_OLD_AVIO
 void put_strz(AVIOContext *s, const char *str)
 {
@@ -371,7 +377,7 @@ void put_buffer(AVIOContext *s, const unsigned char *buf, int size)
 }
 void put_nbyte(AVIOContext *s, int b, int count)
 {
-    ffio_fill(s, b, count);
+    avio_fill(s, b, count);
 }
 
 int url_fopen(AVIOContext **s, const char *filename, int flags)
