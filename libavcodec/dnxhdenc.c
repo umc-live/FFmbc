@@ -660,36 +660,29 @@ static int dnxhd_mb_var_thread(AVCodecContext *avctx, void *arg, int jobnr, int 
     int mb_y = jobnr, mb_x;
     ctx = ctx->thread[threadnr];
     if (ctx->cid_table->bit_depth == 8) {
-        uint8_t *pix = ctx->thread[0]->src[0] + ((mb_y<<4) * ctx->linesize);
+        uint8_t *pix = ctx->thread[0]->src[0] + (mb_y<<4) * ctx->linesize;
         for (mb_x = 0; mb_x < ctx->mb_width; ++mb_x, pix += 16) {
-            unsigned mb  = mb_y * ctx->mb_width + mb_x;
+            unsigned mb = mb_y * ctx->mb_width + mb_x;
             int sum = ctx->dsp.pix_sum(pix, ctx->linesize);
-            int varc = (ctx->dsp.pix_norm1(pix, ctx->linesize) - (((unsigned)(sum*sum))>>8)+128)>>8;
+            int varc = (ctx->dsp.pix_norm1(pix, ctx->linesize) -
+                        (((unsigned)(sum*sum+128))>>8)+128)>>8;
             ctx->mb_cmp[mb].value = varc;
             ctx->mb_cmp[mb].mb = mb;
         }
     } else { // 10-bit
-        int const linesize = ctx->linesize >> 1;
         for (mb_x = 0; mb_x < ctx->mb_width; ++mb_x) {
-            uint16_t *pix = (uint16_t*)ctx->thread[0]->src[0] + ((mb_y << 4) * linesize) + (mb_x << 4);
-            unsigned mb  = mb_y * ctx->mb_width + mb_x;
-            int sum = 0;
-            int sqsum = 0;
-            int mean, sqmean;
-            // Macroblocks are 16x16 pixels, unlike DCT blocks which are 8x8.
+            uint8_t *pix = ctx->thread[0]->src[0] + (mb_y<<4) * ctx->linesize + (mb_x << 5);
+            unsigned mb = mb_y * ctx->mb_width + mb_x;
+            int sum = 0, sqsum = 0;
             for (int i = 0; i < 16; ++i) {
                 for (int j = 0; j < 16; ++j) {
-                    // Turn 16-bit pixels into 10-bit ones.
-                    int const sample = (unsigned)pix[j] >> 6;
+                    const int sample = ((uint16_t*)pix)[j];
                     sum += sample;
                     sqsum += sample * sample;
-                    // 2^10 * 2^10 * 16 * 16 = 2^28, which is less than INT_MAX
                 }
-                pix += linesize;
+                pix += ctx->linesize;
             }
-            mean = sum >> 8; // 16*16 == 2^8
-            sqmean = sqsum >> 8;
-            ctx->mb_cmp[mb].value = sqmean - mean * mean;
+            ctx->mb_cmp[mb].value = ((sqsum - ((unsigned)(sum*sum+128))>>8)+128)>>8;
             ctx->mb_cmp[mb].mb = mb;
         }
     }
