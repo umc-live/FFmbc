@@ -182,6 +182,7 @@ static const uint8_t mxf_system_metadata_pack_key[]        = { 0x06,0x0e,0x2b,0x
 static const uint8_t mxf_avid_essence_element_key[]        = { 0x06,0x0e,0x2b,0x34,0x01,0x02,0x01,0x01,0x0e,0x04,0x03,0x01 }; //0x15,0x01,0x06,0x01 };
 static const uint8_t mxf_klv_key[]                         = { 0x06,0x0e,0x2b,0x34 };
 /* complete keys to match */
+static const uint8_t mxf_random_index_pack_key[]           = { 0x06,0x0e,0x2b,0x34,0x02,0x05,0x01,0x01,0x0d,0x01,0x02,0x01,0x01,0x11,0x01,0x00 };
 static const uint8_t mxf_crypto_source_container_ul[]      = { 0x06,0x0e,0x2b,0x34,0x01,0x01,0x01,0x09,0x06,0x01,0x01,0x02,0x02,0x00,0x00,0x00 };
 static const uint8_t mxf_encrypted_triplet_key[]           = { 0x06,0x0e,0x2b,0x34,0x02,0x04,0x01,0x07,0x0d,0x01,0x03,0x01,0x02,0x7e,0x01,0x00 };
 static const uint8_t mxf_encrypted_essence_container[]     = { 0x06,0x0e,0x2b,0x34,0x04,0x01,0x01,0x07,0x0d,0x01,0x03,0x01,0x02,0x0b,0x01,0x00 };
@@ -1200,6 +1201,35 @@ static int mxf_read_local_tags(MXFContext *mxf, KLVPacket *klv, MXFMetadataReadF
     return ctx_size ? mxf_add_metadata_set(mxf, ctx) : 0;
 }
 
+static int mxf_read_random_index_pack(AVFormatContext *s)
+{
+    UID key;
+    int size;
+
+    avio_seek(s->pb, avio_size(s->pb) - 4, SEEK_SET);
+    size = avio_rb32(s->pb);
+    avio_seek(s->pb, avio_size(s->pb) -size, SEEK_SET);
+    avio_read(s->pb, key, 16);
+    if (IS_KLV_KEY(key, mxf_random_index_pack_key)) {
+        int len = klv_decode_ber_length(s->pb);
+        uint64_t offset = 0;
+        for (; len >= 12; len -= 12) {
+            avio_rb32(s->pb); // BodySID
+            offset = avio_rb64(s->pb);
+        }
+        if (!offset)
+            return -1;
+        avio_seek(s->pb, offset, SEEK_SET);
+        avio_read(s->pb, key, 16);
+        PRINT_KEY(s, "rip key", key);
+        if (IS_KLV_KEY(key, mxf_footer_partition_key)) {
+            avio_seek(s->pb, offset, SEEK_SET);
+            return 0;
+        }
+    }
+    return -1;
+}
+
 static int mxf_read_header(AVFormatContext *s, AVFormatParameters *ap)
 {
     MXFContext *mxf = s->priv_data;
@@ -1232,9 +1262,17 @@ static int mxf_read_header(AVFormatContext *s, AVFormatParameters *ap)
 
             essence_klv_offset = klv.offset;
 
-            if (s->pb->seekable && mxf->footer_partition) {
-                avio_seek(s->pb, mxf->footer_partition, SEEK_SET); // XXX infinite loop
-                continue;
+            if (s->pb->seekable) {
+                if (mxf->footer_partition) {
+                    avio_seek(s->pb, mxf->footer_partition, SEEK_SET);
+                    mxf->footer_partition = 0;
+                    continue;
+                } else { // try scanning RIP
+                    ret = mxf_read_random_index_pack(s);
+                    if (ret < 0)
+                        break;
+                    continue;
+                }
             } else
                 break;
         }
