@@ -781,6 +781,10 @@ check_exec_crash(){
 static void sighandler(int sig){
     raise(SIGTERM);
 }
+int func(void){
+    $code
+}
+int (*func_ptr)(void) = func;
 int main(void){
     signal(SIGILL, sighandler);
     signal(SIGFPE, sighandler);
@@ -788,7 +792,7 @@ int main(void){
 #ifdef SIGBUS
     signal(SIGBUS, sighandler);
 #endif
-    { $code }
+    return func_ptr();
 }
 EOF
 }
