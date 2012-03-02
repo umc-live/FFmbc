@@ -165,7 +165,7 @@ enum MXFWrappingScheme {
     Clip,
 };
 
-typedef int MXFMetadataReadFunc(void *arg, AVIOContext *pb, int tag, int size, UID uid);
+typedef int MXFMetadataReadFunc(AVFormatContext *s, void *arg, int tag, int size, UID uid);
 
 typedef struct {
     const UID key;
@@ -527,14 +527,14 @@ static int mxf_read_packet(AVFormatContext *s, AVPacket *pkt)
     return AVERROR_EOF;
 }
 
-static int mxf_read_primer_pack(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_primer_pack(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFContext *mxf = arg;
-    int item_num = avio_rb32(pb);
-    int item_len = avio_rb32(pb);
+    int item_num = avio_rb32(s->pb);
+    int item_len = avio_rb32(s->pb);
 
     if (item_len != 18) {
-        av_log(mxf->fc, AV_LOG_ERROR, "unsupported primer pack item length\n");
+        av_log(s, AV_LOG_ERROR, "unsupported primer pack item length\n");
         return -1;
     }
     if (item_num > UINT_MAX / item_len)
@@ -543,37 +543,37 @@ static int mxf_read_primer_pack(void *arg, AVIOContext *pb, int tag, int size, U
     mxf->local_tags = av_malloc(item_num*item_len);
     if (!mxf->local_tags)
         return -1;
-    avio_read(pb, mxf->local_tags, item_num*item_len);
+    avio_read(s->pb, mxf->local_tags, item_num*item_len);
     return 0;
 }
 
-static int mxf_read_partition(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_partition(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFContext *mxf = arg;
     unsigned count;
 
-    avio_rb16(pb); // major version;
-    avio_rb16(pb); // minor version;
+    avio_rb16(s->pb); // major version;
+    avio_rb16(s->pb); // minor version;
 
-    avio_rb32(pb); // kag size
-    avio_rb64(pb); // offset of this partition
-    avio_rb64(pb); // offset of previous partition
-    mxf->footer_partition = avio_rb64(pb); // offset of footer partition
+    avio_rb32(s->pb); // kag size
+    avio_rb64(s->pb); // offset of this partition
+    avio_rb64(s->pb); // offset of previous partition
+    mxf->footer_partition = avio_rb64(s->pb); // offset of footer partition
 
-    avio_rb64(pb); // header byte count
-    avio_rb64(pb); // index byte count
+    avio_rb64(s->pb); // header byte count
+    avio_rb64(s->pb); // index byte count
 
-    avio_rb32(pb); // index sid
+    avio_rb32(s->pb); // index sid
 
-    avio_rb64(pb); // body offset
+    avio_rb64(s->pb); // body offset
 
-    avio_rb32(pb); // body sid
+    avio_rb32(s->pb); // body sid
 
-    avio_skip(pb, 16); // operational pattern
+    avio_skip(s->pb, 16); // operational pattern
 
-    count = avio_rb32(pb);
-    avio_skip(pb, 4); /* useless size of objects, always 16 according to specs */
-    avio_skip(pb, count*16);
+    count = avio_rb32(s->pb);
+    avio_skip(s->pb, 4); /* useless size of objects, always 16 according to specs */
+    avio_skip(s->pb, count*16);
 
     return 0;
 }
@@ -590,195 +590,200 @@ static int mxf_add_metadata_set(MXFContext *mxf, void *metadata_set)
     return 0;
 }
 
-static int mxf_read_cryptographic_context(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_cryptographic_context(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFCryptoContext *cryptocontext = arg;
     if (size != 16)
         return -1;
     if (IS_KLV_KEY(uid, mxf_crypto_source_container_ul))
-        avio_read(pb, cryptocontext->source_container_ul, 16);
+        avio_read(s->pb, cryptocontext->source_container_ul, 16);
     return 0;
 }
 
-static int mxf_read_content_storage(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_content_storage(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFContext *mxf = arg;
     switch (tag) {
     case 0x1901:
-        mxf->packages_count = avio_rb32(pb);
+        mxf->packages_count = avio_rb32(s->pb);
         if (mxf->packages_count >= UINT_MAX / sizeof(UID))
             return -1;
         mxf->packages_refs = av_malloc(mxf->packages_count * sizeof(UID));
         if (!mxf->packages_refs)
             return -1;
-        avio_skip(pb, 4); /* useless size of objects, always 16 according to specs */
-        avio_read(pb, (uint8_t *)mxf->packages_refs, mxf->packages_count * sizeof(UID));
+        avio_skip(s->pb, 4); /* useless size of objects, always 16 according to specs */
+        avio_read(s->pb, (uint8_t *)mxf->packages_refs, mxf->packages_count * sizeof(UID));
         break;
     }
     return 0;
 }
 
-static int mxf_read_source_clip(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_source_clip(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFStructuralComponent *source_clip = arg;
     switch(tag) {
     case 0x0202:
-        source_clip->duration = avio_rb64(pb);
+        source_clip->duration = avio_rb64(s->pb);
         break;
     case 0x1201:
-        source_clip->start_position = avio_rb64(pb);
+        source_clip->start_position = avio_rb64(s->pb);
         break;
     case 0x1101:
         /* UMID, only get last 16 bytes */
-        avio_skip(pb, 16);
-        avio_read(pb, source_clip->source_package_uid, 16);
+        avio_skip(s->pb, 16);
+        avio_read(s->pb, source_clip->source_package_uid, 16);
         break;
     case 0x1102:
-        source_clip->source_track_id = avio_rb32(pb);
+        source_clip->source_track_id = avio_rb32(s->pb);
         break;
     }
     return 0;
 }
 
-static int mxf_read_timecode_component(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_timecode_component(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFTimecodeComponent *timecode = arg;
     switch(tag) {
     case 0x1501: // Start Time Code
-        timecode->start = avio_rb64(pb);
+        timecode->start = avio_rb64(s->pb);
         break;
     case 0x1502: // Rounded Time Code Base
-        timecode->base = avio_rb16(pb);
+        timecode->base = avio_rb16(s->pb);
         break;
     case 0x1503: // Drop Frame
-        timecode->drop_frame = avio_r8(pb);
+        timecode->drop_frame = avio_r8(s->pb);
         break;
     }
     return 0;
 }
 
-static int mxf_read_material_package(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_material_package(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFPackage *package = arg;
     switch(tag) {
     case 0x4403:
-        package->tracks_count = avio_rb32(pb);
+        package->tracks_count = avio_rb32(s->pb);
         if (package->tracks_count >= UINT_MAX / sizeof(UID))
             return -1;
         package->tracks_refs = av_malloc(package->tracks_count * sizeof(UID));
         if (!package->tracks_refs)
             return -1;
-        avio_skip(pb, 4); /* useless size of objects, always 16 according to specs */
-        avio_read(pb, (uint8_t *)package->tracks_refs, package->tracks_count * sizeof(UID));
+        avio_skip(s->pb, 4); /* useless size of objects, always 16 according to specs */
+        avio_read(s->pb, (uint8_t *)package->tracks_refs, package->tracks_count * sizeof(UID));
         break;
     }
     return 0;
 }
 
-static int mxf_read_track(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_track(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFTrack *track = arg;
     switch(tag) {
     case 0x4801:
-        track->track_id = avio_rb32(pb);
+        track->track_id = avio_rb32(s->pb);
         break;
     case 0x4804:
-        avio_read(pb, track->track_number, 4);
+        avio_read(s->pb, track->track_number, 4);
         break;
     case 0x4B01:
-        track->edit_rate.den = avio_rb32(pb);
-        track->edit_rate.num = avio_rb32(pb);
+        track->edit_rate.den = avio_rb32(s->pb);
+        track->edit_rate.num = avio_rb32(s->pb);
         break;
     case 0x4803:
-        avio_read(pb, track->sequence_ref, 16);
+        avio_read(s->pb, track->sequence_ref, 16);
         break;
     }
     return 0;
 }
 
-static int mxf_read_sequence(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_sequence(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFSequence *sequence = arg;
     switch(tag) {
     case 0x0202:
-        sequence->duration = avio_rb64(pb);
+        sequence->duration = avio_rb64(s->pb);
         break;
     case 0x0201:
-        avio_read(pb, sequence->data_definition_ul, 16);
+        avio_read(s->pb, sequence->data_definition_ul, 16);
         break;
     case 0x1001:
-        sequence->structural_components_count = avio_rb32(pb);
+        sequence->structural_components_count = avio_rb32(s->pb);
         if (sequence->structural_components_count >= UINT_MAX / sizeof(UID))
             return -1;
         sequence->structural_components_refs = av_malloc(sequence->structural_components_count * sizeof(UID));
         if (!sequence->structural_components_refs)
             return -1;
-        avio_skip(pb, 4); /* useless size of objects, always 16 according to specs */
-        avio_read(pb, (uint8_t *)sequence->structural_components_refs, sequence->structural_components_count * sizeof(UID));
+        avio_skip(s->pb, 4); /* useless size of objects, always 16 according to specs */
+        avio_read(s->pb, (uint8_t *)sequence->structural_components_refs, sequence->structural_components_count * sizeof(UID));
         break;
     }
     return 0;
 }
 
-static int mxf_read_source_package(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_source_package(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFPackage *package = arg;
     switch(tag) {
     case 0x4403:
-        package->tracks_count = avio_rb32(pb);
+        package->tracks_count = avio_rb32(s->pb);
         if (package->tracks_count >= UINT_MAX / sizeof(UID))
             return -1;
         package->tracks_refs = av_malloc(package->tracks_count * sizeof(UID));
         if (!package->tracks_refs)
             return -1;
-        avio_skip(pb, 4); /* useless size of objects, always 16 according to specs */
-        avio_read(pb, (uint8_t *)package->tracks_refs, package->tracks_count * sizeof(UID));
+        avio_skip(s->pb, 4); /* useless size of objects, always 16 according to specs */
+        avio_read(s->pb, (uint8_t *)package->tracks_refs, package->tracks_count * sizeof(UID));
         break;
     case 0x4401:
         /* UMID, only get last 16 bytes */
-        avio_skip(pb, 16);
-        avio_read(pb, package->package_uid, 16);
+        avio_skip(s->pb, 16);
+        avio_read(s->pb, package->package_uid, 16);
         break;
     case 0x4701:
-        avio_read(pb, package->descriptor_ref, 16);
+        avio_read(s->pb, package->descriptor_ref, 16);
         break;
     }
     return 0;
 }
 
-static int mxf_read_index_table_segment(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_index_table_segment(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFIndexTableSegment *index_segment = arg;
     switch(tag) {
     case 0x3F05:
-        index_segment->edit_unit_bytecount = avio_rb32(pb);
+        index_segment->edit_unit_bytecount = avio_rb32(s->pb);
+        av_dlog(s, "edit unit bytecount %d\n", index_segment->edit_unit_bytecount);
         break;
     case 0x3F06:
-        index_segment->index_sid = avio_rb32(pb);
+        index_segment->index_sid = avio_rb32(s->pb);
+        av_dlog(s, "index sid %d\n", index_segment->index_sid);
         break;
     case 0x3F07:
-        index_segment->body_sid = avio_rb32(pb);
+        index_segment->body_sid = avio_rb32(s->pb);
+        av_dlog(s, "body sid %d\n", index_segment->body_sid);
         break;
-        //case 0x3F0B: av_dlog(NULL, "IndexEditRate %d/%d\n", avio_rb32(pb), avio_rb32(pb)); break;
+        //case 0x3F0B: av_dlog(s, "IndexEditRate %d/%d\n", avio_rb32(s->pb), avio_rb32(s->pb)); break;
     case 0x3F0C:
-        index_segment->start = avio_rb64(pb);
+        index_segment->start = avio_rb64(s->pb);
+        av_dlog(s, "start %"PRId64"\n", index_segment->start);
         break;
     case 0x3F0D:
-        index_segment->duration = avio_rb64(pb);
+        index_segment->duration = avio_rb64(s->pb);
+        av_dlog(s, "duration %"PRId64"\n", index_segment->duration);
         break;
     }
     return 0;
 }
 
-static void mxf_read_pixel_layout(AVIOContext *pb, MXFDescriptor *descriptor)
+static void mxf_read_pixel_layout(AVFormatContext *s, MXFDescriptor *descriptor)
 {
     int code, value, ofs = 0;
     char layout[16] = {0};
 
     do {
-        code = avio_r8(pb);
-        value = avio_r8(pb);
-        av_dlog(NULL, "pixel layout: code %#x\n", code);
+        code = avio_r8(s->pb);
+        value = avio_r8(s->pb);
+        av_dlog(s, "pixel layout: code %#x\n", code);
 
         if (ofs < 16) {
             layout[ofs++] = code;
@@ -789,64 +794,64 @@ static void mxf_read_pixel_layout(AVIOContext *pb, MXFDescriptor *descriptor)
     ff_mxf_decode_pixel_layout(layout, &descriptor->pix_fmt);
 }
 
-static int mxf_read_generic_descriptor(void *arg, AVIOContext *pb, int tag, int size, UID uid)
+static int mxf_read_generic_descriptor(AVFormatContext *s, void *arg, int tag, int size, UID uid)
 {
     MXFDescriptor *descriptor = arg;
     descriptor->pix_fmt = PIX_FMT_NONE;
     switch(tag) {
     case 0x3F01:
-        descriptor->sub_descriptors_count = avio_rb32(pb);
+        descriptor->sub_descriptors_count = avio_rb32(s->pb);
         if (descriptor->sub_descriptors_count >= UINT_MAX / sizeof(UID))
             return -1;
         descriptor->sub_descriptors_refs = av_malloc(descriptor->sub_descriptors_count * sizeof(UID));
         if (!descriptor->sub_descriptors_refs)
             return -1;
-        avio_skip(pb, 4); /* useless size of objects, always 16 according to specs */
-        avio_read(pb, (uint8_t *)descriptor->sub_descriptors_refs, descriptor->sub_descriptors_count * sizeof(UID));
+        avio_skip(s->pb, 4); /* useless size of objects, always 16 according to specs */
+        avio_read(s->pb, (uint8_t *)descriptor->sub_descriptors_refs, descriptor->sub_descriptors_count * sizeof(UID));
         break;
     case 0x3004:
-        avio_read(pb, descriptor->essence_container_ul, 16);
+        avio_read(s->pb, descriptor->essence_container_ul, 16);
         break;
     case 0x3006:
-        descriptor->linked_track_id = avio_rb32(pb);
+        descriptor->linked_track_id = avio_rb32(s->pb);
         break;
     case 0x3201: /* PictureEssenceCoding */
-        avio_read(pb, descriptor->essence_codec_ul, 16);
+        avio_read(s->pb, descriptor->essence_codec_ul, 16);
         break;
     case 0x3203:
-        descriptor->width = avio_rb32(pb);
+        descriptor->width = avio_rb32(s->pb);
         break;
     case 0x3202:
-        descriptor->height = avio_rb32(pb);
+        descriptor->height = avio_rb32(s->pb);
         break;
     case 0x320E:
-        descriptor->aspect_ratio.num = avio_rb32(pb);
-        descriptor->aspect_ratio.den = avio_rb32(pb);
+        descriptor->aspect_ratio.num = avio_rb32(s->pb);
+        descriptor->aspect_ratio.den = avio_rb32(s->pb);
         break;
     case 0x3301:
-        descriptor->component_depth = avio_rb32(pb);
+        descriptor->component_depth = avio_rb32(s->pb);
         break;
     case 0x3302:
-        descriptor->horiz_subsampling = avio_rb32(pb);
+        descriptor->horiz_subsampling = avio_rb32(s->pb);
         break;
     case 0x3308:
-        descriptor->vert_subsampling = avio_rb32(pb);
+        descriptor->vert_subsampling = avio_rb32(s->pb);
         break;
     case 0x3D03:
-        descriptor->sample_rate.num = avio_rb32(pb);
-        descriptor->sample_rate.den = avio_rb32(pb);
+        descriptor->sample_rate.num = avio_rb32(s->pb);
+        descriptor->sample_rate.den = avio_rb32(s->pb);
         break;
     case 0x3D06: /* SoundEssenceCompression */
-        avio_read(pb, descriptor->essence_codec_ul, 16);
+        avio_read(s->pb, descriptor->essence_codec_ul, 16);
         break;
     case 0x3D07:
-        descriptor->channels = avio_rb32(pb);
+        descriptor->channels = avio_rb32(s->pb);
         break;
     case 0x3D01:
-        descriptor->bits_per_sample = avio_rb32(pb);
+        descriptor->bits_per_sample = avio_rb32(s->pb);
         break;
     case 0x3401:
-        mxf_read_pixel_layout(pb, descriptor);
+        mxf_read_pixel_layout(s, descriptor);
         break;
     default:
         /* Private uid used by SONY C0023S01.mxf */
@@ -855,13 +860,13 @@ static int mxf_read_generic_descriptor(void *arg, AVIOContext *pb, int tag, int 
             if (!descriptor->extradata)
                 return -1;
             descriptor->extradata_size = size;
-            avio_read(pb, descriptor->extradata, size);
+            avio_read(s->pb, descriptor->extradata, size);
         } else if (IS_KLV_KEY(uid, mxf_avid_padding_size_uid)) {
-            descriptor->padding_size = avio_rb32(pb);
+            descriptor->padding_size = avio_rb32(s->pb);
         } else if (IS_KLV_KEY(uid, mxf_avid_edit_unit_size_uid)) {
-            descriptor->edit_unit_size = avio_rb32(pb);
+            descriptor->edit_unit_size = avio_rb32(s->pb);
         } else if (size == 4) {
-            PRINT_KEY(NULL, "uid", uid);
+            PRINT_KEY(s, "uid", uid);
         }
         break;
     }
@@ -1192,7 +1197,7 @@ static int mxf_read_local_tags(MXFContext *mxf, KLVPacket *klv, MXFMetadataReadF
         }
         if (ctx_size && tag == 0x3C0A)
             avio_read(pb, ctx->uid, 16);
-        else if (read_child(ctx, pb, tag, size, uid) < 0)
+        else if (read_child(mxf->fc, ctx, tag, size, uid) < 0)
             return -1;
 
         avio_seek(pb, next, SEEK_SET);
@@ -1279,12 +1284,11 @@ static int mxf_read_header(AVFormatContext *s, AVFormatParameters *ap)
 
         for (metadata = mxf_metadata_read_table; metadata->read; metadata++) {
             if (IS_KLV_KEY(klv.key, metadata->key)) {
-                int res;
-                if (klv.key[5] == 0x53) {
-                    res = mxf_read_local_tags(mxf, &klv, metadata->read, metadata->ctx_size, metadata->type);
-                } else
-                    res = metadata->read(mxf, s->pb, 0, 0, NULL);
-                if (res < 0) {
+                if (klv.key[5] == 0x53)
+                    ret = mxf_read_local_tags(mxf, &klv, metadata->read, metadata->ctx_size, metadata->type);
+                else
+                    ret = metadata->read(s, mxf, 0, 0, NULL);
+                if (ret < 0) {
                     av_log(s, AV_LOG_ERROR, "error reading header metadata\n");
                     return -1;
                 }
