@@ -1676,6 +1676,10 @@ static int mxf_write_header(AVFormatContext *s)
                 mxf->edit_unit_byte_count += klv_fill_size(mxf->edit_unit_byte_count);
             }
         } else if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+            if (!samples_per_frame) {
+                av_log(s, AV_LOG_ERROR, "muxing audio only is not supported currently\n");
+                return -1;
+            }
             if (st->codec->sample_rate != 48000) {
                 av_log(s, AV_LOG_ERROR, "only 48khz is implemented\n");
                 return -1;
@@ -1760,9 +1764,6 @@ static int mxf_write_header(AVFormatContext *s)
     if (!mxf->timecode_track->priv_data)
         return AVERROR(ENOMEM);
     mxf->timecode_track->index = -1;
-
-    if (!samples_per_frame)
-        samples_per_frame = samples_per_frame_tab[2]; // 25 fps
 
     if (ff_audio_interleave_init(s, samples_per_frame, mxf->time_base) < 0)
         return -1;
