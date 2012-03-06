@@ -2196,10 +2196,16 @@ static void compute_chapters_end(AVFormatContext *s)
         }
 }
 
-static int get_std_framerate(int i){
-    if(i<60*12) return i*1001;
-    else        return ((const int[]){24,30,60,12,15})[i-60*12]*1000*12;
-}
+static const AVRational frame_rate_tab[] = {
+    {24000, 1001},
+    {   24,    1},
+    {   25,    1},
+    {30000, 1001},
+    {   30,    1},
+    {   50,    1},
+    {60000, 1001},
+    {   60,    1},
+};
 
 /*
  * Is the time base unreliable.
@@ -2256,10 +2262,6 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             if (codec && !st->codec->codec)
                 avcodec_open2(st->codec, codec, options ? &options[i] : NULL);
         }
-    }
-
-    for (i=0; i<ic->nb_streams; i++) {
-        ic->streams[i]->info->last_dts = AV_NOPTS_VALUE;
     }
 
     count = 0;
@@ -2366,23 +2368,20 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             if(pkt->dts != AV_NOPTS_VALUE && last != AV_NOPTS_VALUE && duration>0){
                 double dur= duration * av_q2d(st->time_base);
 
-//                if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
-//                    av_log(NULL, AV_LOG_ERROR, "%f\n", dur);
                 if (st->info->duration_count < 2)
                     memset(st->info->duration_error, 0, sizeof(st->info->duration_error));
-                for (i=1; i<FF_ARRAY_ELEMS(st->info->duration_error); i++) {
-                    int framerate= get_std_framerate(i);
-                    int ticks= lrintf(dur*framerate/(1001*12));
-                    double error= dur - ticks*1001*12/(double)framerate;
-                    st->info->duration_error[i] += error*error;
+                for (i = 0; i < FF_ARRAY_ELEMS(frame_rate_tab); i++) {
+                    double framerate = av_q2d(frame_rate_tab[i]);
+                    int ticks = st->codec_info_nb_frames - st->info->last_dts_frame;
+                    double error = dur - ticks/framerate;
+                    st->info->duration_error[i] += FFABS(error);
                 }
                 st->info->duration_count++;
-                // ignore the first 4 values, they might have some random jitter
-                if (st->info->duration_count > 3)
-                    st->info->duration_gcd = av_gcd(st->info->duration_gcd, duration);
             }
-            if (last == AV_NOPTS_VALUE || st->info->duration_count <= 1)
+            if (last == AV_NOPTS_VALUE || st->info->duration_count <= 1) {
                 st->info->last_dts = pkt->dts;
+                st->info->last_dts_frame = st->codec_info_nb_frames;
+            }
         }
 
         /* FIXME change the decoder */
@@ -2425,33 +2424,34 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
             // the check for tb_unreliable() is not completely correct, since this is not about handling
             // a unreliable/inexact time base, but a time base that is finer than necessary, as e.g.
             // ipmovie.c produces.
-            if (tb_unreliable(st->codec) && st->info->duration_count > 15 && st->info->duration_gcd > FFMAX(1, st->time_base.den/(500LL*st->time_base.num)) && !st->r_frame_rate.num)
-                av_reduce(&st->r_frame_rate.num, &st->r_frame_rate.den, st->time_base.den, st->time_base.num * st->info->duration_gcd, INT_MAX);
             if (st->info->duration_count && !st->r_frame_rate.num
                && tb_unreliable(st->codec) /*&&
                //FIXME we should not special-case MPEG-2, but this needs testing with non-MPEG-2 ...
                st->time_base.num*duration_sum[i]/st->info->duration_count*101LL > st->time_base.den*/){
-                int num = 0;
-                double best_error= 2*av_q2d(st->time_base);
+                AVRational frame_rate = {0};
+                double best_error = INT_MAX;
 
                 av_log(ic, AV_LOG_DEBUG, "trying to guess frame rate\n");
-                best_error = best_error*best_error*st->info->duration_count*1000*12*30;
 
-                for (j=1; j<FF_ARRAY_ELEMS(st->info->duration_error); j++) {
-                    double error = st->info->duration_error[j] * get_std_framerate(j);
-//                        av_log(NULL, AV_LOG_ERROR, "%f %f\n", get_std_framerate(j) / 12.0/1001, error);
-                    if(error < best_error){
+                for (j = 0; j < FF_ARRAY_ELEMS(frame_rate_tab); j++) {
+                    double error = st->info->duration_error[j];
+                    if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+                        av_log(ic, AV_LOG_DEBUG, "frame rate %f error %f\n", av_q2d(frame_rate_tab[j]), error);
+                    if (error < best_error) {
                         best_error= error;
-                        num = get_std_framerate(j);
+                        frame_rate = frame_rate_tab[j];
                     }
                 }
-                // do not increase frame rate by more than 1 % in order to match a standard rate.
-                if (num && (!st->r_frame_rate.num || (double)num/(12*1001) < 1.01 * av_q2d(st->r_frame_rate)))
-                    av_reduce(&st->r_frame_rate.num, &st->r_frame_rate.den, num, 12*1001, INT_MAX);
+                // do not change frame rate by more than 1% in order to match a standard rate.
+                if (!st->avg_frame_rate.num || best_error < 0.00001 ||
+                    FFABS(av_q2d(frame_rate) - av_q2d(st->avg_frame_rate)) <= 0.01)
+                    st->r_frame_rate = frame_rate;
             }
 
             if (!st->r_frame_rate.num){
-                if(    st->codec->time_base.den * (int64_t)st->time_base.num
+                if (st->avg_frame_rate.den){
+                    st->r_frame_rate = st->avg_frame_rate;
+                }else if(    st->codec->time_base.den * (int64_t)st->time_base.num
                     <= st->codec->time_base.num * st->codec->ticks_per_frame * (int64_t)st->time_base.den){
                     st->r_frame_rate.num = st->codec->time_base.den;
                     st->r_frame_rate.den = st->codec->time_base.num * st->codec->ticks_per_frame;
@@ -2679,6 +2679,7 @@ AVStream *av_new_stream(AVFormatContext *s, int id)
         av_free(st);
         return NULL;
     }
+    st->info->last_dts = AV_NOPTS_VALUE;
 
     st->codec = avcodec_alloc_context3(NULL);
     if (s->iformat) {
