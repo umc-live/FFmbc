@@ -147,6 +147,35 @@ typedef struct {
     enum MXFMetadataSetType type;
 } MXFMetadataSet;
 
+typedef enum {
+    Op1a,
+    Op1b,
+    Op1c,
+    Op2a,
+    Op2b,
+    Op2c,
+    Op3a,
+    Op3b,
+    Op3c,
+    OpAtom,
+} MXFOpValue;
+
+static const struct {
+    MXFOpValue val;
+    const char *str;
+} mxf_operational_patterns[] = {
+    { Op1a, "Op1a" },
+    { Op1b, "Op1b" },
+    { Op1c, "Op1c" },
+    { Op2a, "Op2a" },
+    { Op2b, "Op2b" },
+    { Op2c, "Op2c" },
+    { Op3a, "Op3a" },
+    { Op3b, "Op3b" },
+    { Op3c, "Op3c" },
+    { OpAtom, "OpAtom" },
+};
+
 typedef struct {
     UID *packages_refs;
     int packages_count;
@@ -156,8 +185,8 @@ typedef struct {
     struct AVAES *aesc;
     uint8_t *local_tags;
     int local_tags_count;
-    int clip_wrapping;
     uint64_t footer_partition; ///< offset of footer partition
+    MXFOpValue op; ///< operational pattern
 } MXFContext;
 
 enum MXFWrappingScheme {
@@ -335,7 +364,7 @@ static int mxf_decrypt_triplet(AVFormatContext *s, AVPacket *pkt, KLVPacket *klv
     return 0;
 }
 
-static int mxf_read_clip(AVFormatContext *s, AVPacket *pkt)
+static int mxf_read_opatom(AVFormatContext *s, AVPacket *pkt)
 {
     MXFIndexTableSegment *index_segment = NULL;
     MXFContext *mxf = s->priv_data;
@@ -388,14 +417,19 @@ static int mxf_read_clip(AVFormatContext *s, AVPacket *pkt)
                 return -1;
             }
             if (!index_segment->edit_unit_bytecount) {
-                av_log(s, AV_LOG_ERROR, "clip wrapping with variable byte per unit is not currently supported\n");
-                return -1;
-            }
-            if ((st->codec->codec_id == CODEC_ID_PCM_S16LE ||
-                 st->codec->codec_id == CODEC_ID_PCM_S24LE) && st->time_base.num == 1)
+                if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+                    track->edit_unit_bytecount =
+                        av_get_bits_per_sample(st->codec->codec_id)*1000 / 8;
+            } else if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO && st->time_base.num == 1)
                 track->edit_unit_bytecount = index_segment->edit_unit_bytecount*1000;
             else
                 track->edit_unit_bytecount = index_segment->edit_unit_bytecount;
+
+            if (!track->edit_unit_bytecount) {
+                av_log(s, AV_LOG_ERROR, "clip wrapping with variable "
+                       "byte per unit is not currently supported\n");
+                return -1;
+            }
         }
 
         if (track->descriptor->padding_size) {
@@ -474,14 +508,14 @@ static int mxf_read_packet(AVFormatContext *s, AVPacket *pkt)
     MXFContext *mxf = s->priv_data;
     KLVPacket klv;
 
-    if (mxf->clip_wrapping)
-        return mxf_read_clip(s, pkt);
+    if (mxf->op == OpAtom)
+        return mxf_read_opatom(s, pkt);
 
     while (!url_feof(s->pb)) {
         if (klv_read_packet(&klv, s->pb) < 0)
             return -1;
         if (klv.length > 50*1024*1024) {
-            av_log(s, AV_LOG_ERROR, "klv packet too big, clip wrapping unsupported\n");
+            av_log(s, AV_LOG_ERROR, "klv packet too big\n");
             return AVERROR(EINVAL);
         }
         PRINT_KEY(s, "read packet", klv.key);
@@ -551,6 +585,7 @@ static int mxf_read_partition(AVFormatContext *s, void *arg, int tag, int size, 
 {
     MXFContext *mxf = arg;
     unsigned count;
+    UID op;
 
     avio_rb16(s->pb); // major version;
     avio_rb16(s->pb); // minor version;
@@ -569,7 +604,25 @@ static int mxf_read_partition(AVFormatContext *s, void *arg, int tag, int size, 
 
     avio_rb32(s->pb); // body sid
 
-    avio_skip(s->pb, 16); // operational pattern
+    avio_read(s->pb, op, 16);
+
+    if      (op[12] == 1 && op[13] == 1) mxf->op = Op1a;
+    else if (op[12] == 1 && op[13] == 2) mxf->op = Op1b;
+    else if (op[12] == 1 && op[13] == 3) mxf->op = Op1c;
+    else if (op[12] == 2 && op[13] == 1) mxf->op = Op2a;
+    else if (op[12] == 2 && op[13] == 2) mxf->op = Op2b;
+    else if (op[12] == 2 && op[13] == 3) mxf->op = Op2c;
+    else if (op[12] == 3 && op[13] == 1) mxf->op = Op3a;
+    else if (op[12] == 3 && op[13] == 2) mxf->op = Op3b;
+    else if (op[12] == 3 && op[13] == 3) mxf->op = Op3c;
+    else if (op[12] == 0x10)             mxf->op = OpAtom;
+    else {
+        av_log(mxf->fc, AV_LOG_ERROR, "unknown operational pattern: "
+               "%02xh %02xh - assuming Op1a\n", op[12], op[13]);
+        mxf->op = Op1a;
+    }
+
+    av_dict_set(&s->metadata, "operational_pattern", mxf_operational_patterns[mxf->op].str, 0);
 
     count = avio_rb32(s->pb);
     avio_skip(s->pb, 4); /* useless size of objects, always 16 according to specs */
@@ -1262,9 +1315,6 @@ static int mxf_read_header(AVFormatContext *s, AVFormatParameters *ap)
         if (IS_KLV_KEY(klv.key, mxf_encrypted_triplet_key) ||
             IS_KLV_KEY(klv.key, mxf_essence_element_key)   ||
             IS_KLV_KEY(klv.key, mxf_avid_essence_element_key)) {
-            if (klv.length > 5000000)
-                mxf->clip_wrapping = 1;
-
             essence_klv_offset = klv.offset;
 
             if (s->pb->seekable) {
@@ -1373,7 +1423,7 @@ static int mxf_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
     if (sample_time < 0)
         sample_time = 0;
 
-    if (mxf->clip_wrapping && s->nb_streams == 1 && track->edit_unit_bytecount) {
+    if (mxf->op == OpAtom && s->nb_streams == 1 && track->edit_unit_bytecount) {
         offset = s->data_offset + track->edit_unit_bytecount * sample_time;
     } else {
         if (!s->bit_rate)
