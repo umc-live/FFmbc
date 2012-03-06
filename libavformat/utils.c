@@ -984,7 +984,7 @@ static void compute_pkt_fields(AVFormatContext *s, AVStream *st,
             /* PTS = presentation timestamp */
             if (pkt->dts == AV_NOPTS_VALUE)
                 pkt->dts = st->last_IP_pts;
-            if (pkt->dts == AV_NOPTS_VALUE)
+            if (pkt->dts == AV_NOPTS_VALUE && pkt->pts == AV_NOPTS_VALUE)
                 pkt->dts = st->cur_dts;
 
             /* this is tricky: the dts must be incremented by the duration
