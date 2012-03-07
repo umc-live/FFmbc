@@ -128,6 +128,7 @@ static int encode_frame(AVCodecContext *avctx, unsigned char *buf, int buf_size,
     buf[802] = 2; /* linear colorimetric */
     buf[803] = s->bits_per_component;
     write16(buf + 804, s->bits_per_component == 10 ? 1 : 0); /* packing method */
+    write32(buf + 808, HEADER_SIZE); /* offset to data */
 
     /* Image source information header */
     write32(buf + 1628, avctx->sample_aspect_ratio.num);
