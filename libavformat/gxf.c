@@ -453,9 +453,9 @@ static int gxf_packet(AVFormatContext *s, AVPacket *pkt) {
         if (stream_index < 0)
             return stream_index;
         st = s->streams[stream_index];
-        field_nr = avio_rb32(pb);
+        avio_rb32(pb); // "media" field number
         field_info = avio_rb32(pb);
-        avio_rb32(pb); // "timeline" field number
+        field_nr = avio_rb32(pb); // "timeline" field number
         avio_r8(pb); // flags
         avio_r8(pb); // reserved
         if (st->codec->codec_id == CODEC_ID_PCM_S24LE ||
