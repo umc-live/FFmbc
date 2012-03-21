@@ -354,7 +354,7 @@ static int mov_read_udta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         AVDictionaryEntry *tag = NULL;
         uint8_t *buf;
         if (type == METADATA_STRING) {
-            if (data_type == 3 || (data_type == 0 && langcode < 0x800)) { // MAC Encoded
+            if (data_type == 3 || (data_type == 0 && (langcode < 0x400 || langcode == 0x7fff))) { // MAC Encoded
                 if (size >= UINT_MAX/2)
                     return 0;
                 buf = av_malloc(size*2+1);
