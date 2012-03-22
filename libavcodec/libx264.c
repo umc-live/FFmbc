@@ -128,8 +128,9 @@ static int X264_frame(AVCodecContext *ctx, uint8_t *buf,
     int nnal, i;
     x264_picture_t pic_out;
 
-    x264_picture_init( &x4->pic );
-    x4->pic.img.i_csp   = X264_CSP_I420;
+    x264_picture_init(&x4->pic);
+
+    x4->pic.img.i_csp = x4->params.i_csp;
     x4->pic.img.i_plane = 3;
 
     if (frame) {
@@ -281,6 +282,12 @@ static av_cold int X264_init(AVCodecContext *avctx)
 
     OPT_STR("ref", x4->refs);
 
+    if (avctx->pix_fmt == PIX_FMT_YUV420P)
+        x4->params.i_csp = X264_CSP_I420;
+    else if (avctx->pix_fmt == PIX_FMT_YUV420P10)
+        x4->params.i_csp = X264_CSP_I420|X264_CSP_HIGH_DEPTH;
+    else if (avctx->pix_fmt == PIX_FMT_YUV422P10)
+        x4->params.i_csp = X264_CSP_I422|X264_CSP_HIGH_DEPTH;
     x4->params.i_width              = avctx->width;
     x4->params.i_height             = avctx->height;
     x4->params.vui.i_sar_width      = avctx->sample_aspect_ratio.num;
@@ -480,7 +487,13 @@ AVCodec ff_libx264_encoder = {
     .encode         = X264_frame,
     .close          = X264_close,
     .capabilities   = CODEC_CAP_DELAY,
+#if X264_BIT_DEPTH == 10
+    .pix_fmts       = (const enum PixelFormat[]) { PIX_FMT_YUV422P10, PIX_FMT_YUV420P10, PIX_FMT_NONE },
+#elif X264_BIT_DEPTH == 8
     .pix_fmts       = (const enum PixelFormat[]) { PIX_FMT_YUV420P, PIX_FMT_YUVJ420P, PIX_FMT_NONE },
+#else
+#error FFmbc only supports x264 configured for 8 or 10 bit encoding
+#endif
     .long_name      = NULL_IF_CONFIG_SMALL("libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"),
     .priv_class     = &class,
 };
