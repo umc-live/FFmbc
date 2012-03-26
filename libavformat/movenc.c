@@ -1128,6 +1128,17 @@ static int mov_write_cslg_tag(AVIOContext *pb, MOVTrack *track)
     return 32;
 }
 
+static int mov_write_sdtp_tag(AVIOContext *pb, MOVTrack *track)
+{
+    int i;
+    avio_wb32(pb, 8+4+track->entry); // size
+    avio_wtag(pb, "sdtp");
+    avio_wb32(pb, 0); // version & flags
+    for (i = 0; i < track->entry; i++)
+        avio_w8(pb, track->cluster[i].cts > 0 ? 0x40 : 0x08);
+    return 8+4+track->entry;
+}
+
 static int mov_write_ctts_tag(AVIOContext *pb, MOVTrack *track)
 {
     MOVStts *ctts_entries;
@@ -1242,8 +1253,10 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tra
     if (track->enc->codec_type == AVMEDIA_TYPE_VIDEO &&
         track->flags & MOV_TRACK_CTTS) {
         int ret = mov_write_ctts_tag(pb, track);
-        if (ret && track->mode == MODE_MOV)
+        if (ret && track->mode == MODE_MOV) {
             mov_write_cslg_tag(pb, track);
+            mov_write_sdtp_tag(pb, track);
+        }
     }
     mov_write_stsc_tag(pb, track);
     mov_write_stsz_tag(pb, track);

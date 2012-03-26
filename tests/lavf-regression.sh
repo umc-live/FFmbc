@@ -106,6 +106,7 @@ if [ -n "$do_mov" ] ; then
 do_lavf mov "-acodec pcm_alaw"
 do_lavf mov "-acodec pcm_s24le -timecode 11:02:53:20" "" "lavf_tc.mov"
 do_lavf mov "-target imx50" "" "lavf_imx50.mov"
+do_lavf_extra mov "-target xdcamhd422 -vf scale=1920:1080:1 -aspect 16:9 -ar 48k -vtag xd5c -acodec pcm_s16le -tff" "" "lavf_xdcamhd422.mov" "-ar 48k -acodec pcm_s16le -newaudio -acodec pcm_s16le -newaudio -acodec pcm_s16le -newaudio"
 fi
 
 if [ -n "$do_dv_fmt" ] ; then
