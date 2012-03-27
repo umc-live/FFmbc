@@ -94,6 +94,7 @@ typedef struct {
     AVRational aspect_ratio;
     int width;
     int height;
+    int frame_layout;
     int channels;
     int bits_per_sample;
     unsigned int component_depth;
@@ -877,6 +878,9 @@ static int mxf_read_generic_descriptor(AVFormatContext *s, void *arg, int tag, i
     case 0x3202:
         descriptor->height = avio_rb32(s->pb);
         break;
+    case 0x320C:
+        descriptor->frame_layout = avio_r8(s->pb);
+        break;
     case 0x320E:
         descriptor->aspect_ratio.num = avio_rb32(s->pb);
         descriptor->aspect_ratio.den = avio_rb32(s->pb);
@@ -1140,7 +1144,20 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
             if (st->codec->codec_id == CODEC_ID_NONE)
                 st->codec->codec_id = container_ul->id;
             st->codec->width = descriptor->width;
-            st->codec->height = descriptor->height;
+            st->codec->height = descriptor->height; /* field height, not frame height */
+            switch (descriptor->frame_layout) {
+            case 0: // Full Frame
+            case 3: // Mixed Fields
+                break;
+            case 1: // Separate Fields
+                st->codec->height *= 2; /* turn field height into frame height */
+                break;
+            case 2: // Single Field
+            case 4: // Segmented Frame
+            default:
+                av_log(mxf->fc, AV_LOG_INFO, "frame layout %d is not currently supported\n",
+                       descriptor->frame_layout);
+            }
             if (st->codec->codec_id == CODEC_ID_RAWVIDEO) {
                 st->codec->pix_fmt = descriptor->pix_fmt;
                 if (st->codec->pix_fmt == PIX_FMT_NONE) {
