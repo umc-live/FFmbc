@@ -4425,7 +4425,10 @@ static void new_audio_stream(AVFormatContext *oc, int file_idx)
     enum CodecID codec_id = CODEC_ID_NONE;
 
     if(!audio_stream_copy){
-        if (audio_codec_name) {
+        if (target && !strncmp(target, "dvc", 3) &&
+            !strcmp(oc->oformat->name, "dv")) { // hack because of target setting LE
+            codec_id = CODEC_ID_PCM_S16BE;
+        } else if (audio_codec_name) {
             codec_id = find_codec_or_die(audio_codec_name, AVMEDIA_TYPE_AUDIO, 1);
             codec = avcodec_find_encoder_by_name(audio_codec_name);
         } else {
