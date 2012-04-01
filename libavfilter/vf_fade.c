@@ -25,110 +25,129 @@
  * based heavily on vf_negate.c by Bobby Bingham
  */
 
+#include "libavutil/avstring.h"
+#include "libavutil/eval.h"
+#include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/parseutils.h"
+#include "libavutil/colorspace.h"
 #include "avfilter.h"
+#include "drawutils.h"
+#include "internal.h"
 
 typedef struct {
-    int factor, fade_per_frame;
-    unsigned int frame_index, start_frame, stop_frame;
-    int hsub, vsub, bpp;
+    const AVClass *class;
+    FFDrawContext dc;
+    FFDrawColor color;
+    double factor, fade_per_frame;
+    unsigned int frame_index, start_frame, stop_frame, nb_frames;
+    int alpha;
+    char type[4];
+    char *color_str;
 } FadeContext;
+
+#define OFFSET(x) offsetof(FadeContext, x)
+
+static const AVOption fade_options[] = {
+    {"alpha", "fade alpha if present",        OFFSET(alpha),     FF_OPT_TYPE_INT,    {.dbl=0}, 0, 1 },
+    {"color", "set color to fade to or from", OFFSET(color_str), FF_OPT_TYPE_STRING, {.str="black"}, CHAR_MIN, CHAR_MAX },
+    {NULL},
+};
+
+static const char *fade_get_name(void *ctx)
+{
+    return "fade";
+}
+
+static const AVClass fade_class = {
+    "FadeContext",
+    fade_get_name,
+    fade_options
+};
 
 static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
 {
     FadeContext *fade = ctx->priv;
-    unsigned int nb_frames;
-    char in_out[4];
+    int len, ret = 0;
+
+    fade->class = &fade_class;
+    av_opt_set_defaults(fade);
 
     if (!args ||
-        sscanf(args, " %3[^:]:%u:%u", in_out, &fade->start_frame, &nb_frames) != 3) {
+        sscanf(args, " %3[^:]:%u:%u%n", fade->type, &fade->start_frame, &fade->nb_frames, &len) != 3) {
         av_log(ctx, AV_LOG_ERROR,
                "Expected 3 arguments '(in|out):#:#':'%s'\n", args);
         return AVERROR(EINVAL);
     }
 
-    nb_frames = nb_frames ? nb_frames : 1;
-    fade->fade_per_frame = (1 << 16) / nb_frames;
-    if (!strcmp(in_out, "in"))
-        fade->factor = 0;
-    else if (!strcmp(in_out, "out")) {
+    if (args[len] == ':') {
+        if ((ret = av_set_options_string(fade, args+len+1, "=", ":")) < 0)
+            return ret;
+    }
+
+    if ((ret = av_parse_color(fade->color.rgba, fade->color_str, -1, ctx))) {
+        av_log(ctx, AV_LOG_ERROR, "Invalid text color '%s'\n", fade->color_str);
+        return ret;
+    }
+
+    fade->nb_frames = FFMAX(1, fade->nb_frames);
+    fade->fade_per_frame = 255.0 / fade->nb_frames;
+    if (!strcmp(fade->type, "in")) {
         fade->fade_per_frame = -fade->fade_per_frame;
-        fade->factor = (1 << 16);
+        fade->factor = 255;
+    } else if (!strcmp(fade->type, "out")) {
+        fade->factor = 0;
     } else {
         av_log(ctx, AV_LOG_ERROR,
-               "first argument must be 'in' or 'out':'%s'\n", in_out);
+               "Type argument must be 'in' or 'out' but '%s' was specified\n", fade->type);
         return AVERROR(EINVAL);
     }
-    fade->stop_frame = fade->start_frame + nb_frames;
+    fade->stop_frame = fade->start_frame + fade->nb_frames;
 
     av_log(ctx, AV_LOG_INFO,
-           "type:%s start_frame:%d nb_frames:%d\n",
-           in_out, fade->start_frame, nb_frames);
+           "type:%s start_frame:%d nb_frames:%d alpha:%d color:%s\n",
+           fade->type, fade->start_frame, fade->nb_frames, fade->alpha, fade->color_str);
+
     return 0;
 }
 
 static int query_formats(AVFilterContext *ctx)
 {
-    const static enum PixelFormat pix_fmts[] = {
-        PIX_FMT_YUV444P,  PIX_FMT_YUV422P,  PIX_FMT_YUV420P,
-        PIX_FMT_YUV411P,  PIX_FMT_YUV410P,
-        PIX_FMT_YUVJ444P, PIX_FMT_YUVJ422P, PIX_FMT_YUVJ420P,
-        PIX_FMT_YUV440P,  PIX_FMT_YUVJ440P,
-        PIX_FMT_RGB24,    PIX_FMT_BGR24,
-        PIX_FMT_NONE
-    };
-
-    avfilter_set_common_pixel_formats(ctx, avfilter_make_format_list(pix_fmts));
+    avfilter_set_common_pixel_formats(ctx, ff_draw_supported_pixel_formats(0));
     return 0;
 }
+
+static enum PixelFormat alpha_pix_fmts[] = {
+    PIX_FMT_YUVA420P,
+    PIX_FMT_ARGB, PIX_FMT_ABGR,
+    PIX_FMT_RGBA, PIX_FMT_BGRA,
+    PIX_FMT_NONE
+};
 
 static int config_props(AVFilterLink *inlink)
 {
     FadeContext *fade = inlink->dst->priv;
-    const AVPixFmtDescriptor *pixdesc = &av_pix_fmt_descriptors[inlink->format];
 
-    fade->hsub = pixdesc->log2_chroma_w;
-    fade->vsub = pixdesc->log2_chroma_h;
+    ff_draw_init(&fade->dc, inlink->format, 0);
+    ff_draw_color(&fade->dc, &fade->color, fade->color.rgba);
 
-    fade->bpp = av_get_bits_per_pixel(pixdesc) >> 3;
+    fade->alpha = fade->alpha ? ff_fmt_is_in(inlink->format, alpha_pix_fmts) : 0;
+
     return 0;
 }
 
 static void draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
 {
     FadeContext *fade = inlink->dst->priv;
-    AVFilterBufferRef *outpic = inlink->cur_buf;
-    uint8_t *p;
-    int i, j, plane;
+    AVFilterBufferRef *picref = inlink->cur_buf;
 
-    if (fade->factor < UINT16_MAX) {
-        /* luma or rgb plane */
-        for (i = 0; i < h; i++) {
-            p = outpic->data[0] + (y+i) * outpic->linesize[0];
-            for (j = 0; j < inlink->w * fade->bpp; j++) {
-                /* fade->factor is using 16 lower-order bits for decimal
-                 * places. 32768 = 1 << 15, it is an integer representation
-                 * of 0.5 and is for rounding. */
-                *p = (*p * fade->factor + 32768) >> 16;
-                p++;
-            }
-        }
-
-        if (outpic->data[1] && outpic->data[2]) {
-            /* chroma planes */
-            for (plane = 1; plane < 3; plane++) {
-                for (i = 0; i < h; i++) {
-                    p = outpic->data[plane] + ((y+i) >> fade->vsub) * outpic->linesize[plane];
-                    for (j = 0; j < inlink->w >> fade->hsub; j++) {
-                        /* 8421367 = ((128 << 1) + 1) << 15. It is an integer
-                         * representation of 128.5. The .5 is for rounding
-                         * purposes. */
-                        *p = ((*p - 128) * fade->factor + 8421367) >> 16;
-                        p++;
-                    }
-                }
-            }
-        }
+    if (fade->factor > 0) {
+        fade->color.rgba[3] = lrint(fade->factor);
+        ff_draw_color(&fade->dc, &fade->color, fade->color.rgba);
+        ff_blend_rectangle(&fade->dc, &fade->color,
+                           picref->data, picref->linesize,
+                           picref->video->w, picref->video->h,
+                           0, y, picref->video->w, h);
     }
 
     avfilter_draw_slice(inlink->dst->outputs[0], y, h, slice_dir);
@@ -143,7 +162,7 @@ static void end_frame(AVFilterLink *inlink)
     if (fade->frame_index >= fade->start_frame &&
         fade->frame_index <= fade->stop_frame)
         fade->factor += fade->fade_per_frame;
-    fade->factor = av_clip_uint16(fade->factor);
+    fade->factor = av_clipf(fade->factor, 0, 255);
     fade->frame_index++;
 }
 
