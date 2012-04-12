@@ -1949,9 +1949,15 @@ static int output_packet(InputStream *ist, int ist_index,
 
                         av_init_packet(&opkt);
 
-                        if ((!ost->frame_number && !(pkt->flags & AV_PKT_FLAG_KEY)) && !copy_initial_nonkeyframes) {
-                            fprintf(stderr, "Stream #%d.%d dropping frames before first keyframe pts %"PRId64" dts %"PRId64" duration %d size %d flags %x\n",
-                                    ist->file_index, ist->st->index, pkt->pts, pkt->dts, pkt->duration, pkt->size, pkt->flags);
+                        if ((!ost->frame_number && !(pkt->flags & AV_PKT_FLAG_KEY)) &&
+                            !copy_initial_nonkeyframes &&
+                            ost->st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+                            ost->st->codec->codec_id != CODEC_ID_NONE) {
+                            fprintf(stderr, "Stream #%d.%d dropping frames "
+                                    "before first keyframe pts %"PRId64" "
+                                    "dts %"PRId64" duration %d size %d flags %x\n",
+                                    ist->file_index, ist->st->index, pkt->pts,
+                                    pkt->dts, pkt->duration, pkt->size, pkt->flags);
 
 #if !CONFIG_AVFILTER
                             continue;
