@@ -2347,12 +2347,18 @@ static void validate_video_target(AVFormatContext *s, OutputStream *ost)
     }
 
     if (!strcmp(ost->target, "vcd") || !strcmp(ost->target, "svcd") ||
-        !strcmp(ost->target, "dvd") || !strcmp(ost->target, "dvcpro50") ||
+        !strcmp(ost->target, "dvcpro50") ||
         !strcmp(ost->target, "dvcpro") || !strcmp(ost->target, "dvcam") ||
         !strncmp(ost->target, "imx", 3)) {
         if (norm != PAL && norm != NTSC) {
             fprintf(stderr, "Error, target %s only supports ntsc "
                     "or pal frame rate\n", ost->target);
+            ffmpeg_exit(1);
+        }
+    } else if (!strcmp(ost->target, "dvd")) {
+        if (norm != PAL && norm != NTSC && norm != NTSC_FILM) {
+            fprintf(stderr, "Error, target %s only supports ntsc, "
+                    "pal or ntsc film frame rates\n", ost->target);
             ffmpeg_exit(1);
         }
     }
@@ -4649,11 +4655,16 @@ static int opt_output_file(const char *opt, const char *filename)
     if (!strcmp(filename, "-"))
         filename = "pipe:";
 
-    if (target && !strncmp(target, "imx", 3)) {
-        if (av_match_ext(filename, "mov"))
-            opt_bsf("vbsf", "imxdump");
-        else if (av_match_ext(filename, "mxf"))
-            last_asked_format = "mxf_d10";
+    if (target) {
+        if (!strncmp(target, "imx", 3)) {
+            if (av_match_ext(filename, "mov"))
+                opt_bsf("vbsf", "imxdump");
+            else if (av_match_ext(filename, "mxf"))
+                last_asked_format = "mxf_d10";
+        } else if (!strcmp(target, "dvd")) {
+            if (av_match_ext(filename, "mpg"))
+                last_asked_format = "dvd";
+        }
     }
 
     err = avformat_alloc_output_context2(&oc, NULL, last_asked_format, filename);
@@ -5023,17 +5034,16 @@ static int opt_target(const char *opt, const char *arg)
         opt_default("packetsize", "2324");
 
     } else if(!strcmp(arg, "dvd")) {
-
         opt_codec("vcodec", "mpeg2video");
         opt_codec("acodec", "ac3");
-        opt_format("f", "dvd");
 
         opt_frame_size("vcodec", norm == PAL ? "720x576" : "720x480");
         frame_rate = frame_rate_tab[norm];
         opt_frame_pix_fmt("pix_fmt", "yuv420p");
         opt_default("g", norm == PAL ? "15" : "18");
+        opt_default("bf", "2");
 
-        opt_default("b", "6000000");
+        opt_default("b", "7000000");
         opt_default("maxrate", "9000000");
         opt_default("minrate", "0"); //1500000;
         opt_default("bufsize", "1835008"); //224*1024*8;
