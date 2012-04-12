@@ -4410,9 +4410,7 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
     /* reset some key parameters */
     video_disable = 0;
     video_codec_tag = 0;
-    av_freep(&video_codec_name);
     av_freep(&forced_key_frames);
-    video_stream_copy = 0;
     frame_pix_fmt = PIX_FMT_NONE;
 }
 
@@ -4479,8 +4477,6 @@ static void new_audio_stream(AVFormatContext *oc, int file_idx)
     /* reset some key parameters */
     audio_disable = 0;
     audio_codec_tag = 0;
-    av_freep(&audio_codec_name);
-    audio_stream_copy = 0;
 }
 
 static void new_data_stream(AVFormatContext *oc, int file_idx)
@@ -4511,8 +4507,6 @@ static void new_data_stream(AVFormatContext *oc, int file_idx)
 
     data_disable = 0;
     data_codec_tag = 0;
-    av_freep(&data_codec_name);
-    data_stream_copy = 0;
 }
 
 static void new_subtitle_stream(AVFormatContext *oc, int file_idx)
@@ -4560,8 +4554,6 @@ static void new_subtitle_stream(AVFormatContext *oc, int file_idx)
 
     subtitle_disable = 0;
     subtitle_codec_tag = 0;
-    av_freep(&subtitle_codec_name);
-    subtitle_stream_copy = 0;
 }
 
 static int opt_new_stream(const char *opt, const char *arg)
@@ -4760,6 +4752,13 @@ static int opt_output_file(const char *opt, const char *filename)
     audio_sample_fmt  = AV_SAMPLE_FMT_NONE;
 
     av_freep(&forced_key_frames);
+    av_freep(&video_codec_name);
+    av_freep(&audio_codec_name);
+    av_freep(&subtitle_codec_name);
+    video_stream_copy = 0;
+    audio_stream_copy = 0;
+    subtitle_stream_copy = 0;
+    data_stream_copy = 0;
     uninit_opts();
     init_opts();
     return 0;
