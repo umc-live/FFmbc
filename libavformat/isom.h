@@ -136,6 +136,7 @@ typedef struct MOVStreamContext {
     AVRational clap_width, clap_height; ///< clean aperture info in 'clap' atom
     MOVElst *elst_data;   ///< edit list
     unsigned elst_count;
+    int64_t stts_end;    ///< used for dts generation in fragmented movie files
 } MOVStreamContext;
 
 typedef struct MOVContext {
