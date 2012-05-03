@@ -3394,6 +3394,8 @@ static int transcode(AVFormatContext **output_files,
         if (pkt.stream_index >= input_files[file_index].ctx->nb_streams)
             goto discard_packet;
         ist_index = input_files[file_index].ist_index + pkt.stream_index;
+        if (ist_index >= nb_input_streams)
+            goto discard_packet;
         ist = &input_streams[ist_index];
         if (ist->discard)
             goto discard_packet;
