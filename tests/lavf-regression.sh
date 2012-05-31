@@ -78,6 +78,7 @@ fi
 if [ -n "$do_mxf" ] ; then
 do_lavf mxf '-ar 48000 -bf 2 -timecode 02:56:14:13'
 do_lavf mxf '-ar 48000 -r 30000/1001 -timecode 02:56:14;13' '' 'lavf_ntsc_tc.mxf'
+do_lavf mxf '-ar 48000 -vcodec dnxhd -dct int -s 1920x1080 -b 120M' '' 'lavf_dnxhd.mxf'
 do_lavf_extra mxf '-ar 48k -pix_fmt yuv422p -dct int -vcodec dvvideo -s 1440x1080' '' 'lavf_dvhd.mxf' '-ar 48k -newaudio -newaudio -newaudio'
 fi
 
