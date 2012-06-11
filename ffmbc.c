@@ -4990,7 +4990,6 @@ static int opt_target(const char *opt, const char *arg)
         opt_codec("acodec", "mp2");
         opt_format("f", "vcd");
 
-        opt_frame_size("s", norm == PAL ? "352x288" : "352x240");
         frame_rate = frame_rate_tab[norm];
         opt_default("g", norm == PAL ? "15" : "18");
 
@@ -5018,7 +5017,6 @@ static int opt_target(const char *opt, const char *arg)
         opt_codec("acodec", "mp2");
         opt_format("f", "svcd");
 
-        opt_frame_size("s", norm == PAL ? "480x576" : "480x480");
         frame_rate = frame_rate_tab[norm];
         opt_frame_pix_fmt("pix_fmt", "yuv420p");
         opt_default("g", norm == PAL ? "15" : "18");
@@ -5039,7 +5037,6 @@ static int opt_target(const char *opt, const char *arg)
         opt_codec("vcodec", "mpeg2video");
         opt_codec("acodec", "ac3");
 
-        opt_frame_size("vcodec", norm == PAL ? "720x576" : "720x480");
         frame_rate = frame_rate_tab[norm];
         opt_frame_pix_fmt("pix_fmt", "yuv420p");
         opt_default("g", norm == PAL ? "15" : "18");
