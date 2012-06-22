@@ -71,6 +71,10 @@ do_ffmpeg $file $DEC_OPTS -f image2 -vcodec pgmyuv -i $raw_src $DEC_OPTS -ar 441
 #do_ffmpeg_crc $file -i $target_path/$file
 fi
 
+if [ -n "$do_mpeg" ] ; then
+do_lavf mpeg
+fi
+
 if [ -n "$do_mpg" ] ; then
 do_lavf mpg
 fi
