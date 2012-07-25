@@ -2794,16 +2794,15 @@ static int transcode(AVFormatContext **output_files,
             codec->rc_buffer_size = icodec->rc_buffer_size;
 
             codec->time_base = ist->st->time_base;
-            if(!strcmp(os->oformat->name, "avi")) {
-                if(!copy_tb && av_q2d(icodec->time_base)*icodec->ticks_per_frame > 2*av_q2d(ist->st->time_base) && av_q2d(ist->st->time_base) < 1.0/500){
-                    codec->time_base = icodec->time_base;
-                    codec->time_base.num *= icodec->ticks_per_frame;
-                    codec->time_base.den *= 2;
-                }
-            } else if(!(os->oformat->flags & AVFMT_VARIABLE_FPS)) {
-                if(!copy_tb && av_q2d(icodec->time_base)*icodec->ticks_per_frame > av_q2d(ist->st->time_base) && av_q2d(ist->st->time_base) < 1.0/500){
-                    codec->time_base = icodec->time_base;
-                    codec->time_base.num *= icodec->ticks_per_frame;
+            if (!(os->oformat->flags & AVFMT_VARIABLE_FPS)) {
+                if (!copy_tb) {
+                    if (av_q2d(ist->st->r_frame_rate) <= 60) {
+                        codec->time_base.num = ist->st->r_frame_rate.den;
+                        codec->time_base.den = ist->st->r_frame_rate.num;
+                    } else if (av_q2d(icodec->time_base)*icodec->ticks_per_frame > av_q2d(ist->st->time_base)) {
+                        codec->time_base = icodec->time_base;
+                        codec->time_base.num *= icodec->ticks_per_frame;
+                    }
                 }
             }
             av_reduce(&codec->time_base.num, &codec->time_base.den,
