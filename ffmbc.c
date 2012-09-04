@@ -1658,6 +1658,8 @@ static void print_report(AVFormatContext **output_files,
                 speed = pts_diff / elapsed_time;
                 time_left = (duration - pts) / speed;
             eta:
+                if (time_left < 0)
+                    time_left = 0;
                 break_time(time_left, &hours, &mins, &secs, &us);
                 snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
                          " eta=%02d:%02d:%02d.%02d", hours, mins, secs,
