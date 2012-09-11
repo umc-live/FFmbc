@@ -1338,9 +1338,11 @@ vbv_retry:
         flush_put_bits(&s->pb);
         s->frame_bits  = put_bits_count(&s->pb);
 
-        stuffing_count= ff_vbv_update(s, s->frame_bits);
-        if(stuffing_count){
-            if(s->pb.buf_end - s->pb.buf - (put_bits_count(&s->pb)>>3) < stuffing_count + 50){
+        stuffing_count = ff_vbv_update(s, s->frame_bits);
+        s->stuffing_bits = 8*stuffing_count;
+        if (stuffing_count) {
+            if (s->pb.buf_end - s->pb.buf - (put_bits_count(&s->pb) >> 3) <
+                    stuffing_count + 50) {
                 av_log(s->avctx, AV_LOG_ERROR, "stuffing too large\n");
                 return -1;
             }
