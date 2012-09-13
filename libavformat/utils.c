@@ -1930,7 +1930,7 @@ static void estimate_timings_from_bit_rate(AVFormatContext *ic)
     }
 }
 
-#define DURATION_MAX_READ_SIZE 250000
+#define DURATION_MAX_READ_SIZE 2500000
 #define DURATION_MAX_RETRY 3
 
 /* only usable for MPEG-PS streams */
