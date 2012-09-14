@@ -63,8 +63,8 @@ static int dct_quantize_c(MpegEncContext *s, DCTELEM *block, int n, int qscale, 
 static uint8_t default_mv_penalty[MAX_FCODE+1][MAX_MV*2+1];
 static uint8_t default_fcode_tab[MAX_MV*2+1];
 
-void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][64], const uint8_t *qscale_table,
-                       const uint16_t *quant_matrix, int bias, int qmin, int qmax, int intra, uint64_t numerator)
+static void convert_matrix(AVCodecContext *avctx, DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][64], const uint8_t *qscale_table,
+                      const uint16_t *quant_matrix, int bias, int qmin, int qmax, int intra, uint64_t numerator)
 {
     int qp;
     int shift=0;
@@ -135,7 +135,7 @@ void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][6
         }
     }
     if(shift){
-        av_log(NULL, AV_LOG_INFO, "Warning, QMAT_SHIFT is larger than %d, overflows possible\n", QMAT_SHIFT - shift);
+        av_log(avctx, AV_LOG_DEBUG, "Warning, QMAT_SHIFT is larger than %d, overflows possible\n", QMAT_SHIFT - shift);
     }
 }
 
@@ -749,10 +749,10 @@ av_cold int MPV_encode_init(AVCodecContext *avctx)
             s->qscale_table = ff_mpeg2_non_linear_qscale;
         else
             s->qscale_table = ff_mpeg2_linear_qscale;
-        ff_convert_matrix(&s->dsp, s->q_intra_matrix, s->q_intra_matrix16, s->qscale_table,
-                          s->intra_matrix, s->intra_quant_bias, avctx->qmin, 31, 1, 2);
-        ff_convert_matrix(&s->dsp, s->q_inter_matrix, s->q_inter_matrix16, s->qscale_table,
-                          s->inter_matrix, s->inter_quant_bias, avctx->qmin, 31, 0, 2);
+        convert_matrix(avctx, &s->dsp, s->q_intra_matrix, s->q_intra_matrix16, s->qscale_table,
+                       s->intra_matrix, s->intra_quant_bias, avctx->qmin, 31, 1, 2);
+        convert_matrix(avctx, &s->dsp, s->q_inter_matrix, s->q_inter_matrix16, s->qscale_table,
+                       s->inter_matrix, s->inter_quant_bias, avctx->qmin, 31, 0, 2);
     }
 
     if(ff_rate_control_init(s) < 0)
@@ -2923,8 +2923,8 @@ static int encode_picture(MpegEncContext *s, int picture_number)
         s->y_dc_scale_table=
         s->c_dc_scale_table= ff_mpeg2_dc_scale_table[s->intra_dc_precision];
         s->intra_matrix[0] = ff_mpeg2_dc_scale_table[s->intra_dc_precision][8];
-        ff_convert_matrix(&s->dsp, s->q_intra_matrix, s->q_intra_matrix16, NULL,
-                          s->intra_matrix, s->intra_quant_bias, 8, 8, 1, 1);
+        convert_matrix(s->avctx, &s->dsp, s->q_intra_matrix, s->q_intra_matrix16, NULL,
+                       s->intra_matrix, s->intra_quant_bias, 8, 8, 1, 1);
         s->qscale= 8;
     }
 
