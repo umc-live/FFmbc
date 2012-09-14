@@ -290,6 +290,7 @@ typedef struct OutputStream {
        for A/V sync */
     //double sync_ipts;        /* dts from the AVPacket of the demuxer in second units */
     struct InputStream *sync_ist; /* input stream to sync against */
+    int is_start;            /* is 1 at the start and after a discontinuity */
     int64_t sync_opts;       /* output frame counter, could be changed to some true timestamp */ //FIXME look at frame_number
     AVFrame prev_frame;
     int free_prev_frame;
@@ -360,7 +361,6 @@ typedef struct InputStream {
     double ts_scale;
     int64_t       dts;       /* current dts */
     int dts_is_reordered_pts;/* set this to 1 if format is avi/wmv/raw, ie format has no pts */
-    int is_start;            /* is 1 at the start and after a discontinuity */
     int showed_multi_packet_warning;
     int is_past_recording_time;
     AVDictionary *opts;
@@ -1039,7 +1039,7 @@ static void do_audio_out(AVFormatContext *s,
 
         //FIXME resample delay
         if(fabs(delta) > 50){
-            if(ist->is_start || fabs(delta) > audio_drift_threshold*enc->sample_rate){
+            if(ost->is_start || fabs(delta) > audio_drift_threshold*enc->sample_rate){
                 if(byte_delta < 0){
                     byte_delta= FFMAX(byte_delta, -size);
                     size += byte_delta;
@@ -1222,7 +1222,7 @@ static void do_audio_out(AVFormatContext *s,
     if (ost->nb_audio_channel_maps > 0)
         audiomerge_drain_complete_size(&ost->audiomerge);
 
-    ist->is_start = 0;
+    ost->is_start = 0;
 }
 
 /* we begin to correct av delay at this threshold */
@@ -2888,6 +2888,7 @@ static int transcode(AVFormatContext **output_files,
                     ist->decoding_needed = 1;
                 }
                 ost->encoding_needed = 1;
+                ost->is_start = 1;
                 ost->resample_sample_fmt  = icodec->sample_fmt;
                 ost->resample_sample_rate = icodec->sample_rate;
                 ost->resample_channels    = icodec->channels;
@@ -3107,7 +3108,6 @@ static int transcode(AVFormatContext **output_files,
         is = input_files[ist->file_index].ctx;
         ist->pts = 0;
         ist->dts = ist->next_pts = AV_NOPTS_VALUE;
-        ist->is_start = 1;
         if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
             strcmp(is->iformat->name, "mpeg") &&
             strcmp(is->iformat->name, "mpegts") &&
