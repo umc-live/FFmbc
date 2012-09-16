@@ -202,8 +202,20 @@ static int read_apic(AVFormatContext *s, int taglen, const char *key)
     int len;
     uint8_t *data;
 
+    mime[0] = 0;
     avio_r8(s->pb); // encoding
-    avio_get_str(s->pb, sizeof(mime), mime, sizeof(mime));
+    if (!strcmp(key, "PIC")) {
+        char type[4] = {0};
+        avio_read(s->pb, type, 3);
+        if (!strcmp(type, "PNG"))
+            strcpy(mime, "image/png");
+        else if (!strcmp(type, "JPG"))
+            strcpy(mime, "image/jpeg");
+        else if (!strcmp(type, "BMP"))
+            strcpy(mime, "image/bmp");
+    } else {
+        avio_get_str(s->pb, sizeof(mime), mime, sizeof(mime));
+    }
     avio_r8(s->pb); // type
     while (avio_r8(s->pb)); // description
 
@@ -295,6 +307,8 @@ static void ff_id3v2_parse(AVFormatContext *s, int len, uint8_t version, uint8_t
             tlen -= 4;
         }
 
+        av_log(s, AV_LOG_DEBUG, "tag %s len %d\n", tag, tlen);
+
         if (tflags & (ID3v2_FLAG_ENCRYPTION | ID3v2_FLAG_COMPRESSION)) {
             av_log(s, AV_LOG_WARNING, "Skipping encrypted/compressed ID3v2 frame %s.\n", tag);
             avio_skip(s->pb, tlen);
@@ -318,7 +332,7 @@ static void ff_id3v2_parse(AVFormatContext *s, int len, uint8_t version, uint8_t
             } else {
                 read_ttag(s, s->pb, tlen, tag);
             }
-        } else if (!strcmp(tag, "APIC")) {
+        } else if (!strcmp(tag, "APIC") || !strcmp(tag, "PIC")) {
             read_apic(s, tlen, tag);
         } else if (!strcmp(tag, "USLT") || !strcmp(tag, "ULT")) {
             read_uslt(s, tlen, tag);
@@ -408,6 +422,7 @@ const ID3v2Tag ff_id3v2_tags[] = {
     { "TP1",  "artist", 0},
     { "TP2",  "album_artist", 0},
     { "TP3",  "performer", 0},
+    { "TPA",  "disc", 0},
     { "TRK",  "track", 0},
     { "ULT",  "lyrics", 0},
     { "TYE",  "year", 0},
