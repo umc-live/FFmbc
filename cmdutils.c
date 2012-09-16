@@ -30,6 +30,7 @@
 
 #include "config.h"
 #include "libavformat/avformat.h"
+#include "libavformat/metadata.h"
 #include "libavfilter/avfilter.h"
 #include "libavdevice/avdevice.h"
 #include "libswscale/swscale.h"
@@ -517,6 +518,24 @@ int opt_formats(const char *opt, const char *arg)
             encode ? "E":" ",
             name,
             long_name ? long_name:" ");
+    }
+    return 0;
+}
+
+int opt_metadata_tags(const char *opt, const char *arg)
+{
+    AVOutputFormat *ofmt = NULL;
+    const char *prev = NULL;
+
+    while ((ofmt = av_oformat_next(ofmt))) {
+        if (ofmt->metadata_conv && (!prev || strcmp(ofmt->name, prev))) {
+            const AVMetadataConv *conv = ofmt->metadata_conv;
+            printf("%s format supported tags:\n", ofmt->name);
+            for (; conv->generic; conv++) {
+                printf("    %s\n", conv->generic);
+            }
+            prev = ofmt->name;
+        }
     }
     return 0;
 }

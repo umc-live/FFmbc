@@ -31,9 +31,14 @@
  * http://xiph.org/vorbis/doc/v-comment.html
  */
 const AVMetadataConv ff_vorbiscomment_metadata_conv[] = {
+    { "ARTIST", "artist"},
+    { "ALBUM", "album"},
+    { "GENRE", "genre"},
+    { "DATE", "date"},
     { "ALBUMARTIST", "album_artist"},
     { "TRACKNUMBER", "track"  },
     { "DISCNUMBER",  "disc"   },
+    { "DESCRIPTION", "comment"},
     { 0 }
 };
 

@@ -774,19 +774,6 @@ static int mov_read_moof(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return mov_read_default(c, pb, atom);
 }
 
-static void mov_metadata_creation_time(AVDictionary **metadata, time_t time)
-{
-    char buffer[32];
-    if (time) {
-        struct tm *ptm;
-        time -= 2082844800;  /* seconds between 1904-01-01 and Epoch */
-        ptm = gmtime(&time);
-        if (!ptm) return;
-        strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", ptm);
-        av_dict_set(metadata, "creation_time", buffer, 0);
-    }
-}
-
 static int mov_read_mdhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -827,18 +814,16 @@ static int mov_read_mdhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     int64_t duration;
-    time_t creation_time;
     int version = avio_r8(pb); /* version */
     avio_rb24(pb); /* flags */
 
     if (version == 1) {
-        creation_time = avio_rb64(pb);
+        avio_rb64(pb);
         avio_rb64(pb);
     } else {
-        creation_time = avio_rb32(pb);
+        avio_rb32(pb);
         avio_rb32(pb); /* modification time */
     }
-    mov_metadata_creation_time(&c->fc->metadata, creation_time);
     c->time_scale = avio_rb32(pb); /* time scale */
 
     av_dlog(c->fc, "time scale = %i\n", c->time_scale);

@@ -2978,6 +2978,34 @@ int avformat_write_header(AVFormatContext *s, AVDictionary **options)
             s->timestamp = parse_date("now", 0) / 1000000;
     }
 
+    if (s->oformat->metadata_conv) {
+        AVDictionaryEntry *t = NULL;
+        while (t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX)) {
+            const AVMetadataConv *conv = s->oformat->metadata_conv;
+            int year_supported = 0, date_supported = 0;
+            for (; conv->generic; conv++) {
+                if (!strcmp(conv->generic, "year"))
+                    year_supported = 1;
+                else if (!strcmp(conv->generic, "date"))
+                    date_supported = 1;
+                if (!strcmp(conv->generic, t->key))
+                    break;
+            }
+            if (!conv->generic) {
+                if (!strcmp(t->key, "date") && year_supported &&
+                    !av_dict_get(s->metadata, "year", NULL, 0) && strlen(t->value) >= 4) {
+                    t->value[5] = 0;
+                    strcpy(t->key, "year");
+                } else if (!strcmp(t->key, "year") && date_supported &&
+                           !av_dict_get(s->metadata, "year", NULL, 0)) {
+                    strcpy(t->key, "date");
+                } else {
+                    av_dict_unset(s->metadata, t->key);
+                }
+            }
+        }
+    }
+
     if(s->oformat->write_header){
         ret = s->oformat->write_header(s);
         if (ret < 0)

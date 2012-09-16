@@ -240,6 +240,13 @@ int opt_protocols(const char *opt, const char *arg);
 int opt_pix_fmts(const char *opt, const char *arg);
 
 /**
+ * Print a listing containing all the metadata tags supported by
+ * formats.
+ * This option processing function does not utilize the arguments.
+ */
+int opt_metadata_tags(const char *opt, const char *arg);
+
+/**
  * Return a positive value if a line read from standard input
  * starts with [yY], otherwise return 0.
  */

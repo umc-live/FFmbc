@@ -10,4 +10,5 @@
     { "protocols", OPT_EXIT, {(void*)opt_protocols}, "show available protocols" },
     { "filters",   OPT_EXIT, {(void*)opt_filters  }, "show available filters" },
     { "pix_fmts" , OPT_EXIT, {(void*)opt_pix_fmts }, "show available pixel formats" },
+    { "metadata_tags", OPT_EXIT, {(void*)opt_metadata_tags }, "show available metadata tags per format" },
     { "loglevel", HAS_ARG, {(void*)opt_loglevel}, "set libav* logging level", "loglevel" },

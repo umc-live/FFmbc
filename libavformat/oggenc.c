@@ -72,7 +72,7 @@ typedef struct {
 
 static const AVOption options[] = {
     { "oggpagesize", "Set preferred Ogg page size.",
-      offsetof(OGGContext, pref_size), FF_OPT_TYPE_INT, 0, 0, MAX_PAGE_SIZE, AV_OPT_FLAG_ENCODING_PARAM},
+      offsetof(OGGContext, pref_size), FF_OPT_TYPE_INT, {.dbl = 0}, 0, MAX_PAGE_SIZE, AV_OPT_FLAG_ENCODING_PARAM},
     { NULL },
 };
 
@@ -535,5 +535,6 @@ AVOutputFormat ff_ogg_muxer = {
     .write_header      = ogg_write_header,
     .write_packet      = ogg_write_packet,
     .write_trailer     = ogg_write_trailer,
+    .metadata_conv     = ff_vorbiscomment_metadata_conv,
     .priv_class = &ogg_muxer_class,
 };

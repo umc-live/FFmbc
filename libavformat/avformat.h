@@ -318,9 +318,7 @@ typedef struct AVOutputFormat {
 
     enum CodecID subtitle_codec; /**< default subtitle codec */
 
-#if FF_API_OLD_METADATA2
     const AVMetadataConv *metadata_conv;
-#endif
 
     const AVClass *priv_class; ///< AVClass for the private context
 

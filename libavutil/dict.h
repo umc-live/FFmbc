@@ -123,6 +123,7 @@ av_dict_get(AVDictionary *m, const char *key, const AVDictionaryEntry *prev, int
  * @return >= 0 on success otherwise an error code <0
  */
 int av_dict_set(AVDictionary **pm, const char *key, const char *value, int flags);
+int av_dict_unset(AVDictionary *m, const char *key);
 
 /**
  * Sets the given tag in m

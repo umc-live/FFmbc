@@ -23,6 +23,7 @@
 
 #include "movenc.h"
 #include "avformat.h"
+#include "metadata.h"
 #include "avio_internal.h"
 #include "riff.h"
 #include "avio.h"
@@ -1969,31 +1970,30 @@ static int mov_write_udta_tag(AVIOContext *pb, AVFormatContext *s)
     if(ret < 0)
         return ret;
 
-        if (mov->mode & MODE_3GP) {
-            mov_write_3gp_metadata(s, pb_buf, "titl", "title");
-            mov_write_3gp_metadata(s, pb_buf, "auth", "author");
-            mov_write_3gp_metadata(s, pb_buf, "gnre", "genre");
-            mov_write_3gp_metadata(s, pb_buf, "dscp", "comment");
-            mov_write_3gp_metadata(s, pb_buf, "albm", "album");
-            mov_write_3gp_metadata(s, pb_buf, "cprt", "copyright");
-            mov_write_3gp_metadata(s, pb_buf, "yrrc", "year");
-        } else if (mov->mode == MODE_MOV) { // the title field breaks gtkpod with mp4 and my suspicion is that stuff is not valid in mp4
-            mov_write_metadata(s, pb_buf, "\251ART", "artist");
-            mov_write_metadata(s, pb_buf, "\251nam", "title");
-            mov_write_metadata(s, pb_buf, "\251aut", "author");
-            mov_write_metadata(s, pb_buf, "\251alb", "album");
-            mov_write_metadata(s, pb_buf, "\251day", "date");
-            mov_write_metadata(s, pb_buf, "\251swr", "encoder");
-            mov_write_metadata(s, pb_buf, "\251des", "comment");
-            mov_write_metadata(s, pb_buf, "\251gen", "genre");
-            mov_write_metadata(s, pb_buf, "\251cpy", "copyright");
-        } else {
-            /* iTunes meta data */
-            mov_write_meta_tag(s, pb_buf);
-        }
+    if (mov->mode & MODE_3GP) {
+        mov_write_3gp_metadata(s, pb_buf, "titl", "title");
+        mov_write_3gp_metadata(s, pb_buf, "auth", "author");
+        mov_write_3gp_metadata(s, pb_buf, "gnre", "genre");
+        mov_write_3gp_metadata(s, pb_buf, "dscp", "comment");
+        mov_write_3gp_metadata(s, pb_buf, "albm", "album");
+        mov_write_3gp_metadata(s, pb_buf, "cprt", "copyright");
+        mov_write_3gp_metadata(s, pb_buf, "yrrc", "year");
+    } else if (mov->mode == MODE_MOV) { // the title field breaks gtkpod with mp4 and my suspicion is that stuff is not valid in mp4
+        mov_write_metadata(s, pb_buf, "\251ART", "artist");
+        mov_write_metadata(s, pb_buf, "\251nam", "title");
+        mov_write_metadata(s, pb_buf, "\251aut", "author");
+        mov_write_metadata(s, pb_buf, "\251alb", "album");
+        mov_write_metadata(s, pb_buf, "\251day", "date");
+        mov_write_metadata(s, pb_buf, "\251swr", "encoder");
+        mov_write_metadata(s, pb_buf, "\251des", "comment");
+        mov_write_metadata(s, pb_buf, "\251gen", "genre");
+        mov_write_metadata(s, pb_buf, "\251cpy", "copyright");
+    } else { // iTunes meta data
+        mov_write_meta_tag(s, pb_buf);
+    }
 
-        if (s->nb_chapters)
-            mov_write_chpl_tag(pb_buf, s);
+    if (s->nb_chapters)
+        mov_write_chpl_tag(pb_buf, s);
 
     if ((size = avio_close_dyn_buf(pb_buf, &buf)) > 0) {
         avio_wb32(pb, size+8);
@@ -2945,6 +2945,54 @@ static int mov_write_trailer(AVFormatContext *s)
     return res;
 }
 
+static const AVMetadataConv ff_mov_metadata_conv[] = {
+    { "\251ART", "artist" },
+    { "\251nam", "title" },
+    { "\251aut", "author" },
+    { "\251alb", "album" },
+    { "\251day", "date" },
+    { "\251swr", "encoder" },
+    { "\251des", "comment" },
+    { "\251gen", "genre" },
+    { "\251cpy", "copyright" },
+    { "reel",    "reel_name" },
+    { 0 },
+};
+
+static const AVMetadataConv ff_m4a_metadata_conv[] = {
+    { "\251nam", "title" },
+    { "\251ART", "artist" },
+    { "\251wrt", "composer" },
+    { "\251alb", "album" },
+    { "\251day", "date" },
+    { "\251too", "encoder" },
+    { "\251cmt", "comment" },
+    { "\251gen", "genre" },
+    { "\251grp", "grouping" },
+    { "\251lyr", "lyrics" },
+    { "aART",    "album_artist" },
+    { "covr",    "cover" },
+    { "cprt",    "copyright" },
+    { "desc",    "description" },
+    { "ldes",    "synopsis" },
+    { "tvsh",    "show" },
+    { "tven",    "episode_id" },
+    { "tvnn",    "network" },
+    { "trkn",    "track" },
+    { 0 },
+};
+
+static const AVMetadataConv ff_3gp_metadata_conv[] = {
+    { "titl", "title" },
+    { "auth", "author" },
+    { "gnre", "genre" },
+    { "dscp", "comment" },
+    { "albm", "album" },
+    { "cprt", "copyright" },
+    { "yrrc", "year" },
+    { 0 },
+};
+
 #if CONFIG_F4V_MUXER
 AVOutputFormat ff_f4v_muxer = {
     "f4v",
@@ -2959,6 +3007,7 @@ AVOutputFormat ff_f4v_muxer = {
     mov_write_trailer,
     .flags = AVFMT_GLOBALHEADER,
     .codec_tag = (const AVCodecTag* const []){codec_f4v_tags, 0},
+    .metadata_conv = ff_m4a_metadata_conv,
     .priv_class = &mov_muxer_class,
 };
 #endif
@@ -2975,6 +3024,7 @@ AVOutputFormat ff_mov_muxer = {
     .write_trailer     = mov_write_trailer,
     .flags = AVFMT_GLOBALHEADER,
     .codec_tag = (const AVCodecTag* const []){codec_movvideo_tags, codec_movaudio_tags, 0},
+    .metadata_conv = ff_mov_metadata_conv,
     .priv_class = &mov_muxer_class,
 };
 #endif
@@ -2991,6 +3041,7 @@ AVOutputFormat ff_tgp_muxer = {
     .write_trailer     = mov_write_trailer,
     .flags = AVFMT_GLOBALHEADER,
     .codec_tag = (const AVCodecTag* const []){codec_3gp_tags, 0},
+    .metadata_conv = ff_3gp_metadata_conv,
     .priv_class = &isom_muxer_class,
 };
 #endif
@@ -3008,6 +3059,7 @@ AVOutputFormat ff_mp4_muxer = {
     .write_trailer     = mov_write_trailer,
     .flags = AVFMT_GLOBALHEADER,
     .codec_tag = (const AVCodecTag* const []){ff_mp4_obj_type, 0},
+    .metadata_conv = ff_m4a_metadata_conv,
     .priv_class = &isom_muxer_class,
 };
 #endif
@@ -3040,6 +3092,7 @@ AVOutputFormat ff_tg2_muxer = {
     .write_trailer     = mov_write_trailer,
     .flags = AVFMT_GLOBALHEADER,
     .codec_tag = (const AVCodecTag* const []){codec_3gp_tags, 0},
+    .metadata_conv = ff_3gp_metadata_conv,
     .priv_class = &isom_muxer_class,
 };
 #endif
@@ -3057,6 +3110,7 @@ AVOutputFormat ff_ipod_muxer = {
     .write_trailer     = mov_write_trailer,
     .flags = AVFMT_GLOBALHEADER,
     .codec_tag = (const AVCodecTag* const []){codec_ipod_tags, 0},
+    .metadata_conv = ff_m4a_metadata_conv,
     .priv_class = &isom_muxer_class,
 };
 #endif

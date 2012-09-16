@@ -396,7 +396,7 @@ static void mp3_fix_xing(AVFormatContext *s)
 static int mp3_write_header(struct AVFormatContext *s)
 {
     MP3Context  *mp3 = s->priv_data;
-    AVDictionaryEntry *t = NULL;
+    AVDictionaryEntry *t;
     int totlen = 0;
     int64_t size_pos, cur_pos;
 
@@ -408,7 +408,20 @@ static int mp3_write_header(struct AVFormatContext *s)
     size_pos = avio_tell(s->pb);
     avio_wb32(s->pb, 0);
 
-    while ((t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX)))
+    // translate year / date tag
+    if ((t = av_dict_get(s->metadata, "date", NULL, 0)) && mp3->id3v2_version == 3 &&
+        !av_dict_get(s->metadata, "year", NULL, 0) && strlen(t->value) >= 4) {
+        t->value[5] = 0;
+        strcpy(t->key, "year");
+    }
+
+    // translate year / date tag
+    if ((t = av_dict_get(s->metadata, "year", NULL, 0)) && mp3->id3v2_version == 4 &&
+        !av_dict_get(s->metadata, "date", NULL, 0)) {
+        strcpy(t->key, "date");
+    }
+
+    for (t = NULL; t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX);)
         totlen += id3v2_write_tag(s, t);
 
     cur_pos = avio_tell(s->pb);
@@ -477,6 +490,33 @@ static int mp3_write_trailer(AVFormatContext *s)
     return 0;
 }
 
+static const AVMetadataConv ff_mp3_metadata_conv[] = {
+    { "APIC", "cover" },
+    { "TALB", "album" },
+    { "TCOM", "composer" },
+    { "TCON", "genre" },
+    { "TCOP", "copyright" },
+    { "TENC", "encoded_by" },
+    { "TIT2", "title" },
+    { "TLAN", "language" },
+    { "TPE1", "artist" },
+    { "TPE2", "album_artist" },
+    { "TPE3", "performer" },
+    { "TPOS", "disc" },
+    { "TPUB", "publisher" },
+    { "TRCK", "track" },
+    { "TSSE", "encoder" },
+    { "TYER", "year" },
+    { "USLT", "lyrics" },
+    { "TDRC", "date" },
+    { "TDRL", "release_date" },
+    { "TDEN", "creation_time" },
+    { "TSOA", "album-sort" },
+    { "TSOP", "artist-sort" },
+    { "TSOT", "title-sort" },
+    { 0 },
+};
+
 AVOutputFormat ff_mp3_muxer = {
     .name              = "mp3",
     .long_name         = NULL_IF_CONFIG_SMALL("MPEG audio layer 3"),
@@ -489,6 +529,7 @@ AVOutputFormat ff_mp3_muxer = {
     .write_packet      = mp3_write_packet,
     .write_trailer     = mp3_write_trailer,
     .flags             = AVFMT_NOTIMESTAMPS,
+    .metadata_conv     = ff_mp3_metadata_conv,
     .priv_class = &mp3_muxer_class,
 };
 #endif

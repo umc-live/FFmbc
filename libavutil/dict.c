@@ -51,8 +51,8 @@ av_dict_get(AVDictionary *m, const char *key, const AVDictionaryEntry *prev, int
 
     for(; i<m->count; i++){
         const char *s= m->elems[i].key;
-        if(flags & AV_DICT_MATCH_CASE) for(j=0;         s[j]  ==         key[j]  && key[j]; j++);
-        else                               for(j=0; toupper(s[j]) == toupper(key[j]) && key[j]; j++);
+        for (j = 0; toupper(s[j]) == toupper(key[j]) && key[j]; j++)
+            ;
         if(key[j])
             continue;
         if(s[j] && !(flags & AV_DICT_IGNORE_SUFFIX))
@@ -60,6 +60,24 @@ av_dict_get(AVDictionary *m, const char *key, const AVDictionaryEntry *prev, int
         return &m->elems[i];
     }
     return NULL;
+}
+
+int av_dict_unset(AVDictionary *m, const char *key)
+{
+    int i, j;
+
+    for (i = 0; i < m->count; i++) {
+        const char *s = m->elems[i].key;
+        for (j = 0; toupper(s[j]) == toupper(key[j]) && key[j]; j++)
+            ;
+        if (key[j])
+            continue;
+        av_dict_free_tag(&m->elems[i]);
+        memmove(m->elems + i, m->elems + i + 1, sizeof(*m->elems) * (m->count - i - 1));
+        m->count--;
+        return 0;
+   }
+    return -1;
 }
 
 int av_dict_set_custom(AVDictionary **pm, AVDictionaryEntry **ret,
