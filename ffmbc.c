@@ -2297,7 +2297,7 @@ static int auto_scale_pad(OutputStream *ost, int width, int scale_height, int pa
     if (scale_height > 0 && (ost->st->codec->width != width ||
                              ost->st->codec->height != scale_height)) {
         snprintf(scale_args, sizeof(scale_args),
-                 "%d:%d:flags=0x%X", width, scale_height, ost->sws_flags);
+                 "%d:%d:flags=0x%Xn:interl=-1", width, scale_height, ost->sws_flags);
         avfilter_graph_create_filter(&filter, avfilter_get_by_name("scale"),
                                      "target-scale", scale_args, NULL, ost->graph);
         avfilter_link(last, 0, filter, 0);
