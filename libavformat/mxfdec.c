@@ -1191,7 +1191,9 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                                              material_track->edit_rate.num };
         } else if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
             container_ul = mxf_get_codec_ul(mxf_essence_container_uls, essence_container_ul);
-            if (st->codec->codec_id == CODEC_ID_NONE)
+            /* Only overwrite existing codec ID if it is unset or A-law, AVID is using wrong UL for some files */
+            if (st->codec->codec_id == CODEC_ID_NONE ||
+                (st->codec->codec_id == CODEC_ID_PCM_ALAW && container_ul->id != CODEC_ID_NONE))
                 st->codec->codec_id = container_ul->id;
             if (descriptor->essence_codec_ul[0] == 0x00)
                 st->codec->codec_id = CODEC_ID_PCM_S16LE;
