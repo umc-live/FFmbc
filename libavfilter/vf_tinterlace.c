@@ -48,6 +48,7 @@ static void end_frame(AVFilterLink *link)
                                         AV_PERM_REUSE, link->w, link->h*2);
         avfilter_copy_buffer_ref_props(out, cur);
         out->video->interlaced = 1;
+        out->video->top_field_first = 1;
 
         av_image_copy_plane(out->data[0], out->linesize[0]*2,
                             cur->data[0], cur->linesize[0],
@@ -143,6 +144,7 @@ static void end_frame(AVFilterLink *link)
                                                     AV_PERM_REUSE, link->w, link->h);
         avfilter_copy_buffer_ref_props(out, cur);
         out->video->interlaced = 1;
+        out->video->top_field_first = 1;
 
         av_image_copy_plane(out->data[0], out->linesize[0]*2,
                             cur->data[0], cur->linesize[0]*2,
