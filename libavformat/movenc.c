@@ -962,7 +962,7 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tr
     avio_wb16(pb, 0); /* Codec stream revision (=0) */
     if (track->mode == MODE_MOV) {
         avio_wtag(pb, "FFMP"); /* Vendor */
-        if(track->enc->codec_id == CODEC_ID_RAWVIDEO) {
+        if (ff_is_intra_only_codec(track->enc)) {
             avio_wb32(pb, 0); /* Temporal Quality */
             avio_wb32(pb, 0x400); /* Spatial Quality = lossless*/
         } else {

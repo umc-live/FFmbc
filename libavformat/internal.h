@@ -56,6 +56,8 @@ struct tm *brktimegm(time_t secs, struct tm *tm);
 
 char *ff_data_to_hex(char *buf, const uint8_t *src, int size, int lowercase);
 
+int ff_is_intra_only_codec(AVCodecContext *avctx);
+
 /**
  * Parse a string of hexadecimal strings. Any space between the hexadecimal
  * digits is ignored.
