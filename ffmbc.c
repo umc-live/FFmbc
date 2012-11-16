@@ -1397,11 +1397,8 @@ static void do_video_stats(OutputStream *ost, int frame_size)
     }
 }
 
-static void do_video_out(AVFormatContext *s,
-                         OutputStream *ost,
-                         InputStream *ist,
-                         AVFrame *in_picture,
-                         float quality)
+static void do_video_out(AVFormatContext *s, OutputStream *ost, InputStream *ist,
+                         AVFrame *in_picture, float quality, int vsync_method)
 {
     int nb_frames, av_unused resample_changed;
     int frame_size = 0;
@@ -1419,14 +1416,14 @@ static void do_video_out(AVFormatContext *s,
     /* by default, we output a single frame */
     nb_frames = 1;
 
-    if (video_sync_method && video_sync_method != 3) {
+    if (vsync_method && vsync_method != 3) {
         double vdelta;
         if (ist->dts_is_reordered_pts && ist->st->codec->has_b_frames > 0)
             sync_ipts -= ist->st->codec->has_b_frames;
         vdelta = sync_ipts - ost->sync_opts;
         if (vdelta <= -0.6)
             nb_frames = 0;
-        else if (video_sync_method == 2 || (video_sync_method<0 && (s->oformat->flags & AVFMT_VARIABLE_FPS))){
+        else if (vsync_method == 2 || (vsync_method<0 && (s->oformat->flags & AVFMT_VARIABLE_FPS))){
             if(vdelta<=-0.6){
                 nb_frames=0;
             }else if(vdelta>0.6)
@@ -1436,7 +1433,7 @@ static void do_video_out(AVFormatContext *s,
         if (verbose>3)
             av_log(NULL, AV_LOG_INFO, "vdelta:%f, ost->sync_opts:%"PRId64", ost->sync_ipts:%f nb_frames:%d\n",
                     vdelta, ost->sync_opts, get_sync_ipts(ost), nb_frames);
-    } else if (!video_sync_method) {
+    } else if (!vsync_method) {
         if (ist->dts_is_reordered_pts && ist->st->codec->has_b_frames > 0)
             sync_ipts -= ist->st->codec->has_b_frames;
         ost->sync_opts= lrintf(sync_ipts);
@@ -1934,7 +1931,7 @@ static int output_packet(InputStream *ist, int ist_index,
                             break;
                         case AVMEDIA_TYPE_VIDEO:
                             do_video_out(os, ost, ist, oframe_ptr, same_quality ?
-                                         quality : ost->st->codec->global_quality);
+                                         quality : ost->st->codec->global_quality, video_sync_method);
                             break;
                         case AVMEDIA_TYPE_SUBTITLE:
                             do_subtitle_out(os, ost, ist, &subtitle,
@@ -2069,9 +2066,25 @@ static int output_packet(InputStream *ist, int ist_index,
                             avfilter_fill_frame_from_video_buffer_ref(&frame, ost->picref);
                             ist->pts = av_rescale_q(ost->picref->pts, ist_pts_tb, AV_TIME_BASE_Q);
                             do_video_out(os, ost, ist, &frame, same_quality ?
-                                         quality : ost->st->codec->global_quality);
+                                         quality : ost->st->codec->global_quality, video_sync_method);
                             avfilter_unref_buffer(ost->picref);
                         }
+                    }
+                }
+
+                if (ost->st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+                    1/av_q2d(ost->st->codec->time_base) > av_q2d(ist->st->r_frame_rate) &&
+                    ost->sync_opts > 0) {
+                    double sync_ipts = get_sync_ipts(ost) / av_q2d(enc->time_base);
+                    while (sync_ipts - ost->sync_opts > 0.6) {
+                        int64_t sync_opts = ost->sync_opts;
+                        do_video_out(os, ost, ist, &ost->prev_frame, same_quality ?
+                                     quality : ost->st->codec->global_quality, 3);
+                        if (ost->sync_opts == sync_opts)
+                            break;
+                        if (verbose > 2)
+                            fprintf(stderr, "*** 1 dup!\n");
+                        nb_frames_dup++;
                     }
                 }
 
