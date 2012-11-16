@@ -1624,8 +1624,8 @@ static void print_report(AVFormatContext **output_files,
             vst = ost;
         }
         /* compute min output value */
-        pts = FFMIN(pts, av_rescale_q(ost->st->pts.val,
-                                      ost->st->time_base, AV_TIME_BASE_Q));
+        pts = FFMIN(pts, av_rescale_q(ost->sync_opts,
+                                      ost->st->codec->time_base, AV_TIME_BASE_Q));
     }
 
     if (verbose > 0 || is_last_report) {
