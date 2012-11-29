@@ -83,6 +83,11 @@ int ff_raw_read_header(AVFormatContext *s, AVFormatParameters *ap)
                 ret = AVERROR(EINVAL);
                 goto fail;
             }
+            if (!s1->framerate) {
+                av_log(s, AV_LOG_ERROR, "Please specify a frame rate\n");
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
             if ((ret = av_parse_video_rate(&framerate, s1->framerate)) < 0) {
                 av_log(s, AV_LOG_ERROR, "Could not parse framerate: %s.\n", s1->framerate);
                 goto fail;
@@ -169,7 +174,7 @@ int ff_raw_video_read_header(AVFormatContext *s,
 {
     AVStream *st;
     FFRawVideoDemuxerContext *s1 = s->priv_data;
-    AVRational framerate;
+    AVRational framerate = {0};
     int ret = 0;
 
 
@@ -183,10 +188,13 @@ int ff_raw_video_read_header(AVFormatContext *s,
     st->codec->codec_id = s->iformat->value;
     st->need_parsing = AVSTREAM_PARSE_FULL;
 
-    if ((ret = av_parse_video_rate(&framerate, s1->framerate)) < 0) {
-        av_log(s, AV_LOG_ERROR, "Could not parse framerate: %s.\n", s1->framerate);
-        goto fail;
+    if (s1->framerate) {
+        if ((ret = av_parse_video_rate(&framerate, s1->framerate)) < 0) {
+            av_log(s, AV_LOG_ERROR, "Could not parse framerate: %s.\n", s1->framerate);
+            goto fail;
+        }
     }
+
 #if FF_API_FORMAT_PARAMETERS
     if (ap->time_base.num)
         framerate = (AVRational){ap->time_base.den, ap->time_base.num};
@@ -196,6 +204,12 @@ int ff_raw_video_read_header(AVFormatContext *s,
         st->codec->codec_id == CODEC_ID_H264) { // ticks per frame is 2
         st->codec->time_base = (AVRational){framerate.den, framerate.num*2};
     } else {
+        if (!framerate.num &&
+            st->codec->codec_id == CODEC_ID_DNXHD) {
+            av_log(s, AV_LOG_ERROR, "Please specify a frame rate\n");
+            ret = AVERROR(EINVAL);
+            goto fail;
+        }
         st->codec->time_base = (AVRational){framerate.den, framerate.num};
     }
     av_set_pts_info(st, 64, 1, 1200000);
@@ -224,7 +238,7 @@ const AVClass ff_rawaudio_demuxer_class = {
 static const AVOption video_options[] = {
     { "video_size", "A string describing frame size, such as 640x480 or hd720.", OFFSET(video_size), FF_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC },
     { "pixel_format", "", OFFSET(pixel_format), FF_OPT_TYPE_STRING, {.str = "yuv420p"}, 0, 0, DEC },
-    { "framerate", "", OFFSET(framerate), FF_OPT_TYPE_STRING, {.str = "25"}, 0, 0, DEC },
+    { "framerate", "", OFFSET(framerate), FF_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC },
     { NULL },
 };
 #undef OFFSET

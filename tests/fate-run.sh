@@ -104,7 +104,11 @@ seektest(){
                  file=$(echo tests/data/$d/$file)
                  ;;
     esac
-    $target_exec $target_path/libavformat/seek-test $target_path/$file
+    case $t in
+        roq*) fps=30 ;;
+        *)    fps=25 ;;
+    esac
+    $target_exec $target_path/libavformat/seek-test $target_path/$file $fps
 }
 
 mkdir -p "$outdir"

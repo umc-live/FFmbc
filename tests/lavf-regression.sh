@@ -253,7 +253,7 @@ for pix_fmt in $conversions ; do
     file=${outfile}${pix_fmt}.yuv
     run_ffmpeg $DEC_OPTS -r 1 -t 1 -f image2 -vcodec pgmyuv -i $raw_src \
                $ENC_OPTS -r 1 -force_fps -f rawvideo -s 352x288 -pix_fmt $pix_fmt $target_path/$raw_dst
-    do_ffmpeg $file $DEC_OPTS -f rawvideo -s 352x288 -pix_fmt $pix_fmt -i $target_path/$raw_dst \
-                    $ENC_OPTS -f rawvideo -s 352x288 -pix_fmt yuv444p
+    do_ffmpeg $file $DEC_OPTS -r 1 -f rawvideo -s 352x288 -pix_fmt $pix_fmt -i $target_path/$raw_dst \
+                    $ENC_OPTS -r 1 -force_fps -f rawvideo -s 352x288 -pix_fmt yuv444p
 done
 fi

@@ -72,14 +72,16 @@ int main(int argc, char **argv)
     /* initialize libavcodec, and register all codecs and formats */
     av_register_all();
 
-    if (argc != 2) {
-        printf("usage: %s input_file\n"
-               "\n", argv[0]);
+    if (argc < 2 || argc > 3) {
+        printf("usage: %s input_file [<frame rate>]\n", argv[0]);
         exit(1);
     }
 
     filename = argv[1];
-
+    if (argc == 3) {
+        ap->time_base.den = atoi(argv[2]);
+        ap->time_base.num = 1;
+    }
     ret = av_open_input_file(&ic, filename, NULL, 0, ap);
     if (ret < 0) {
         fprintf(stderr, "cannot open %s\n", filename);
