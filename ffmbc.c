@@ -4672,9 +4672,7 @@ static int opt_output_file(const char *opt, const char *filename)
 
     if (target) {
         if (!strncmp(target, "imx", 3)) {
-            if (av_match_ext(filename, "mov"))
-                opt_bsf("vbsf", "imxdump");
-            else if (av_match_ext(filename, "mxf"))
+            if (av_match_ext(filename, "mxf"))
                 last_asked_format = "mxf_d10";
         } else if (!strcmp(target, "dvd")) {
             if (av_match_ext(filename, "mpg"))

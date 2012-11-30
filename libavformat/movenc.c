@@ -42,6 +42,10 @@
 #undef NDEBUG
 #include <assert.h>
 
+#define IS_IMX(tag) (tag == AV_RL32("mx3p") || tag == AV_RL32("mx3n") || \
+                     tag == AV_RL32("mx4p") || tag == AV_RL32("mx4n") || \
+                     tag == AV_RL32("mx5p") || tag == AV_RL32("mx5n"))
+
 #define FAST_START_OPTION \
     { "faststart", "Pre-allocate space for the header in front of the file: <size or 'auto' or 'no'>\n" \
       "Files are automatically rewritten if size is < 20MB unless 'no' is specified.\n", \
@@ -2382,6 +2386,18 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
                (AV_RB16(pkt->data) & 0xfff0) == 0xfff0) {
         av_log(s, AV_LOG_ERROR, "malformated aac bitstream, use -absf aac_adtstoasc\n");
         return -1;
+    } else if (IS_IMX(trk->tag)) {
+        static const uint8_t d10_klv_header[16] =
+            { 0x06,0x0e,0x2b,0x34,0x01,0x02,0x01,0x01,0x0d,0x01,0x03,0x01,0x05,0x01,0x01,0x00 };
+        if (!memcmp(pkt->data, d10_klv_header, sizeof(d10_klv_header))) {
+            avio_write(pb, pkt->data, size);
+        } else {
+            avio_write(pb, d10_klv_header, sizeof(d10_klv_header));
+            avio_w8(pb, 0x83); /* KLV BER long form */
+            avio_wb24(pb, size);
+            avio_write(pb, pkt->data, size);
+            size += sizeof(d10_klv_header) + 4;
+        }
     } else {
         avio_write(pb, pkt->data, size);
     }
@@ -2624,9 +2640,11 @@ static int mov_write_header(AVFormatContext *s)
          * this is updated. */
         track->hint_track = -1;
         if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO){
-            if (track->tag == MKTAG('m','x','3','p') || track->tag == MKTAG('m','x','3','n') ||
-                track->tag == MKTAG('m','x','4','p') || track->tag == MKTAG('m','x','4','n') ||
-                track->tag == MKTAG('m','x','5','p') || track->tag == MKTAG('m','x','5','n')) {
+            if (IS_IMX(track->tag)) {
+                if (st->codec->codec_id != CODEC_ID_MPEG2VIDEO) {
+                    av_log(s, AV_LOG_ERROR, "D-10/IMX tag requires MPEG-2 video codec\n");
+                    goto error;
+                }
                 if (st->codec->width != 720 || (st->codec->height != 608 && st->codec->height != 512)) {
                     av_log(s, AV_LOG_ERROR, "D-10/IMX must use 720x608 or 720x512 video resolution\n");
                     goto error;

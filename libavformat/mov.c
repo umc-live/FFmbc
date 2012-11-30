@@ -2882,6 +2882,17 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
                 return ret;
         }
 #endif
+        if (st->codec->codec_tag == AV_RL32("mx3p") || st->codec->codec_tag == AV_RL32("mx3n") ||
+            st->codec->codec_tag == AV_RL32("mx4p") || st->codec->codec_tag == AV_RL32("mx4n") ||
+            st->codec->codec_tag == AV_RL32("mx5p") || st->codec->codec_tag == AV_RL32("mx5n")) {
+            static const uint8_t d10_klv_header[16] =
+                { 0x06,0x0e,0x2b,0x34,0x01,0x02,0x01,0x01,0x0d,0x01,0x03,0x01,0x05,0x01,0x01,0x00 };
+            if (!memcmp(pkt->data, d10_klv_header, sizeof(d10_klv_header))) {
+                int header_size = sizeof(d10_klv_header) + 4;
+                memmove(pkt->data, pkt->data + header_size, pkt->size - header_size);
+                av_shrink_packet(pkt, pkt->size - header_size);
+            }
+        }
     }
 
     pkt->stream_index = sc->ffindex;
