@@ -305,7 +305,7 @@ typedef struct OutputStream {
     int resample_width;
     int resample_pix_fmt;
     AVRational frame_rate;
-
+    int force_fps;
     AVRational frame_aspect_ratio;
 
     const char *target;
@@ -365,6 +365,7 @@ typedef struct InputStream {
     int is_past_recording_time;
     AVDictionary *opts;
     uint8_t *pkt_data_to_free;
+    AVRational frame_rate;
 } InputStream;
 
 typedef struct InputFile {
@@ -2950,7 +2951,9 @@ static int transcode(AVFormatContext **output_files,
                 ist->decoding_needed = 1;
 
                 if (!ost->frame_rate.num) {
-                    if (av_q2d(ist->st->r_frame_rate) <= 60) {
+                    if (ist->frame_rate.num) {
+                        ost->frame_rate = ist->frame_rate;
+                    } else if (av_q2d(ist->st->r_frame_rate) <= 60) {
                         /* update the current frame rate to match the stream frame rate */
                         ost->frame_rate = ist->st->r_frame_rate;
                     } else {
@@ -2965,7 +2968,7 @@ static int transcode(AVFormatContext **output_files,
                     av_log(NULL, AV_LOG_ERROR, "Error: no frame rate specified\n");
                     exit(1);
                 }
-                if (!force_fps) {
+                if (!ost->force_fps && !ist->frame_rate.num) {
                     AVRational near_fps =
                         frame_rate_tab[av_find_nearest_q_idx(ost->frame_rate, frame_rate_tab)];
                     if (fabs(av_q2d(near_fps) - av_q2d(ost->frame_rate)) >= 0.01)
@@ -4210,7 +4213,7 @@ static int opt_input_file(const char *opt, const char *filename)
             if (dec->lowres) {
                 dec->flags |= CODEC_FLAG_EMU_EDGE;
             }
-
+            ist->frame_rate = frame_rate;
             if(video_disable)
                 st->discard= AVDISCARD_ALL;
             else if(video_discard)
@@ -4360,6 +4363,7 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
         int i;
 
         ost->frame_rate = frame_rate;
+        ost->force_fps = force_fps;
         video_enc->codec_id = codec_id;
 
         video_enc->width = frame_width;
