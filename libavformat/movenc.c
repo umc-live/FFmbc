@@ -873,18 +873,20 @@ static int mov_write_fiel_tag(AVIOContext *pb, MOVTrack *track)
 {
     avio_wb32(pb, 10);
     avio_wtag(pb, "fiel");
-    avio_w8(pb, 2);
-    // mjpeg stores 2 field independantly, not interleaved
+    avio_w8(pb, (track->enc->interlaced > 0) + 1);
     if (track->enc->interlaced == 1) { // top field first
+        // mjpeg stores 2 field independantly, not interleaved
         if (track->enc->codec_id == CODEC_ID_MJPEG)
             avio_w8(pb, 1);
         else
             avio_w8(pb, 9);
-    } else {
+    } else if (track->enc->interlaced == 2) { // bottom field first
         if (track->enc->codec_id == CODEC_ID_MJPEG)
             avio_w8(pb, 6);
         else
             avio_w8(pb, 14);
+    } else {
+        avio_w8(pb, 0);
     }
     return 10;
 }
@@ -954,7 +956,6 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tr
 {
     int64_t pos = avio_tell(pb);
     char compressor_name[32];
-    int padding = 0;
 
     avio_wb32(pb, 0); /* size */
     avio_wl32(pb, track->tag); // store it byteswapped
@@ -1005,7 +1006,6 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tr
         mov_write_extradata_tag(pb, track);
     } else if(track->enc->codec_id == CODEC_ID_DNXHD) {
         mov_write_avid_tag(pb, track);
-        padding = 1;
     } else if(track->enc->codec_id == CODEC_ID_H264) {
         mov_write_avcc_tag(pb, track);
         if(track->mode == MODE_IPOD)
@@ -1021,18 +1021,12 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tr
         mov_write_pasp_tag(pb, track);
         if (track->mode == MODE_MOV)
             mov_write_clap_tag(pb, track);
-        padding = 1;
     }
 
     if (track->mode == MODE_MOV) {
-        if (track->enc->interlaced > 0) {
-            mov_write_fiel_tag(pb, track);
-            padding = 1;
-        }
-        if (mov_write_colr_tag(s, pb, track) > 0)
-            padding = 1;
-        if (padding)
-            avio_wb32(pb, 0); // padding for FCP
+        mov_write_fiel_tag(pb, track);
+        mov_write_colr_tag(s, pb, track);
+        avio_wb32(pb, 0); // padding for FCP
     }
 
     return updateSize(pb, pos);

@@ -1,4 +1,4 @@
-456d7c51da5445ed851a4a67a6982ea4 *./tests/data/vsynth2/qtrlegray.mov
-5111445 ./tests/data/vsynth2/qtrlegray.mov
+aabe00e6a7d36af2ff1a4722c3092f62 *./tests/data/vsynth2/qtrlegray.mov
+5111459 ./tests/data/vsynth2/qtrlegray.mov
 f63b5ebdfdba750e547c25131b0a3fd1 *./tests/data/qtrlegray.vsynth2.out.yuv
 stddev:   19.42 PSNR: 22.36 MAXDIFF:   72 bytes:  7603200/  7603200
