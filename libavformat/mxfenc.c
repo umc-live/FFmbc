@@ -1134,8 +1134,7 @@ static void mxf_write_index_table_segment(AVFormatContext *s)
     if (!mxf->edit_units_count && !mxf->edit_unit_byte_count)
         return;
 
-    if (!mxf->edit_unit_byte_count &&
-        8 + mxf->edit_units_count*(11+4) > 65535) {
+    if (!mxf->edit_unit_byte_count && 8 + mxf->edit_units_count*15 > 65535) {
         av_log(s, AV_LOG_ERROR, "error, index table segment is too big\n");
         return;
     }
@@ -1209,9 +1208,9 @@ static void mxf_write_index_table_segment(AVFormatContext *s)
     }
 
     if (!mxf->edit_unit_byte_count) {
-        mxf_write_local_tag(pb, 8 + mxf->edit_units_count*(11+4), 0x3F0A);
+        mxf_write_local_tag(pb, 8 + mxf->edit_units_count*15, 0x3F0A);
         avio_wb32(pb, mxf->edit_units_count);  // num of entries
-        avio_wb32(pb, 11+4);  // size of one entry
+        avio_wb32(pb, 15);  // size of one entry
 
         for (i = 0; i < mxf->edit_units_count; i++) {
             int temporal_offset = 0;
@@ -1251,6 +1250,8 @@ static void mxf_write_index_table_segment(AVFormatContext *s)
             avio_wb64(pb, mxf->index_entries[i].offset);
             if (s->nb_streams > 1)
                 avio_wb32(pb, mxf->index_entries[i].slice_offset);
+            else
+                avio_wb32(pb, 0);
         }
 
         mxf->last_key_index = key_index - mxf->edit_units_count;
@@ -1285,8 +1286,7 @@ static void mxf_write_partition(AVFormatContext *s, int bodysid,
     uint64_t partition_offset = avio_tell(pb);
 
     if (!mxf->edit_unit_byte_count && mxf->edit_units_count)
-        index_byte_count = 85 + 12+(s->nb_streams+1)*6 +
-            12+mxf->edit_units_count*(11+4);
+        index_byte_count = 85 + 12+(s->nb_streams+1)*6 + 12+mxf->edit_units_count*15;
     else if (mxf->edit_unit_byte_count && indexsid)
         index_byte_count = 80;
 
