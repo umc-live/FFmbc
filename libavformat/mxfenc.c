@@ -39,6 +39,7 @@
 #include "libavutil/random_seed.h"
 #include "libavcodec/bytestream.h"
 #include "libavcodec/timecode.h"
+#include "libavcodec/h264.h"
 #include "audiointerleave.h"
 #include "avformat.h"
 #include "internal.h"
@@ -103,6 +104,7 @@ static const struct {
     { CODEC_ID_PCM_S16LE,  3 },
     { CODEC_ID_DVVIDEO,    4 },
     { CODEC_ID_DNXHD,      5 },
+    { CODEC_ID_H264,       6 },
     { CODEC_ID_NONE }
 };
 
@@ -142,6 +144,11 @@ static const MXFContainerEssenceEntry mxf_essence_container_uls[] = {
       { 0x06,0x0E,0x2B,0x34,0x01,0x02,0x01,0x01,0x0D,0x01,0x03,0x01,0x15,0x01,0x05,0x00 },
       { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x71,0x01,0x00,0x00 },
       mxf_write_cdci_desc },
+    // H.264
+    { { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x0D,0x01,0x03,0x01,0x02,0x10,0x60,0x01 },
+      { 0x06,0x0E,0x2B,0x34,0x01,0x02,0x01,0x01,0x0D,0x01,0x03,0x01,0x15,0x01,0x05,0x00 },
+      { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x00,0x00,0x00 },
+      mxf_write_mpegvideo_desc },
     { { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 },
       { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 },
       { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 },
@@ -944,15 +951,17 @@ static void mxf_write_mpegvideo_desc(AVFormatContext *s, AVStream *st)
     int profile_and_level = (st->codec->profile<<4) | st->codec->level;
     int64_t pos = mxf_write_cdci_common(s, st, mxf_mpegvideo_descriptor_key);
 
-    // bit rate
-    mxf_write_local_tag(pb, 4, 0x8000);
-    avio_wb32(pb, st->codec->bit_rate);
+    if (st->codec->codec_id == CODEC_ID_MPEG2VIDEO) {
+        // bit rate
+        mxf_write_local_tag(pb, 4, 0x8000);
+        avio_wb32(pb, st->codec->bit_rate);
 
-    // profile and level
-    mxf_write_local_tag(pb, 1, 0x8007);
-    if (!st->codec->profile)
-        profile_and_level |= 0x80; // escape bit
-    avio_w8(pb, profile_and_level);
+        // profile and level
+        mxf_write_local_tag(pb, 1, 0x8007);
+        if (!st->codec->profile)
+            profile_and_level |= 0x80; // escape bit
+        avio_w8(pb, profile_and_level);
+    }
 
     mxf_update_klv_size(pb, pos);
 }
@@ -1453,6 +1462,154 @@ static int mxf_parse_mpeg2_frame(AVFormatContext *s, AVStream *st,
     }
     if (s->oformat != &ff_mxf_d10_muxer)
         sc->codec_ul = mxf_get_mpeg2_codec_ul(st->codec);
+    return !!sc->codec_ul;
+}
+
+static const UID mxf_h264_codec_uls[] = {
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x30,0x00,0x00 }, // AVC Video
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x00,0x00 }, // AVC Intra
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x20,0x00 }, // AVC High 10 Intra
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x21,0x01 }, // AVC High 10 Intra RP2027 Class 50 1080/59.94i
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x21,0x02 }, // AVC High 10 Intra RP2027 Class 50 1080/50i
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x21,0x03 }, // AVC High 10 Intra RP2027 Class 50 1080/29.97p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x21,0x04 }, // AVC High 10 Intra RP2027 Class 50 1080/25p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x21,0x08 }, // AVC High 10 Intra RP2027 Class 50 720/59.94p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x21,0x09 }, // AVC High 10 Intra RP2027 Class 50 720/50p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x30,0x00 }, // AVC High 422 Intra
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x01 }, // AVC High 422 Intra RP2027 Class 100 1080/59.94i
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x02 }, // AVC High 422 Intra RP2027 Class 100 1080/50i
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x03 }, // AVC High 422 Intra RP2027 Class 100 1080/29.97p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x04 }, // AVC High 422 Intra RP2027 Class 100 1080/25p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x08 }, // AVC High 422 Intra RP2027 Class 100 720/59.94p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x09 }, // AVC High 422 Intra RP2027 Class 100 720/50p
+};
+
+static const UID *mxf_get_h264_codec_ul(MXFContext *mxf, AVCodecContext *avctx, SPS *sps)
+{
+    int long_gop = avctx->gop_size > 1 || avctx->has_b_frames;
+
+    if ((sps->constraint_set_flags >> 3) & 1) {
+        if (sps->profile_idc == 110) {
+            if (avctx->height == 1080) {
+                if (!sps->frame_mbs_only_flag) { // interlaced
+                    if (mxf->time_base.den == 30000)
+                        return &mxf_h264_codec_uls[3];
+                    else if (mxf->time_base.den == 25)
+                        return &mxf_h264_codec_uls[4];
+                } else {
+                    if (mxf->time_base.den == 30000)
+                        return &mxf_h264_codec_uls[5];
+                    else if (mxf->time_base.den == 25)
+                        return &mxf_h264_codec_uls[6];
+                }
+            } else if (avctx->height == 720) {
+                if (mxf->time_base.den == 60000)
+                    return &mxf_h264_codec_uls[7];
+                else if (mxf->time_base.den == 50)
+                    return &mxf_h264_codec_uls[8];
+            }
+            return &mxf_h264_codec_uls[2];
+        } else if (sps->profile_idc == 122) {
+            if (avctx->height == 1080) {
+                if (!sps->frame_mbs_only_flag) { // interlaced
+                    if (mxf->time_base.den == 30000)
+                        return &mxf_h264_codec_uls[10];
+                    else if (mxf->time_base.den == 25)
+                        return &mxf_h264_codec_uls[11];
+                } else {
+                    if (mxf->time_base.den == 30000)
+                        return &mxf_h264_codec_uls[12];
+                    else if (mxf->time_base.den == 25)
+                        return &mxf_h264_codec_uls[13];
+                }
+            } else if (avctx->height == 720) {
+                if (mxf->time_base.den == 60000)
+                    return &mxf_h264_codec_uls[14];
+                else if (mxf->time_base.den == 50)
+                    return &mxf_h264_codec_uls[15];
+            }
+            return &mxf_h264_codec_uls[9];
+        }
+    }
+    if (long_gop)
+        return &mxf_h264_codec_uls[0];
+    else
+        return &mxf_h264_codec_uls[1];
+}
+
+static int mxf_parse_h264_frame(AVFormatContext *s, AVStream *st,
+                                AVPacket *pkt, MXFIndexEntry *e)
+{
+    MXFStreamContext *sc = st->priv_data;
+    H264Context h;
+    const uint8_t *buf = pkt->data;
+    const uint8_t *buf_end = pkt->data + pkt->size;
+    uint32_t state = -1;
+    AVRational sar = {1, 1};
+
+    if (pkt->size < 5 || AV_RB32(pkt->data) != 0x0000001) {
+        av_log(s, AV_LOG_ERROR, "h264 bitstream malformated, "
+               "no startcode found, use -vbsf h264_mp4toannexb\n");
+        return 0;
+    }
+
+    for (;;) {
+        int src_length, dst_length, consumed;
+        const uint8_t *ptr;
+        buf = ff_find_start_code(buf, buf_end, &state);
+        if (buf >= buf_end)
+            break;
+        --buf;
+        src_length = buf_end - buf;
+
+        //av_log(avctx, AV_LOG_DEBUG, "nal_unit_type:%d\n", h.nal_unit_type);
+        switch (state & 0x1f) {
+        case NAL_SPS:
+            e->flags |= 0x40;
+
+            if (sc->aspect_ratio.den != 0)
+                break;
+            // parse sps
+            memset(&h, 0, sizeof(h));
+            h.s.avctx = st->codec;
+            h.thread_context[0] = &h;
+            h.prev_frame_num = -1;
+
+            ptr = ff_h264_decode_nal(&h, buf, &dst_length, &consumed, src_length);
+            if (ptr == NULL || dst_length < 0)
+                break;
+
+            init_get_bits(&h.s.gb, ptr, dst_length*8);
+
+            ff_h264_decode_seq_parameter_set(&h);
+            ff_h264_free_context(&h);
+            if (h.sps.sar.num > 0 && h.sps.sar.den > 0) {
+                sar.num = st->codec->width * h.sps.sar.num;
+                sar.den = st->codec->height * h.sps.sar.den;
+            }
+            sc->aspect_ratio.num = st->codec->width * sar.num;
+            sc->aspect_ratio.den = st->codec->height * sar.den;
+            av_reduce(&sc->aspect_ratio.num, &sc->aspect_ratio.den,
+                      sar.num, sar.den, 1024*1024);
+
+            sc->interlaced = !h.sps.frame_mbs_only_flag;
+            sc->component_depth = h.sps.bit_depth_luma;
+
+            sc->codec_ul = mxf_get_h264_codec_ul(s->priv_data, st->codec, &h.sps);
+            break;
+        case NAL_PPS:
+            if (e->flags & 0x40) // sequence header present
+                e->flags |= 0x80; // random access
+            break;
+        case NAL_IDR_SLICE:
+            goto out;
+        case NAL_SLICE:
+            av_log(s, AV_LOG_ERROR, "mxf muxer only supports AVC Intra currently\n");
+            return -1;
+        }
+    }
+
+ out:
     return !!sc->codec_ul;
 }
 
@@ -1961,6 +2118,11 @@ static int mxf_write_packet(AVFormatContext *s, AVPacket *pkt)
     } else if (st->codec->codec_id == CODEC_ID_DNXHD) {
         if (!mxf_parse_dnxhd_frame(s, st, pkt)) {
             av_log(s, AV_LOG_ERROR, "could not get dnxhd cid\n");
+            return -1;
+        }
+    } else if (st->codec->codec_id == CODEC_ID_H264) {
+        if (!mxf_parse_h264_frame(s, st, pkt, &ie)) {
+            av_log(s, AV_LOG_ERROR, "could not get h264 profile and level\n");
             return -1;
         }
     }
