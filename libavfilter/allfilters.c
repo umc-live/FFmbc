@@ -84,6 +84,7 @@ void avfilter_register_all(void)
     REGISTER_FILTER (UNSHARP,     unsharp,     vf);
     REGISTER_FILTER (VFLIP,       vflip,       vf);
     REGISTER_FILTER (W3FDIF,      w3fdif,      vf);
+    REGISTER_FILTER (WFM_LUMA,    wfm_luma,    vf);
     REGISTER_FILTER (YADIF,       yadif,       vf);
 
     REGISTER_FILTER (BUFFER,      buffer,      vsrc);
