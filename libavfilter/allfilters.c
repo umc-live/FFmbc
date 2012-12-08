@@ -67,6 +67,7 @@ void avfilter_register_all(void)
     REGISTER_FILTER (OVERLAY,     overlay,     vf);
     REGISTER_FILTER (PAD,         pad,         vf);
     REGISTER_FILTER (PIXDESCTEST, pixdesctest, vf);
+    REGISTER_FILTER (REPEATFRAME, repeatframe, vf);
     REGISTER_FILTER (ROTATE,      rotate,      vf);
     REGISTER_FILTER (SCALE,       scale,       vf);
     REGISTER_FILTER (SELECT,      select,      vf);
