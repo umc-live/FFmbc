@@ -60,6 +60,7 @@ OBJS-$(CONFIG_SETTB_FILTER)                  += vf_settb.o
 OBJS-$(CONFIG_SHOWINFO_FILTER)               += vf_showinfo.o
 OBJS-$(CONFIG_SLICIFY_FILTER)                += vf_slicify.o
 OBJS-$(CONFIG_SPLIT_FILTER)                  += vf_split.o
+OBJS-$(CONFIG_STRETCH4TO3_FILTER)            += vf_stretch4to3.o
 OBJS-$(CONFIG_SUB_FILTER)                    += vf_sub.o
 OBJS-$(CONFIG_TINTERLACE_FILTER)             += vf_tinterlace.o
 OBJS-$(CONFIG_TRANSPOSE_FILTER)              += vf_transpose.o

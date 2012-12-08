@@ -76,6 +76,8 @@ void avfilter_register_all(void)
     REGISTER_FILTER (SHOWINFO,    showinfo,    vf);
     REGISTER_FILTER (SLICIFY,     slicify,     vf);
     REGISTER_FILTER (SPLIT,       split,       vf);
+    REGISTER_FILTER (SQUEEZE4TO3, squeeze4to3, vf);
+    REGISTER_FILTER (STRETCH4TO3, stretch4to3, vf);
     REGISTER_FILTER (SUB,         sub,         vf);
     REGISTER_FILTER (TINTERLACE,  tinterlace,  vf);
     REGISTER_FILTER (TRANSPOSE,   transpose,   vf);

@@ -1694,6 +1694,53 @@ For example:
 will create two separate outputs from the same input, one cropped and
 one padded.
 
+@anchor{squeeze4to3}
+@section squeeze4to3
+
+Squeeze the input video to three-quarters of its original width.
+
+Using the filter coefficients provided by Tim Borer for BBC R&D,
+and implementing his algorithm, which this code looks nothing
+like, this filter is designed to squeeze video while preserving
+the quality.
+
+The filter is designed for converting to anamorphic video, for
+instance converting 1920x1080 HD video to 1440x1080 HD video, or
+pillar-boxing 4:3 video into a 16:9 frame.
+
+The filter accepts no parameters.
+
+@example
+# convert a 4:3 video to a 16:9 pillar-box
+
+./ffmpeg -i in.avi -vf "squeeze4to3,pad=720:576:90:0:black" out.avi
+@end example
+
+See also the @ref{stretch4to3} filter for the opposite.
+
+@anchor{stretch4to3}
+@section stretch4to3
+
+Stretch the input video to four-thirds of its original width.
+
+Using the filter coefficients provided by Tim Borer for BBC R&D,
+and implementing his algorithm, which this code looks nothing
+like, this filter is designed to stretch video while preserving
+the quality.
+
+The filter is designed for converting from anamorphic video, for
+instance converting 1440x1080 HD video to 1920x1080 HD video.
+
+The filter accepts no parameters.
+
+@example
+# convert a 1440x1080 video to 1920x1080
+
+./ffmpeg -i in.avi -vf "stretch4to3" out.avi
+@end example
+
+See also the @ref{squeeze4to3} filter for the opposite.
+
 @section transpose
 
 Transpose rows with columns in the input video and optionally flip it.
