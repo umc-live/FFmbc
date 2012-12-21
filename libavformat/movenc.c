@@ -513,7 +513,10 @@ static int mov_write_audio_tag(AVIOContext *pb, MOVTrack *track)
                 avio_wb16(pb, 16);
             avio_wb16(pb, track->audio_vbr ? -2 : 0); /* compression ID */
         } else { /* reserved for mp4/3gp */
-            avio_wb16(pb, 2);
+            if (track->enc->codec_id == CODEC_ID_PCM_S16BE)
+                avio_wb16(pb, track->enc->channels);
+            else
+                avio_wb16(pb, 2);
             avio_wb16(pb, 16);
             avio_wb16(pb, 0);
         }
