@@ -996,7 +996,7 @@ static void do_audio_out(AVFormatContext *s,
             ost->resample = av_audio_resample_init(enc->channels,    in_channels,
                                                    enc->sample_rate, dec->sample_rate,
                                                    enc->sample_fmt,  dec->sample_fmt,
-                                                   16, 10, 0, 0.8);
+                                                   32, 10, 0, 0.97);
             if (!ost->resample) {
                 av_log(NULL, AV_LOG_ERROR, "Can not resample %d channels @ %d Hz to %d channels @ %d Hz\n",
                         in_channels, dec->sample_rate,
