@@ -186,4 +186,6 @@ void av_hex_dump(FILE *f, const uint8_t *buf, int size);
  */
 void av_hex_dump_log(void *avcl, int level, const uint8_t *buf, int size);
 
+#define fprintf(stderr, ...) av_log(NULL, AV_LOG_INFO, __VA_ARGS__)
+
 #endif /* AVUTIL_LOG_H */
