@@ -421,10 +421,11 @@ static int mxf_read_opatom(AVFormatContext *s, AVPacket *pkt)
                 if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
                     track->edit_unit_bytecount =
                         av_get_bits_per_sample(st->codec->codec_id)*1000 / 8;
-            } else if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO && st->time_base.num == 1)
+            } else if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO && st->time_base.num == 1) {
                 track->edit_unit_bytecount = index_segment->edit_unit_bytecount*1000;
-            else
+            } else {
                 track->edit_unit_bytecount = index_segment->edit_unit_bytecount;
+            }
 
             if (!track->edit_unit_bytecount) {
                 av_log(s, AV_LOG_ERROR, "clip wrapping with variable "
@@ -922,8 +923,13 @@ static int mxf_read_generic_descriptor(AVFormatContext *s, void *arg, int tag, i
             descriptor->padding_size = avio_rb32(s->pb);
         } else if (IS_KLV_KEY(uid, mxf_avid_edit_unit_size_uid)) {
             descriptor->edit_unit_size = avio_rb32(s->pb);
-        } else if (size == 4) {
-            PRINT_KEY(s, "uid", uid);
+        } else if (tag > 0x7fff) {
+            int64_t tmp = 0xffff;
+            if (size == 4)
+                tmp = avio_rb32(s->pb);
+            else if (size == 8)
+                tmp = avio_rb64(s->pb);
+            av_dlog(s, "val %"PRId64"\n", tmp);
         }
         break;
     }
@@ -1261,8 +1267,8 @@ static int mxf_read_local_tags(MXFContext *mxf, KLVPacket *klv, MXFMetadataReadF
                 int local_tag = AV_RB16(mxf->local_tags+i*18);
                 if (local_tag == tag) {
                     memcpy(uid, mxf->local_tags+i*18+2, 16);
-                    av_dlog(mxf->fc, "local tag %#04x\n", local_tag);
                     PRINT_KEY(mxf->fc, "uid", uid);
+                    break;
                 }
             }
         }
