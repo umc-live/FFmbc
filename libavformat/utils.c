@@ -2322,17 +2322,15 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 
         if (ret < 0) {
             /* EOF or error */
-            ret = -1; /* we could not have all the codec parameters before EOF */
             for(i=0;i<ic->nb_streams;i++) {
                 st = ic->streams[i];
                 if (!has_codec_parameters(st->codec)){
                     char buf[256];
                     avcodec_string(buf, sizeof(buf), st->codec, 0);
                     av_log(ic, AV_LOG_WARNING, "Could not find codec parameters (%s)\n", buf);
-                } else {
-                    ret = 0;
                 }
             }
+            ret = 0;
             break;
         }
 
