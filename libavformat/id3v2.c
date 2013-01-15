@@ -268,6 +268,9 @@ static void ff_id3v2_parse(AVFormatContext *s, int len, uint8_t version, uint8_t
         goto error;
     }
 
+    snprintf(tag, 5, "2.%d", version);
+    av_dict_set(&s->metadata, "id3_version", tag, 0);
+
     unsync = flags & 0x80;
 
     if (isv34 && flags & 0x40) /* Extended header present, just skip over it */
