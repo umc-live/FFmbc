@@ -38,10 +38,12 @@ FFmbc-0.7:
 - Progressive Quicktime files created will now be properly recognized by FCP
 - New filters from BBC: waveform monitor, w3fdif deinterlacing, stretch4to3, repeatframe
 - New -metadata_tags cli option to see what metadata tags are supported in each output format
-- Export MPEG-2 GOP timecode as metadata 
+- Export MPEG-2 GOP timecode as metadata
 - Correctly read interlaced information from DV files
 - DV files produced are now more standard compliant
 - Improved quality for the ProRes encoder
+- Support creating AVCIntra Quicktime files compatible with FCP
+- New avcintra100 target supported for Quicktime and MXF files
 
 FFmbc-0.6.1:
 - Fix compilation on OSX with Xcode 4.1
