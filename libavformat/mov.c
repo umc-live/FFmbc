@@ -1800,6 +1800,7 @@ static void mov_compute_stream_time_offset(MOVContext *mov, AVStream *st)
         sc->stts_data[0].count == 1 &&
         sc->stts_data[0].duration > sc->time_offset) {
         sc->stts_data[0].duration -= sc->time_offset;
+        st->duration -= sc->time_offset;
         sc->time_offset = 0;
     }
 
@@ -1822,6 +1823,7 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
 
     mov_compute_stream_time_offset(mov, st);
     current_dts = -sc->time_offset;
+    st->duration -= sc->time_offset;
 
     /* only use old uncompressed audio chunk demuxing when stts specifies it */
     if (!(st->codec->codec_type == AVMEDIA_TYPE_AUDIO &&
