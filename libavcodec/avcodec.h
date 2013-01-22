@@ -2942,6 +2942,13 @@ typedef struct AVCodecContext {
      * - decoding: Set by libavcodec. 0 or some bitrate if this info is available in the stream.
      */
     int64_t bit_rate;
+
+    /**
+     * metadata contained at the codec level
+     * - encoding: Unused
+     * - decoding: Set by libavcodec.
+     */
+    AVDictionary *metadata;
 } AVCodecContext;
 
 /**

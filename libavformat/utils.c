@@ -2623,6 +2623,7 @@ void avformat_free_context(AVFormatContext *s)
             av_free_packet(&st->cur_pkt);
         }
         av_dict_free(&st->metadata);
+        av_dict_free(&st->codec->metadata);
         av_free(st->index_entries);
         av_free(st->codec->extradata);
         av_free(st->codec->subtitle_header);
@@ -3456,6 +3457,7 @@ static void dump_stream_format(AVFormatContext *ic, int i, int index, int is_out
         av_log(NULL, AV_LOG_INFO, " (clean effects)");
     av_log(NULL, AV_LOG_INFO, "\n");
     dump_metadata(NULL, st->metadata, "    ");
+    dump_metadata(NULL, st->codec->metadata, "    ");
 }
 
 void break_time(int64_t t, int *hours, int *mins, int *secs, int *us)

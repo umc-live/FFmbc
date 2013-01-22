@@ -2179,19 +2179,18 @@ static void mpeg_decode_gop(AVCodecContext *avctx,
                             const uint8_t *buf, int buf_size){
     Mpeg1Context *s1 = avctx->priv_data;
     MpegEncContext *s = &s1->mpeg_enc_ctx;
-
-    int time_code_hours, time_code_minutes;
-    int time_code_seconds, time_code_pictures;
+    char timecode[16];
+    int hours, mins, secs, frames;
     int broken_link, drop;
 
     init_get_bits(&s->gb, buf, buf_size*8);
 
-    drop=get_bits1(&s->gb); /* drop_frame_flag */
-    time_code_hours=get_bits(&s->gb,5);
-    time_code_minutes = get_bits(&s->gb,6);
-    skip_bits1(&s->gb);//marker bit
-    time_code_seconds = get_bits(&s->gb,6);
-    time_code_pictures = get_bits(&s->gb,6);
+    drop = get_bits1(&s->gb); /* drop_frame_flag */
+    hours =get_bits(&s->gb, 5);
+    mins = get_bits(&s->gb, 6);
+    skip_bits1(&s->gb); // marker bit
+    secs = get_bits(&s->gb, 6);
+    frames = get_bits(&s->gb, 6);
 
     s->closed_gop = get_bits1(&s->gb);
     /*broken_link indicate that after editing the
@@ -2199,10 +2198,13 @@ static void mpeg_decode_gop(AVCodecContext *avctx,
       are missing (open gop)*/
     broken_link = get_bits1(&s->gb);
 
+    snprintf(timecode, 16, "%02d:%02d:%02d%c%02d", hours, mins, secs, drop ? ';' : ':', frames);
+    if (!av_dict_get(avctx->metadata, "video_timecode", NULL, 0))
+        av_dict_set(&avctx->metadata, "video_timecode", timecode, 0);
+
     if(s->avctx->debug & FF_DEBUG_PICT_INFO)
-        av_log(s->avctx, AV_LOG_DEBUG, "GOP (%02d:%02d:%02d%c%02d) closed_gop=%d broken_link=%d\n",
-               time_code_hours, time_code_minutes, time_code_seconds, drop ? ';' : ':',
-               time_code_pictures, s->closed_gop, broken_link);
+        av_log(s->avctx, AV_LOG_DEBUG, "GOP (%s) closed_gop=%d broken_link=%d\n",
+               timecode, s->closed_gop, broken_link);
 }
 /**
  * Find the end of the current frame in the bitstream.
