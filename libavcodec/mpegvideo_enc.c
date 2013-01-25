@@ -1073,12 +1073,19 @@ static int estimate_best_b_count(MpegEncContext *s){
     return best_b_count;
 }
 
-static int select_input_picture(MpegEncContext *s){
+static int select_input_picture(MpegEncContext *s, AVFrame *pic_arg){
     int i;
 
     for(i=1; i<MAX_PICTURE_COUNT; i++)
         s->reordered_input_picture[i-1]= s->reordered_input_picture[i];
     s->reordered_input_picture[MAX_PICTURE_COUNT-1]= NULL;
+
+    // flush with less frames than encoder delay
+    if (!pic_arg && !s->reordered_input_picture[0] &&
+        !s->input_picture[0] && s->input_picture[1]) {
+        s->input_picture[0] = s->input_picture[1];
+        s->input_picture[1] = NULL;
+    }
 
     /* set next picture type & ordering */
     if(s->reordered_input_picture[0]==NULL && s->input_picture[0]){
@@ -1266,7 +1273,7 @@ int MPV_encode_picture(AVCodecContext *avctx,
     if(load_input_picture(s, pic_arg) < 0)
         return -1;
 
-    if(select_input_picture(s) < 0){
+    if(select_input_picture(s, pic_arg) < 0){
         return -1;
     }
 
