@@ -152,11 +152,14 @@ static int decode_frame_header(ProresContext *ctx, const uint8_t *buf,
 
     avctx->pix_fmt = (buf[12] & 0xC0) == 0xC0 ? PIX_FMT_YUV444P10 : PIX_FMT_YUV422P10;
 
-    avctx->color_primaries = buf[14];
+    if (avctx->color_primaries == AVCOL_PRI_UNSPECIFIED)
+        avctx->color_primaries = buf[14];
     av_dlog(avctx, "primaries %d\n", buf[14]);
-    avctx->color_transfer = buf[15];
+    if (avctx->color_transfer == AVCOL_TRC_UNSPECIFIED)
+        avctx->color_transfer = buf[15];
     av_dlog(avctx, "transfer func %d\n", buf[15]);
-    avctx->color_matrix = buf[16];
+    if (avctx->color_matrix == AVCOL_MTX_UNSPECIFIED)
+        avctx->color_matrix = buf[16];
     av_dlog(avctx, "matrix %d\n", buf[16]);
 
     ptr   = buf + 20;
