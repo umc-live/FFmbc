@@ -2267,44 +2267,54 @@ static int mxf_write_footer(AVFormatContext *s)
     return 0;
 }
 
+static int mxf_compare_timestamps(AVFormatContext *s, AVPacket *next, AVPacket *pkt)
+{
+    MXFStreamContext *sc  = s->streams[pkt ->stream_index]->priv_data;
+    MXFStreamContext *sc2 = s->streams[next->stream_index]->priv_data;
+
+    return next->dts > pkt->dts ||
+        (next->dts == pkt->dts && sc->order < sc2->order);
+}
+
 static int mxf_interleave_get_packet(AVFormatContext *s, AVPacket *out, AVPacket *pkt, int flush)
 {
+    MXFContext *mxf = s->priv_data;
     int i, stream_count = 0;
+    int64_t duration = mxf->last_indexed_edit_unit + mxf->edit_units_count;
 
     for (i = 0; i < s->nb_streams; i++)
         stream_count += !!s->streams[i]->last_in_packet_buffer;
 
-    if (stream_count && (s->nb_streams == stream_count || flush)) {
+    if (s->nb_streams == stream_count || flush) {
         AVPacketList *pktl = s->packet_buffer;
         if (s->nb_streams != stream_count) {
-            AVPacketList *last = NULL;
-            // find last packet in edit unit
-            while (pktl) {
-                if (!stream_count || pktl->pkt.stream_index == 0)
-                    break;
-                last = pktl;
-                pktl = pktl->next;
-                stream_count--;
-            }
-            // purge packet queue
-            while (pktl) {
-                AVPacketList *next = pktl->next;
-
-                if(s->streams[pktl->pkt.stream_index]->last_in_packet_buffer == pktl)
-                    s->streams[pktl->pkt.stream_index]->last_in_packet_buffer= NULL;
-                av_free_packet(&pktl->pkt);
-                av_freep(&pktl);
-                pktl = next;
-            }
-            if (last)
-                last->next = NULL;
-            else {
-                s->packet_buffer = NULL;
-                s->packet_buffer_end= NULL;
+            // extra audio at the end
+            if (pktl && pktl->pkt.stream_index > 0 && pktl->pkt.dts >= duration) {
+                for (;;) {
+                    pktl = s->packet_buffer;
+                    if (!pktl)
+                        break;
+                    s->packet_buffer = pktl->next;
+                    av_free_packet(&pktl->pkt);
+                    av_free(pktl);
+                }
                 goto out;
+            }
+
+            // extra video at the end
+            for (i = 1; i < s->nb_streams; i++) {
+                AudioInterleaveContext *aic = s->streams[i]->priv_data;
+                AVPacket new_pkt;
+                if (aic->dts >= duration)
+                    continue;
+                if (ff_audio_interleave_new_packet(s, &new_pkt, i, 2))
+                    ff_interleave_add_packet(s, &new_pkt, mxf_compare_timestamps);
             }
             pktl = s->packet_buffer;
         }
+
+        if (!pktl)
+            goto out;
 
         *out = pktl->pkt;
         //av_log(s, AV_LOG_DEBUG, "out st:%d dts:%lld\n", (*out).stream_index, (*out).dts);
@@ -2320,15 +2330,6 @@ static int mxf_interleave_get_packet(AVFormatContext *s, AVPacket *out, AVPacket
         av_init_packet(out);
         return 0;
     }
-}
-
-static int mxf_compare_timestamps(AVFormatContext *s, AVPacket *next, AVPacket *pkt)
-{
-    MXFStreamContext *sc  = s->streams[pkt ->stream_index]->priv_data;
-    MXFStreamContext *sc2 = s->streams[next->stream_index]->priv_data;
-
-    return next->dts > pkt->dts ||
-        (next->dts == pkt->dts && sc->order < sc2->order);
 }
 
 static int mxf_interleave(AVFormatContext *s, AVPacket *out, AVPacket *pkt, int flush)
