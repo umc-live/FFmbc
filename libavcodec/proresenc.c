@@ -69,6 +69,7 @@ typedef struct {
     unsigned qp;
     uint64_t bitrate;
     int64_t frame_size;
+    int64_t picture_size;
     int left_size;
     float bt;
     char *profile;
@@ -323,6 +324,7 @@ static int prores_encode_init(AVCodecContext *avctx)
         ctx->qp = av_clip(ctx->qp, 1, 224);
     } else {
         ctx->frame_size = ctx->bitrate * av_q2d(avctx->time_base) / 8;
+        ctx->picture_size = ctx->frame_size / (interlaced+1);
         avctx->bit_rate = ctx->bitrate;
     }
 
@@ -767,10 +769,10 @@ static int prores_load_frame(AVCodecContext *avctx, const AVFrame *frame)
         for (i = 0; i < ctx->slice_count; i++) {
             SliceContext *slice = &ctx->slices[i];
             int slice_size;
-            if (ctx->left_size <= -ctx->frame_size)
+            if (ctx->left_size <= -ctx->picture_size)
                 ctx->left_size = 0;
             slice_size = slice->mb_count *
-                (ctx->frame_size + ctx->left_size) / ctx->mb_count;
+                (ctx->picture_size + ctx->left_size) / ctx->mb_count;
             slice->max_size = slice_size * (100+ctx->bt) / 100;
             slice->min_size = slice_size * (100-ctx->bt) / 100;
             slice->over_qp = 0;
@@ -785,7 +787,7 @@ static int prores_encode_frame(AVCodecContext *avctx, unsigned char *buf, int bu
 {
     ProresEncContext *ctx = avctx->priv_data;
     uint8_t *slice_ptr, *pic_hdr_ptr, *p = buf;
-    int i, ret, frame_size, qp = 0;
+    int i, ret, frame_size, qp;
 
     if (buf_size < avctx->height * avctx->width * 2 * 3) {
         av_log(avctx, AV_LOG_ERROR, "output buffer is too small to compress picture\n");
@@ -811,6 +813,7 @@ static int prores_encode_frame(AVCodecContext *avctx, unsigned char *buf, int bu
 
     slice_ptr = p;
     p += ctx->slice_count * 2;
+    qp = 0;
     for (i = 0; i < ctx->slice_count; i++) {
         SliceContext *slice = &ctx->slices[i];
         bytestream_put_be16(&slice_ptr, slice->data_size);
