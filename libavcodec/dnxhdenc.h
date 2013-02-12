@@ -78,11 +78,11 @@ typedef struct DNXHDEncContext {
     uint16_t (*qmatrix_l16)[2][64];
     uint16_t (*qmatrix_c16)[2][64];
 
-    int (*q_intra_matrix)[64];
-    uint16_t (*q_intra_matrix16)[2][64];
+    int (*cur_qmatrix)[64];
+    uint16_t (*cur_qmatrix16)[2][64];
 
-    int intra_quant_bias; ///< bias for the quantizer
-    ScanTable intra_scantable;
+    int quant_bias; ///< bias for the quantizer
+    ScanTable scantable;
 
     unsigned frame_bits;
     uint8_t *src[3];

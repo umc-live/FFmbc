@@ -1,4 +1,4 @@
-166a8b9e1973a5b608afc69f8d05af3d *./tests/data/vsynth2/dnxhd-1080i.dnxhd
+54adc55b0f025b2aa9cc0137ceb62e6a *./tests/data/vsynth2/dnxhd-1080i.dnxhd
 3031040 ./tests/data/vsynth2/dnxhd-1080i.dnxhd
-e057846ab11faa01fba81350b326ab01 *./tests/data/dnxhd_1080i.vsynth2.out.yuv
-stddev:    1.31 PSNR: 45.78 MAXDIFF:   22 bytes:   760320/  7603200
+5c21f00b665538fc0e93bd8f3fe521c4 *./tests/data/dnxhd_1080i.vsynth2.out.yuv
+stddev:    1.26 PSNR: 46.11 MAXDIFF:   22 bytes:   760320/  7603200

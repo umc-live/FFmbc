@@ -45,10 +45,10 @@ static const AVClass class = { "dnxhd", av_default_item_name, options, LIBAVUTIL
 
 static int dnxhd_dct_quantize(DNXHDEncContext *ctx, DCTELEM *block, int qscale)
 {
-    const uint8_t *scantable= ctx->intra_scantable.scantable;
-    const int *qmat = ctx->q_intra_matrix[qscale];
+    const uint8_t *scantable= ctx->scantable.scantable;
+    const int *qmat = ctx->cur_qmatrix[qscale];
     int last_non_zero = 0;
-    int bias = ctx->intra_quant_bias << (QMAT_SHIFT - QUANT_BIAS_SHIFT);
+    int bias = ctx->quant_bias << (QMAT_SHIFT - QUANT_BIAS_SHIFT);
     unsigned threshold1 = (1<<QMAT_SHIFT) - bias - 1;
     unsigned threshold2 = (threshold1<<1);
 
@@ -184,7 +184,7 @@ static int dnxhd_init_qmat(DNXHDEncContext *ctx, int lbias, int cbias)
 
     for (q = 1; q <= ctx->qmax; q++) {
         for (i = 1; i < 64; i++) {
-            const int bias = ctx->intra_quant_bias;
+            const int bias = ctx->quant_bias;
             ctx->qmatrix_l[q][i] = (num << QMAT_SHIFT) / (q * ctx->cid_table->luma_weight[i]);
             ctx->qmatrix_c[q][i] = (num << QMAT_SHIFT) / (q * ctx->cid_table->chroma_weight[i]);
 
@@ -293,7 +293,7 @@ static int dnxhd_encode_init(AVCodecContext *avctx)
     }
     dsputil_init(&ctx->dsp, avctx);
 
-    ff_init_scantable(ctx->dsp.idct_permutation, &ctx->intra_scantable, ff_zigzag_direct);
+    ff_init_scantable(ctx->dsp.idct_permutation, &ctx->scantable, ff_zigzag_direct);
 
     if (!ctx->dct_quantize)
         ctx->dct_quantize = dnxhd_dct_quantize;
@@ -323,9 +323,10 @@ static int dnxhd_encode_init(AVCodecContext *avctx)
 
     ctx->mb_num = ctx->mb_height * ctx->mb_width;
 
+    ctx->quant_bias = 3<<(QUANT_BIAS_SHIFT-3); //(a + x*3/8)/x
     if (avctx->intra_quant_bias != FF_DEFAULT_QUANT_BIAS)
-        ctx->intra_quant_bias = avctx->intra_quant_bias;
-    if (dnxhd_init_qmat(ctx, ctx->intra_quant_bias, 0) < 0) // XXX tune lbias/cbias
+        ctx->quant_bias = avctx->intra_quant_bias;
+    if (dnxhd_init_qmat(ctx, ctx->quant_bias, 0) < 0) // XXX tune lbias/cbias
         return -1;
 
     // Avid Nitris hardware decoder requires a minimum amount of padding in the coding unit payload
@@ -421,7 +422,7 @@ static av_always_inline void dnxhd_encode_block(DNXHDEncContext *ctx, DCTELEM *b
     ctx->last_dc[n] = block[0];
 
     for (i = 1; i <= last_index; i++) {
-        j = ctx->intra_scantable.permutated[i];
+        j = ctx->scantable.permutated[i];
         slevel = block[j];
         if (slevel) {
             int run_level = i - last_non_zero - 1;
@@ -444,7 +445,7 @@ static av_always_inline void dnxhd_unquantize_c(DNXHDEncContext *ctx, DCTELEM *b
     weight_matrix = (n&2) ? ctx->cid_table->chroma_weight : ctx->cid_table->luma_weight;
 
     for (i = 1; i <= last_index; i++) {
-        int j = ctx->intra_scantable.permutated[i];
+        int j = ctx->scantable.permutated[i];
         level = block[j];
         if (level) {
             if (level < 0) {
@@ -491,7 +492,7 @@ static av_always_inline int dnxhd_calc_ac_bits(DNXHDEncContext *ctx, DCTELEM *bl
     int bits = 0;
     int i, j, level;
     for (i = 1; i <= last_index; i++) {
-        j = ctx->intra_scantable.permutated[i];
+        j = ctx->scantable.permutated[i];
         level = block[j];
         if (level) {
             int run_level = i - last_non_zero - 1;
@@ -539,12 +540,12 @@ static av_always_inline void dnxhd_get_blocks(DNXHDEncContext *ctx, int mb_x, in
 static av_always_inline int dnxhd_switch_matrix(DNXHDEncContext *ctx, int i)
 {
     if (i&2) {
-        ctx->q_intra_matrix16 = ctx->qmatrix_c16;
-        ctx->q_intra_matrix   = ctx->qmatrix_c;
+        ctx->cur_qmatrix16 = ctx->qmatrix_c16;
+        ctx->cur_qmatrix   = ctx->qmatrix_c;
         return 1 + (i&1);
     } else {
-        ctx->q_intra_matrix16 = ctx->qmatrix_l16;
-        ctx->q_intra_matrix   = ctx->qmatrix_l;
+        ctx->cur_qmatrix16 = ctx->qmatrix_l16;
+        ctx->cur_qmatrix   = ctx->qmatrix_l;
         return 0;
     }
 }
@@ -682,7 +683,7 @@ static int dnxhd_mb_var_thread(AVCodecContext *avctx, void *arg, int jobnr, int 
                 }
                 pix += ctx->linesize;
             }
-            ctx->mb_cmp[mb].value = ((sqsum - ((unsigned)(sum*sum+128))>>8)+128)>>8;
+            ctx->mb_cmp[mb].value = (sqsum - (((uint64_t)sum*sum+128)>>8)+128)>>8;
             ctx->mb_cmp[mb].mb = mb;
         }
     }

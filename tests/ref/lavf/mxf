@@ -4,9 +4,9 @@
 8fd45b85470b358d704e2ee4b8d5b11d *./tests/data/lavf/lavf_ntsc_tc.mxf
 524860 ./tests/data/lavf/lavf_ntsc_tc.mxf
 ./tests/data/lavf/lavf_ntsc_tc.mxf CRC=0xe376e356
-90978d56420edf41d374aab5afedaa7b *./tests/data/lavf/lavf_dnxhd.mxf
+80e346fc0507c5b66e31bffb35fccd6f *./tests/data/lavf/lavf_dnxhd.mxf
 15289904 ./tests/data/lavf/lavf_dnxhd.mxf
-./tests/data/lavf/lavf_dnxhd.mxf CRC=0x09200e4c
+./tests/data/lavf/lavf_dnxhd.mxf CRC=0xfe96f0d1
 eaecd999dc960d7a1bbad43ccf57194f *./tests/data/lavf/lavf_dvhd.mxf
 14843952 ./tests/data/lavf/lavf_dvhd.mxf
 ./tests/data/lavf/lavf_dvhd.mxf CRC=0x0c3f0a04

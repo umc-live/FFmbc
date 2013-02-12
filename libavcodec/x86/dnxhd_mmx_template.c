@@ -105,8 +105,8 @@ static int RENAME(dct_quantize)(DNXHDEncContext *ctx,
 
     block[0] = 0; //avoid fake overflow
     last_non_zero_p1 = 1;
-    bias = ctx->q_intra_matrix16[qscale][1];
-    qmat = ctx->q_intra_matrix16[qscale][0];
+    bias = ctx->cur_qmatrix16[qscale][1];
+    qmat = ctx->cur_qmatrix16[qscale][0];
 
     __asm__ volatile(
         "movd %%"REG_a", "MM"3              \n\t" // last_non_zero_p1
