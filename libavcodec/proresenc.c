@@ -29,17 +29,6 @@
 #include "libavutil/x86_cpu.h"
 
 typedef struct {
-    int index;
-    int value;
-} RCCMPEntry;
-
-typedef struct {
-    int size;
-    int var;
-} RCEntry;
-
-typedef struct {
-    int index;
     uint8_t *buf;
     unsigned buf_size;
     unsigned mb_x;
@@ -51,12 +40,8 @@ typedef struct {
     uint8_t *edge_buf;
     int edge_stride;
     unsigned qp;
-    unsigned max_size;
-    unsigned min_size;
     int over_qp;
     int loaded;
-    int mb_var[8];
-    int lower_data_size;
     DECLARE_ALIGNED(16, DCTELEM, blocks)[8*12*64];
 } SliceContext;
 
@@ -90,7 +75,6 @@ typedef struct {
     unsigned mb_size;
     int qmax;
     unsigned rc_qp;
-    RCCMPEntry *slice_rc_cmp;
     int quant_bias;
 } ProresEncContext;
 
@@ -362,17 +346,12 @@ static int prores_encode_init(AVCodecContext *avctx)
 
     slice_mb_count = 8;
 
-    ctx->slice_rc_cmp = av_malloc(ctx->slice_count * sizeof(*ctx->slice_rc_cmp));
-    if (!ctx->slice_rc_cmp)
-        return AVERROR(ENOMEM);
-
     for (i = 0; i < ctx->slice_count; i++) {
         SliceContext *slice = &ctx->slices[i];
 
         while (ctx->mb_width - mb_x < slice_mb_count)
             slice_mb_count >>= 1;
 
-        slice->index = i;
         slice->qp = ctx->qp;
         slice->mb_x = mb_x;
         slice->mb_y = mb_y;
@@ -632,37 +611,6 @@ static int encode_slice(AVCodecContext *avctx, SliceContext *slice,
     return put_bits_count(&pb)>>3;
 }
 
-static void compute_variance(AVCodecContext *avctx, SliceContext *slice,
-                             const uint8_t *src, int src_stride)
-{
-    ProresEncContext *ctx = avctx->priv_data;
-    int mb_x;
-    double var_sum = 0;
-
-    if (slice->h < 16 || slice->last_mb_w < 16) {
-        memset(slice->mb_var, 0, sizeof(slice->mb_var));
-        goto out;
-    }
-
-    for (mb_x = 0; mb_x < slice->mb_count; ++mb_x) {
-        const uint16_t *pix = ((const uint16_t*)src) + (mb_x << 4);
-        int sum = 0, sqsum = 0;
-        for (int i = 0; i < 16; ++i) {
-            for (int j = 0; j < 16; ++j) {
-                int sample = pix[j];
-                sum += sample;
-                sqsum += sample * sample;
-            }
-            pix += src_stride >> 1;
-        }
-        slice->mb_var[mb_x] = (sqsum - (((uint64_t)sum*sum+128)>>8)+128)>>8;
-        var_sum += slice->mb_var[mb_x];
-    }
- out:
-    ctx->slice_rc_cmp[slice->index].index = slice->index;
-    ctx->slice_rc_cmp[slice->index].value = var_sum;
-}
-
 static int encode_slice_thread(AVCodecContext *avctx, void *arg, int jobnr, int threadnr)
 {
     ProresEncContext *ctx = avctx->priv_data;
@@ -708,13 +656,9 @@ static int encode_slice_thread(AVCodecContext *avctx, void *arg, int jobnr, int 
         read_slice_chroma(avctx, slice, slice->blocks + 8*8*64, src_v, chroma_stride,
                           log2_chroma_blocks_per_mb);
 
-        if (!slice->max_size)
-            compute_variance(avctx, slice, src_y, luma_stride);
-
         slice->loaded = 1;
     }
 
- encode:
     buf = slice->buf;
     buf[0] = 8 << 3; // slice header size
     buf[1] = slice->qp;
@@ -751,45 +695,10 @@ static int encode_slice_thread(AVCodecContext *avctx, void *arg, int jobnr, int 
 
     slice->data_size = 8 + y_data_size + u_data_size + v_data_size;
 
-    if (slice->max_size) {
-        if (slice->data_size > slice->max_size) {
-            if (!slice->over_qp || slice->qp > slice->over_qp)
-                slice->over_qp = slice->qp;
-            slice->qp++;
-            if (slice->qp < ctx->qmax)
-                goto encode;
-            if (slice->qp == 224)
-                av_log(avctx, AV_LOG_WARNING, "warning, maximum quantizer reached\n");
-        } else if (slice->data_size < slice->min_size && slice->qp > 1 &&
-                   slice->qp - 1 > slice->over_qp) {
-            slice->qp--;
-            goto encode;
-        }
-    }
-
     return 0;
 }
 
-static int prores_encode_picture(AVCodecContext *avctx)
-{
-    ProresEncContext *ctx = avctx->priv_data;
-    int i, threads_ret[ctx->slice_count];
-
-    for (i = 0; i < ctx->slice_count; i++) {
-        SliceContext *slice = &ctx->slices[i];
-        slice->loaded = 0;
-    }
-
-    avctx->execute2(avctx, encode_slice_thread, NULL, threads_ret, ctx->slice_count);
-
-    for (i = 0; i < ctx->slice_count; i++)
-        if (threads_ret[i] < 0)
-            return threads_ret[i];
-
-    return 0;
-}
-
-static int prores_find_qp(AVCodecContext *avctx, int target_picture_size)
+static int prores_find_qp(AVCodecContext *avctx)
 {
     ProresEncContext *ctx = avctx->priv_data;
     int size = 0;
@@ -802,25 +711,23 @@ static int prores_find_qp(AVCodecContext *avctx, int target_picture_size)
     for (;;) {
         for (i = 0; i < ctx->slice_count; i++) {
             SliceContext *slice = &ctx->slices[i];
-            slice->lower_data_size = slice->data_size;
             slice->qp = qp;
         }
 
-        // XXX avoid recalculating bits
         avctx->execute2(avctx, encode_slice_thread, NULL, NULL, ctx->slice_count);
 
         size = 0;
         for (i = 0; i < ctx->slice_count; i++) {
             SliceContext *slice = &ctx->slices[i];
             size += slice->data_size;
-            if (size > target_picture_size)
+            if (size > ctx->picture_size)
                 break;
         }
 
         //av_log(avctx, AV_LOG_INFO, "%d, qp %d, size %d, frame %d, higher %d, lower %d\n",
-        //        avctx->frame_number, qp, size, target_picture_size, last_higher, last_lower);
+        //        avctx->frame_number, qp, size, ctx->picture_size, last_higher, last_lower);
 
-        if (size < target_picture_size) {
+        if (size < ctx->picture_size) {
             if (qp == 1 || last_higher == qp - 1)
                 break;
             last_lower = FFMIN(qp, last_lower);
@@ -834,110 +741,42 @@ static int prores_find_qp(AVCodecContext *avctx, int target_picture_size)
         } else {
             if (last_lower == qp + 1)
                 break;
+            if (qp == ctx->qmax) {
+                av_log(avctx, AV_LOG_WARNING, "warning, maximum quantizer reached\n");
+                break;
+            }
             last_higher = FFMAX(qp, last_higher);
             if (last_lower != INT_MAX)
                 qp = (qp+last_lower)>>1;
             else
                 qp += up_step++;
             down_step = 1;
-            if (qp > ctx->qmax)
-                return -1;
         }
     }
     //av_log(avctx, AV_LOG_DEBUG, "frame %d size %d out qp %d\n", avctx->frame_number, size, qp);
     ctx->rc_qp = qp;
-    return 0;
+    return qp;
 }
 
-#define BUCKET_BITS 8
-#define RADIX_PASSES 4
-#define NBUCKETS (1 << BUCKET_BITS)
-
-static inline int get_bucket(int value, int shift)
-{
-    value >>= shift;
-    value &= NBUCKETS - 1;
-    return NBUCKETS - 1 - value;
-}
-
-static void radix_count(const RCCMPEntry *data, int size, int buckets[RADIX_PASSES][NBUCKETS])
-{
-    int i, j;
-    memset(buckets, 0, sizeof(buckets[0][0]) * RADIX_PASSES * NBUCKETS);
-    for (i = 0; i < size; i++) {
-        int v = data[i].value;
-        for (j = 0; j < RADIX_PASSES; j++) {
-            buckets[j][get_bucket(v, 0)]++;
-            v >>= BUCKET_BITS;
-        }
-        assert(!v);
-    }
-    for (j = 0; j < RADIX_PASSES; j++) {
-        int offset = size;
-        for (i = NBUCKETS - 1; i >= 0; i--)
-            buckets[j][i] = offset -= buckets[j][i];
-        assert(!buckets[j][0]);
-    }
-}
-
-static void radix_sort_pass(RCCMPEntry *dst, const RCCMPEntry *data, int size, int buckets[NBUCKETS], int pass)
-{
-    int shift = pass * BUCKET_BITS;
-    int i;
-    for (i = 0; i < size; i++) {
-        int v = get_bucket(data[i].value, shift);
-        int pos = buckets[v]++;
-        dst[pos] = data[i];
-    }
-}
-
-static void radix_sort(RCCMPEntry *data, int size)
-{
-    int buckets[RADIX_PASSES][NBUCKETS];
-    RCCMPEntry *tmp = av_malloc(sizeof(*tmp) * size);
-    radix_count(data, size, buckets);
-    radix_sort_pass(tmp, data, size, buckets[0], 0);
-    radix_sort_pass(data, tmp, size, buckets[1], 1);
-    if (buckets[2][NBUCKETS - 1] || buckets[3][NBUCKETS - 1]) {
-        radix_sort_pass(tmp, data, size, buckets[2], 2);
-        radix_sort_pass(data, tmp, size, buckets[3], 3);
-    }
-    av_free(tmp);
-}
-
-static int prores_encode_picture_rd(AVCodecContext *avctx)
+static int prores_encode_picture(AVCodecContext *avctx)
 {
     ProresEncContext *ctx = avctx->priv_data;
-    int ret, i, target_picture_size;
-    int max_size = 0;
+    int i, threads_ret[ctx->slice_count];
 
     for (i = 0; i < ctx->slice_count; i++) {
         SliceContext *slice = &ctx->slices[i];
         slice->loaded = 0;
-        slice->max_size = 0;
+        threads_ret[i] = 0;
     }
 
-    target_picture_size = ctx->picture_size;
-    if ((ret = prores_find_qp(avctx, target_picture_size)) < 0)
-        return -1;
+    if (ctx->qp)
+        avctx->execute2(avctx, encode_slice_thread, NULL, threads_ret, ctx->slice_count);
+    else
+        prores_find_qp(avctx);
 
-    for (i = 0; i < ctx->slice_count; i++) {
-        SliceContext *slice = &ctx->slices[i];
-        max_size += slice->data_size;
-        slice->qp = ctx->rc_qp;
-    }
-
-    if (!ret) {
-        radix_sort(ctx->slice_rc_cmp, ctx->slice_count);
-        for (i = 0; i < ctx->slice_count && max_size > target_picture_size; i++) {
-            RCCMPEntry *e = &ctx->slice_rc_cmp[i];
-            SliceContext *slice = &ctx->slices[e->index];
-            max_size -= slice->data_size - slice->lower_data_size;
-            slice->qp++;
-        }
-
-        avctx->execute2(avctx, encode_slice_thread, NULL, NULL, ctx->slice_count);
-    }
+    for (i = 0; i < ctx->slice_count; i++)
+        if (threads_ret[i] < 0)
+            return threads_ret[i];
 
     return 0;
 }
@@ -990,7 +829,6 @@ static int prores_write_picture_header(AVCodecContext *avctx, uint8_t *buf)
 static int prores_load_frame(AVCodecContext *avctx, const AVFrame *frame)
 {
     ProresEncContext *ctx = avctx->priv_data;
-    int i;
 
     if (avctx->height != ctx->height || avctx->width != ctx->width) {
         av_log(avctx, AV_LOG_ERROR, "error, resolution changed\n");
@@ -1003,18 +841,6 @@ static int prores_load_frame(AVCodecContext *avctx, const AVFrame *frame)
 
     if (avctx->flags & CODEC_FLAG_INTERLACED_DCT)
         ctx->frame_type = 1 + !frame->top_field_first;
-
-    if (!ctx->qp) {
-        for (i = 0; i < ctx->slice_count; i++) {
-            SliceContext *slice = &ctx->slices[i];
-            int slice_size;
-            slice_size = slice->mb_count * ctx->picture_size / ctx->mb_count;
-            slice->max_size = slice_size * (100+ctx->bt) / 100;
-            slice->min_size = slice_size * (100-ctx->bt) / 100;
-            slice->over_qp = 0;
-            slice->qp = av_clip(slice->qp, 1, 224);
-        }
-    }
 
     return 0;
 }
@@ -1038,10 +864,7 @@ static int prores_encode_frame(AVCodecContext *avctx, unsigned char *buf, int bu
     ctx->first_field = 1;
 
  encode_picture:
-    if (ctx->qp || avctx->mb_decision != FF_MB_DECISION_RD)
-        ret = prores_encode_picture(avctx);
-    else
-        ret = prores_encode_picture_rd(avctx);
+    ret = prores_encode_picture(avctx);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "error encoding picture\n");
         return -1;
@@ -1087,7 +910,6 @@ static int prores_encode_end(AVCodecContext *avctx)
         av_freep(&slice->edge_buf);
     }
 
-    av_freep(&ctx->slice_rc_cmp);
     av_freep(&ctx->slices);
     av_freep(&ctx->buf);
     return 0;
