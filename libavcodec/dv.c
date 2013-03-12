@@ -422,7 +422,6 @@ static int dvvideo_decode_frame(AVCodecContext *avctx,
     int buf_size = avpkt->size;
     DVVideoContext *s = avctx->priv_data;
     const uint8_t* vsc_pack;
-    int apt, is16_9;
 
     s->sys = ff_dv_frame_profile(s->sys, buf, buf_size);
     if (!s->sys || buf_size < s->sys->frame_size || ff_dv_init_dynamic_tables(s->sys)) {
@@ -444,9 +443,6 @@ static int dvvideo_decode_frame(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return -1;
     }
-    s->picture.interlaced_frame = avctx->height != 720;
-    // assume hd is top field first
-    s->picture.top_field_first = avctx->height >= 1080;
 
     s->buf = buf;
     avctx->execute(avctx, dv_decode_video_segment, s->sys->work_chunks, NULL,
@@ -454,17 +450,24 @@ static int dvvideo_decode_frame(AVCodecContext *avctx,
 
     emms_c();
 
+    /* Determine the codec's sample_aspect ratio from the packet */
+    vsc_pack = buf + 80*5 + 48 + 5;
+    if (*vsc_pack == dv_video_control) {
+        int apt = buf[4] & 0x07;
+        int is16_9 = (vsc_pack[2] & 0x07) == 0x02 || (!apt && (vsc_pack[2] & 0x07) == 0x07);
+        avctx->sample_aspect_ratio = s->sys->sar[is16_9];
+        if (avctx->height != 720) {
+            s->picture.interlaced_frame = (vsc_pack[3] & 0x10) == 0x10;
+            if (avctx->height == 1080)
+                s->picture.top_field_first = (vsc_pack[3] & 0x40) == 0x40;
+            else
+                s->picture.top_field_first = (vsc_pack[3] & 0x40) != 0x40;
+        }
+    }
+
     /* return image */
     *data_size = sizeof(AVFrame);
     *(AVFrame*)data = s->picture;
-
-    /* Determine the codec's sample_aspect ratio from the packet */
-    vsc_pack = buf + 80*5 + 48 + 5;
-    if ( *vsc_pack == dv_video_control ) {
-        apt = buf[4] & 0x07;
-        is16_9 = (vsc_pack[2] & 0x07) == 0x02 || (!apt && (vsc_pack[2] & 0x07) == 0x07);
-        avctx->sample_aspect_ratio = s->sys->sar[is16_9];
-    }
 
     return s->sys->frame_size;
 }

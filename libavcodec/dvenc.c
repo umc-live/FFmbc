@@ -829,6 +829,9 @@ static inline int dv_write_pack(enum dv_pack_type pack_id, DVVideoContext *c,
      */
     int apt = c->sys->pix_fmt == PIX_FMT_YUV420P ? 0 : 1;
     uint8_t aspect = 0;
+    int il = c->avctx->height >= 720 || c->avctx->interlaced; // il reserved in 370m
+    int fs = c->avctx->height == 720 || (c->avctx->interlaced == 1 + (c->avctx->height < 720));
+
     if (DV_PROFILE_IS_HD(c->sys) ||
         (int)(av_q2d(c->avctx->sample_aspect_ratio) *
               c->avctx->width / c->avctx->height * 10) >= 17)
@@ -867,10 +870,10 @@ static inline int dv_write_pack(enum dv_pack_type pack_id, DVVideoContext *c,
                  0x3f;      /* reserved -- always 1 */
         buf[2] = 0xc8 |     /* reserved -- always b11001xxx */
             aspect;
-        buf[3] = (1 << 7) | /* frame/field flag 1 -- frame, 0 -- field */
-                 (1 << 6) | /* first/second field flag 0 -- field 2, 1 -- field 1 */
-                 (1 << 5) | /* frame change flag 0 -- same picture as before, 1 -- different */
-                 (1 << 4) | /* 1 - interlaced, 0 - noninterlaced */
+        buf[3] = (1  << 7) | /* frame/field flag 1 -- frame, 0 -- field */
+                 (fs << 6) | /* first/second field flag 0 -- field 2, 1 -- field 1 */
+                 (1  << 5) | /* frame change flag 0 -- same picture as before, 1 -- different */
+                 (il << 4) | /* 1 - interlaced, 0 - noninterlaced */
                  0xc;       /* reserved -- always b1100 */
         buf[4] = 0xff;      /* reserved -- always 1 */
         break;
