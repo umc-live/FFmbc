@@ -32,6 +32,7 @@
 #include "get_bits.h"
 #include "dsputil.h"
 #include "simple_idct.h"
+#include "thread.h"
 #include "libavutil/x86_cpu.h"
 #include "x86/dsputil_mmx.h"
 #include "x86/idct_xvid.h"
@@ -47,6 +48,7 @@ typedef struct {
 typedef struct {
     AVFrame frame;
     DSPContext dsp;
+    GetBitContext gb;
     int frame_type;              ///< 0 = progressive, 1 = tff, 2 = bff
     uint8_t qmat_luma[64];
     uint8_t qmat_chroma[64];
@@ -58,6 +60,7 @@ typedef struct {
     uint8_t interlaced_scan[64];
     const uint8_t *scan;
     int first_field;
+    DECLARE_ALIGNED(16, DCTELEM, blocks)[8*4*64], *block;
 } ProresContext;
 
 static void permute(uint8_t *dst, const uint8_t *src, const uint8_t permutation[64])
@@ -398,19 +401,18 @@ static void decode_slice_luma(AVCodecContext *avctx, SliceContext *slice,
                               const int *qmat)
 {
     ProresContext *ctx = avctx->priv_data;
-    DECLARE_ALIGNED(16, DCTELEM, blocks)[8*4*64], *block;
-    GetBitContext gb;
     int i, blocks_per_slice = slice->mb_count<<2;
+    DCTELEM *block;
 
     for (i = 0; i < blocks_per_slice; i++)
-        ctx->dsp.clear_block(blocks+(i<<6));
+        ctx->dsp.clear_block(ctx->blocks+(i<<6));
 
-    init_get_bits(&gb, buf, buf_size << 3);
+    init_get_bits(&ctx->gb, buf, buf_size << 3);
 
-    decode_dc_coeffs(&gb, blocks, blocks_per_slice, qmat);
-    decode_ac_coeffs(avctx, &gb, blocks, blocks_per_slice, qmat);
+    decode_dc_coeffs(&ctx->gb, ctx->blocks, blocks_per_slice, qmat);
+    decode_ac_coeffs(avctx, &ctx->gb, ctx->blocks, blocks_per_slice, qmat);
 
-    block = blocks;
+    block = ctx->blocks;
     for (i = 0; i < slice->mb_count; i++) {
         ctx->dsp.idct_put(dst, dst_stride, block+(0<<6));
         ctx->dsp.idct_put(dst+16, dst_stride, block+(1<<6));
@@ -427,19 +429,18 @@ static void decode_slice_chroma(AVCodecContext *avctx, SliceContext *slice,
                                 int log2_blocks_per_mb, const int *qmat)
 {
     ProresContext *ctx = avctx->priv_data;
-    DECLARE_ALIGNED(16, DCTELEM, blocks)[8*4*64], *block;
-    GetBitContext gb;
     int i, j, blocks_per_slice = slice->mb_count<<log2_blocks_per_mb;
+    DCTELEM *block;
 
     for (i = 0; i < blocks_per_slice; i++)
-        ctx->dsp.clear_block(blocks+(i<<6));
+        ctx->dsp.clear_block(ctx->blocks+(i<<6));
 
-    init_get_bits(&gb, buf, buf_size << 3);
+    init_get_bits(&ctx->gb, buf, buf_size << 3);
 
-    decode_dc_coeffs(&gb, blocks, blocks_per_slice, qmat);
-    decode_ac_coeffs(avctx, &gb, blocks, blocks_per_slice, qmat);
+    decode_dc_coeffs(&ctx->gb, ctx->blocks, blocks_per_slice, qmat);
+    decode_ac_coeffs(avctx, &ctx->gb, ctx->blocks, blocks_per_slice, qmat);
 
-    block = blocks;
+    block = ctx->blocks;
     for (i = 0; i < slice->mb_count; i++) {
         for (j = 0; j < log2_blocks_per_mb; j++) {
             ctx->dsp.idct_put(dst,              dst_stride, block+(0<<6));
@@ -450,12 +451,11 @@ static void decode_slice_chroma(AVCodecContext *avctx, SliceContext *slice,
     }
 }
 
-static int decode_slice_thread(AVCodecContext *avctx, void *arg, int jobnr, int threadnr)
+static int decode_slice(AVCodecContext *avctx, SliceContext *slice)
 {
     ProresContext *ctx = avctx->priv_data;
-    SliceContext *slice = &ctx->slices[jobnr];
     const uint8_t *buf = slice->data;
-    AVFrame *pic = avctx->coded_frame;
+    AVFrame *pic = &ctx->frame;
     int i, hdr_size, qscale, log2_chroma_blocks_per_mb;
     int luma_stride, chroma_stride;
     int y_data_size, u_data_size, v_data_size;
@@ -464,8 +464,8 @@ static int decode_slice_thread(AVCodecContext *avctx, void *arg, int jobnr, int 
     int qmat_chroma_scaled[64];
     int mb_x_shift;
 
-    //av_log(avctx, AV_LOG_INFO, "slice %d mb width %d mb x %d y %d\n",
-    //       jobnr, slice->mb_count, slice->mb_x, slice->mb_y);
+    //av_log(avctx, AV_LOG_INFO, "slice mb width %d mb x %d y %d\n",
+    //       slice->mb_count, slice->mb_x, slice->mb_y);
 
     // slice header
     hdr_size = buf[0] >> 3;
@@ -537,14 +537,12 @@ static int decode_slice_thread(AVCodecContext *avctx, void *arg, int jobnr, int 
 static int decode_picture(AVCodecContext *avctx)
 {
     ProresContext *ctx = avctx->priv_data;
-    int i, threads_ret[ctx->slice_count];
+    int i;
 
-    avctx->execute2(avctx, decode_slice_thread, NULL, threads_ret, ctx->slice_count);
-
-    for (i = 0; i < ctx->slice_count; i++)
-        if (threads_ret[i] < 0)
-            return threads_ret[i];
-
+    for (i = 0; i < ctx->slice_count; i++) {
+        if (decode_slice(avctx, &ctx->slices[i]) < 0)
+            return -1;
+    }
     return 0;
 }
 
@@ -552,7 +550,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
                         AVPacket *avpkt)
 {
     ProresContext *ctx = avctx->priv_data;
-    AVFrame *frame = avctx->coded_frame;
+    AVFrame *frame = data;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     int frame_hdr_size, pic_size;
@@ -574,11 +572,13 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     buf += frame_hdr_size;
     buf_size -= frame_hdr_size;
 
-    if (frame->data[0])
-        avctx->release_buffer(avctx, frame);
+    if (ctx->frame.data[0])
+        ff_thread_release_buffer(avctx, &ctx->frame);
 
-    if (avctx->get_buffer(avctx, frame) < 0)
+    if (ff_thread_get_buffer(avctx, &ctx->frame) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return -1;
+    }
 
  decode_picture:
     pic_size = decode_picture_header(avctx, buf, buf_size);
@@ -601,8 +601,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     }
 
     *data_size = sizeof(AVFrame);
-    *(AVFrame*)data = *frame;
-
+    *frame = ctx->frame;
     return avpkt->size;
 }
 
@@ -610,9 +609,8 @@ static av_cold int decode_close(AVCodecContext *avctx)
 {
     ProresContext *ctx = avctx->priv_data;
 
-    AVFrame *frame = avctx->coded_frame;
-    if (frame->data[0])
-        avctx->release_buffer(avctx, frame);
+    if (ctx->frame.data[0])
+        ff_thread_release_buffer(avctx, &ctx->frame);
     av_freep(&ctx->slices);
 
     return 0;
@@ -627,5 +625,5 @@ AVCodec ff_prores_decoder = {
     .close          = decode_close,
     .decode         = decode_frame,
     .long_name      = NULL_IF_CONFIG_SMALL("ProRes"),
-    .capabilities   = CODEC_CAP_SLICE_THREADS | CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_DR1,
 };
