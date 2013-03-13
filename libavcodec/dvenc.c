@@ -906,11 +906,19 @@ static void dv_format_frame(DVVideoContext* c, uint8_t* buf)
             /* DV VAUX: 3DIFS */
             for (j = 0; j < 3; j++) {
                 buf += dv_write_dif_id(dv_sect_vaux, chan+chan_offset, i, j, buf);
-                buf += dv_write_pack(dv_video_source,  c, buf);
-                buf += dv_write_pack(dv_video_control, c, buf);
+                if ((i & 1) && j == 0) {
+                    buf += dv_write_pack(dv_video_source,  c, buf);
+                    buf += dv_write_pack(dv_video_control, c, buf);
+                } else {
+                    buf += 2*5;
+                }
                 buf += 7*5;
-                buf += dv_write_pack(dv_video_source,  c, buf);
-                buf += dv_write_pack(dv_video_control, c, buf);
+                if (!(i & 1) && j == 2) {
+                    buf += dv_write_pack(dv_video_source,  c, buf);
+                    buf += dv_write_pack(dv_video_control, c, buf);
+                } else {
+                    buf += 2*5;
+                }
                 buf += 4*5 + 2; /* unused bytes */
             }
 

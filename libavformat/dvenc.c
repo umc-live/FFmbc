@@ -27,7 +27,6 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-#include <time.h>
 
 #include "avformat.h"
 #include "internal.h"
@@ -78,8 +77,6 @@ static int dv_audio_frame_size(const DVprofile* sys, int frame)
 
 static int dv_write_pack(enum dv_pack_type pack_id, DVMuxContext *c, uint8_t *buf, int seq)
 {
-    struct tm tc;
-    time_t ct;
     int time_code;
 
     buf[0] = (uint8_t)pack_id;
@@ -142,39 +139,6 @@ static int dv_write_pack(enum dv_pack_type pack_id, DVMuxContext *c, uint8_t *bu
         buf[4] = (1 << 7) | /* reserved -- always 1 */
                   0x7f;     /* genre category */
         break;
-    case dv_audio_recdate:
-    case dv_video_recdate:  /* VAUX recording date */
-        ct = c->start_time + av_rescale_rnd(c->frames, c->sys->time_base.num,
-                                            c->sys->time_base.den, AV_ROUND_DOWN);
-        brktimegm(ct, &tc);
-        buf[1] = 0xff; /* ds, tm, tens of time zone, units of time zone */
-                       /* 0xff is very likely to be "unknown" */
-        buf[2] = (3 << 6) | /* reserved -- always 1 */
-                 ((tc.tm_mday / 10) << 4) | /* Tens of day */
-                 (tc.tm_mday % 10);         /* Units of day */
-        buf[3] = /* we set high 4 bits to 0, shouldn't we set them to week? */
-                 ((tc.tm_mon / 10) << 4) |    /* Tens of month */
-                 (tc.tm_mon  % 10);           /* Units of month */
-        buf[4] = (((tc.tm_year % 100) / 10) << 4) | /* Tens of year */
-                 (tc.tm_year % 10);                 /* Units of year */
-        break;
-    case dv_audio_rectime:  /* AAUX recording time */
-    case dv_video_rectime:  /* VAUX recording time */
-        ct = c->start_time + av_rescale_rnd(c->frames, c->sys->time_base.num,
-                                                       c->sys->time_base.den, AV_ROUND_DOWN);
-        brktimegm(ct, &tc);
-        buf[1] = (3 << 6) | /* reserved -- always 1 */
-                 0x3f; /* tens of frame, units of frame: 0x3f - "unknown" ? */
-        buf[2] = (1 << 7) | /* reserved -- always 1 */
-                 ((tc.tm_sec / 10) << 4) | /* Tens of seconds */
-                 (tc.tm_sec % 10);         /* Units of seconds */
-        buf[3] = (1 << 7) | /* reserved -- always 1 */
-                 ((tc.tm_min / 10) << 4) | /* Tens of minutes */
-                 (tc.tm_min % 10);         /* Units of minutes */
-        buf[4] = (3 << 6) | /* reserved -- always 1 */
-                 ((tc.tm_hour / 10) << 4) | /* Tens of hours */
-                 (tc.tm_hour % 10);         /* Units of hours */
-        break;
     default:
         buf[1] = buf[2] = buf[3] = buf[4] = 0xff;
     }
@@ -213,21 +177,6 @@ static void dv_inject_metadata(DVMuxContext *c, uint8_t* frame)
         for (j = 80; j < 80 * 3; j += 80) {
             for (k = 6; k < 6 * 8; k += 8)
                 dv_write_pack(dv_timecode, c, &buf[j+k], seq);
-
-            if (((long)(buf-frame)/(c->sys->frame_size/(c->sys->difseg_size*c->sys->n_difchan))%c->sys->difseg_size) > 5) { /* FIXME: is this really needed ? */
-                dv_write_pack(dv_video_recdate, c, &buf[j+14], seq);
-                dv_write_pack(dv_video_rectime, c, &buf[j+22], seq);
-                dv_write_pack(dv_video_recdate, c, &buf[j+38], seq);
-                dv_write_pack(dv_video_rectime, c, &buf[j+46], seq);
-            }
-        }
-
-        /* DV VAUX: 4th, 5th and 6th 3DIFs */
-        for (j = 80*3 + 3; j < 80*6; j += 80) {
-            dv_write_pack(dv_video_recdate, c, &buf[j+5* 2], seq);
-            dv_write_pack(dv_video_rectime, c, &buf[j+5* 3], seq);
-            dv_write_pack(dv_video_recdate, c, &buf[j+5*11], seq);
-            dv_write_pack(dv_video_rectime, c, &buf[j+5*12], seq);
         }
     }
 }
@@ -292,7 +241,6 @@ static int dv_assemble_frame(DVMuxContext *c, AVStream* st,
 static DVMuxContext* dv_init_mux(AVFormatContext* s)
 {
     DVMuxContext *c = s->priv_data;
-    AVStream *vst = NULL;
     AVDictionaryEntry *t;
     int i;
 
