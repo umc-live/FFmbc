@@ -108,6 +108,11 @@ static int wav_write_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     int64_t fmt, fact;
 
+    if (s->nb_streams != 1) {
+        av_log(s, AV_LOG_ERROR, "wav only supports one audio stream\n");
+        return -1;
+    }
+
     avio_wtag(pb, "RIFF");
     avio_wl32(pb, 0); /* file length */
     avio_wtag(pb, "WAVE");
