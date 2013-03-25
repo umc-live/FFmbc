@@ -400,6 +400,16 @@ static int mp3_write_header(struct AVFormatContext *s)
     int totlen = 0;
     int64_t size_pos, cur_pos;
 
+    if (s->nb_streams != 1) {
+        av_log(s, AV_LOG_ERROR, "mp3 only supports one audio stream\n");
+        return -1;
+    }
+
+    if (s->streams[0]->codec->codec_id != CODEC_ID_MP3) {
+        av_log(s, AV_LOG_ERROR, "error, codec is not mp3\n");
+        return -1;
+    }
+
     avio_wb32(s->pb, MKBETAG('I', 'D', '3', mp3->id3v2_version));
     avio_w8(s->pb, 0);
     avio_w8(s->pb, 0); /* flags */
