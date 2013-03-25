@@ -2492,6 +2492,17 @@ static void validate_video_target(AVFormatContext *s, OutputStream *ost)
     }
 }
 
+static const char *get_codec_type(enum AVMediaType type)
+{
+    switch (type) {
+    case AVMEDIA_TYPE_VIDEO: return "video";
+    case AVMEDIA_TYPE_AUDIO: return "audio";
+    case AVMEDIA_TYPE_SUBTITLE: return "subtitle";
+    case AVMEDIA_TYPE_DATA: return "data";
+    default: return "unknown";
+    }
+}
+
 /*
  * The following code is the main loop of the file converter
  */
@@ -2653,9 +2664,10 @@ static int transcode(AVFormatContext **output_files,
                 if (input_streams[ost->source_index[0]].st->codec->codec_type != ost->st->codec->codec_type) {
                     int i= ost->file_index;
                     av_dump_format(output_files[i], i, output_files[i]->filename, 1);
-                    av_log(NULL, AV_LOG_ERROR, "Codec type mismatch for mapping #%d.%d -> #%d.%d\n",
-                        stream_maps[n].file_index, stream_maps[n].stream_index,
-                        ost->file_index, ost->index);
+                    av_log(NULL, AV_LOG_ERROR, "Codec type mismatch for mapping #%d.%d (%s) -> #%d.%d (%s)\n",
+                            stream_maps[n].file_index, stream_maps[n].stream_index,
+                            get_codec_type(input_streams[ost->source_index[0]].st->codec->codec_type),
+                            ost->file_index, ost->index, get_codec_type(ost->st->codec->codec_type));
                     ffmpeg_exit(1);
                 }
             } else if (audio_mapped_streams[ost->file_index*nb_max_ostreams+ost->index]) {
@@ -2732,10 +2744,8 @@ static int transcode(AVFormatContext **output_files,
                         }
                     }
                     if (!found) {
-                        int i= ost->file_index;
-                        av_dump_format(output_files[i], i, output_files[i]->filename, 1);
-                        av_log(NULL, AV_LOG_ERROR, "Could not find input stream matching output stream #%d.%d\n",
-                                ost->file_index, ost->index);
+                        av_log(NULL, AV_LOG_ERROR, "Could not find any %s input stream for output stream #%d.%d\n",
+                                get_codec_type(ost->st->codec->codec_type), ost->file_index, ost->index);
                         ffmpeg_exit(1);
                     }
                 }
