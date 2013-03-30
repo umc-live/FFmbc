@@ -24,6 +24,7 @@
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "bytestream.h"
+#include "get_bits.h"
 #include "png.h"
 
 /* TODO:
@@ -180,7 +181,14 @@ static void png_filter_row(PNGDecContext *s, uint8_t *dst, int filter_type,
 
     switch(filter_type) {
     case PNG_FILTER_VALUE_NONE:
-        memcpy(dst, src, size);
+        if (s->bits_per_pixel & 7) {
+            GetBitContext gb;
+            init_get_bits(&gb, src, size*8);
+            for (i = 0; i < size*8/s->bits_per_pixel; i++)
+                *dst++ = get_bits(&gb, bpp);
+        } else {
+            memcpy(dst, src, size);
+        }
         break;
     case PNG_FILTER_VALUE_SUB:
         for(i = 0; i < bpp; i++) {
@@ -467,7 +475,8 @@ static int decode_frame(AVCodecContext *avctx,
                 } else if (s->bit_depth == 16 &&
                            s->color_type == PNG_COLOR_TYPE_RGB) {
                     avctx->pix_fmt = PIX_FMT_RGB48BE;
-                } else if (s->bit_depth == 1) {
+                } else if (s->bit_depth == 1 &&
+                           s->color_type == PNG_COLOR_TYPE_GRAY) {
                     avctx->pix_fmt = PIX_FMT_MONOBLACK;
                 } else if (s->color_type == PNG_COLOR_TYPE_PALETTE) {
                     avctx->pix_fmt = PIX_FMT_PAL8;
