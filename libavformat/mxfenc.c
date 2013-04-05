@@ -193,6 +193,7 @@ typedef struct MXFContext {
     int timecode_base;       ///< rounded time code base (25,30,50,60)
     int timecode_start;      ///< frame number computed from mpeg-2 gop header timecode
     int timecode_drop_frame; ///< time code use drop frame method frop mpeg-2 essence gop header
+    int content_package_rate; ///< content package rate in system element, see SMPTE 326M
     int edit_unit_byte_count; ///< fixed edit unit byte count
     uint64_t body_offset;
     uint32_t instance_number;
@@ -1778,28 +1779,34 @@ static int mxf_write_header(AVFormatContext *s)
                 samples_per_frame = samples_per_frame_tab[0];
                 mxf->time_base = (AVRational){ 1001, 24000 };
                 mxf->timecode_base = 24;
+                mxf->content_package_rate = 3;
             } else if (fabs(av_q2d(st->codec->time_base) - 1/24.0) < 0.0001) {
                 samples_per_frame = samples_per_frame_tab[1];
                 mxf->time_base = (AVRational){ 1, 24 };
                 mxf->timecode_base = 24;
+                mxf->content_package_rate = 2;
             } else if (fabs(av_q2d(st->codec->time_base) - 1/25.0) < 0.0001) {
                 samples_per_frame = samples_per_frame_tab[2];
                 mxf->time_base = (AVRational){ 1, 25 };
                 mxf->timecode_base = 25;
+                mxf->content_package_rate = 4;
             } else if (fabs(av_q2d(st->codec->time_base) - 1001/30000.0) < 0.0001) {
                 samples_per_frame = samples_per_frame_tab[3];
                 mxf->time_base = (AVRational){ 1001, 30000 };
                 mxf->timecode_base = 30;
                 mxf->timecode_drop_frame = 1;
+                mxf->content_package_rate = 7;
             } else if (fabs(av_q2d(st->codec->time_base) - 1/50.0) < 0.0001) {
                 samples_per_frame = samples_per_frame_tab[4];
                 mxf->time_base = (AVRational){ 1, 50 };
                 mxf->timecode_base = 50;
+                mxf->content_package_rate = 10;
             } else if (fabs(av_q2d(st->codec->time_base) - 1001/60000.0) < 0.0001) {
                 samples_per_frame = samples_per_frame_tab[5];
                 mxf->time_base = (AVRational){ 1001, 60000 };
                 mxf->timecode_base = 60;
                 mxf->timecode_drop_frame = 1;
+                mxf->content_package_rate = 13;
             } else {
                 av_log(s, AV_LOG_ERROR, "unsupported video frame rate %d/%d\n",
                        st->codec->time_base.den, st->codec->time_base.num);
@@ -1993,7 +2000,7 @@ static void mxf_write_system_item(AVFormatContext *s)
     avio_write(pb, system_metadata_pack_key, 16);
     klv_encode_ber4_length(pb, 57);
     avio_w8(pb, 0x5c); // UL, user date/time stamp, picture and sound item present
-    avio_w8(pb, 0x04); // content package rate
+    avio_w8(pb, mxf->content_package_rate);
     avio_w8(pb, 0x00); // content package type
     avio_wb16(pb, 0x00); // channel handle
     avio_wb16(pb, mxf->last_indexed_edit_unit + mxf->edit_units_count); // continuity count
