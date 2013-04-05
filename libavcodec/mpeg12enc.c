@@ -224,6 +224,10 @@ static av_cold int encode_init(AVCodecContext *avctx)
         }
     }
 
+    // default to drop frame timecode for 29.97 and 59.94 fps
+    if (s->frame_rate_index == 4 || s->frame_rate_index == 7)
+        s->timecode_drop_frame = 1;
+
     if (s->timecode) {
         int drop, framenum;
         AVRational fps = ff_frame_rate_tab[s->frame_rate_index];

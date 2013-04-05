@@ -334,6 +334,10 @@ static int dv_write_header(AVFormatContext *s)
         return -1;
     }
 
+    // default to drop frame timecode for 29.97 fps
+    if (c->sys->time_base.den == 30000 && c->sys->time_base.num == 1001)
+        c->timecode_drop_frame = 1;
+
     if (c->timecode) {
         int drop, framenum;
         framenum = ff_timecode_to_framenum(c->timecode, c->sys->time_base, &drop);

@@ -1790,6 +1790,7 @@ static int mxf_write_header(AVFormatContext *s)
                 samples_per_frame = samples_per_frame_tab[3];
                 mxf->time_base = (AVRational){ 1001, 30000 };
                 mxf->timecode_base = 30;
+                mxf->timecode_drop_frame = 1;
             } else if (fabs(av_q2d(st->codec->time_base) - 1/50.0) < 0.0001) {
                 samples_per_frame = samples_per_frame_tab[4];
                 mxf->time_base = (AVRational){ 1, 50 };
@@ -1798,6 +1799,7 @@ static int mxf_write_header(AVFormatContext *s)
                 samples_per_frame = samples_per_frame_tab[5];
                 mxf->time_base = (AVRational){ 1001, 60000 };
                 mxf->timecode_base = 60;
+                mxf->timecode_drop_frame = 1;
             } else {
                 av_log(s, AV_LOG_ERROR, "unsupported video frame rate %d/%d\n",
                        st->codec->time_base.den, st->codec->time_base.num);
