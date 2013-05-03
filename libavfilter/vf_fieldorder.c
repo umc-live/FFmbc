@@ -116,11 +116,16 @@ static AVFilterBufferRef *get_video_buffer(AVFilterLink *inlink, int perms, int 
 static void start_frame(AVFilterLink *inlink, AVFilterBufferRef *inpicref)
 {
     AVFilterContext   *ctx        = inlink->dst;
+    FieldOrderContext *fieldorder = ctx->priv;
     AVFilterLink      *outlink    = ctx->outputs[0];
 
     AVFilterBufferRef *outpicref;
 
     outpicref = avfilter_ref_buffer(inpicref, ~0);
+    if (inpicref->video->interlaced && inpicref->video->top_field_first != fieldorder->dst_tff) {
+        outpicref->video->top_field_first = fieldorder->dst_tff;
+        av_dlog(ctx, "picture will move %s one line\n", fieldorder->dst_tff ? "up" : "down");
+    }
     outlink->out_buf = outpicref;
 
     avfilter_start_frame(outlink, outpicref);
@@ -158,9 +163,6 @@ static void end_frame(AVFilterLink *inlink)
 
     if (    inpicref->video->interlaced
          && inpicref->video->top_field_first != fieldorder->dst_tff) {
-        av_dlog(ctx,
-                "picture will move %s one line\n",
-                fieldorder->dst_tff ? "up" : "down");
         h = inpicref->video->h;
         for (plane = 0; plane < 4 && inpicref->data[plane]; plane++) {
             line_step = inpicref->linesize[plane];
@@ -201,7 +203,6 @@ static void end_frame(AVFilterLink *inlink)
                 }
             }
         }
-        outpicref->video->top_field_first = fieldorder->dst_tff;
         avfilter_draw_slice(outlink, 0, h, 1);
     } else {
         av_dlog(ctx,
