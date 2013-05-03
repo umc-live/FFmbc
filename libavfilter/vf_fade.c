@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2013 Mark Himsley
  * Copyright (c) 2010 Brandon Mintern
  * Copyright (c) 2007 Bobby Bingham
  *
@@ -44,7 +45,11 @@ typedef struct {
     int alpha;
     char type[4];
     char *color_str;
+    uint8_t is_packed_rgb;
+    uint8_t rgba_map[4];
 } FadeContext;
+
+enum { RED = 0, GREEN, BLUE, ALPHA };
 
 #define OFFSET(x) offsetof(FadeContext, x)
 
@@ -132,22 +137,53 @@ static int config_props(AVFilterLink *inlink)
     ff_draw_color(&fade->dc, &fade->color, fade->color.rgba);
 
     fade->alpha = fade->alpha ? ff_fmt_is_in(inlink->format, alpha_pix_fmts) : 0;
+    fade->is_packed_rgb = ff_fill_rgba_map(fade->rgba_map, inlink->format) >= 0;
 
     return 0;
 }
 
+static void fade_alpha(int y, int h, int w,
+                       double fade_factor,
+                       uint8_t offset, uint8_t step, int bytes_per_plane,
+                       uint8_t *data, int line_size)
+{
+    uint8_t *p;
+    int i, j, m;
+
+    m = 255 - lrint(fade_factor);
+
+    for (i = 0; i < h; i++) {
+        p = data + offset + (y+i) * line_size;
+        for (j = 0; j < w * bytes_per_plane; j++) {
+            *p = (*p * m) >> 8;
+            p += step;
+        }
+    }
+}
 static void draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
 {
     FadeContext *fade = inlink->dst->priv;
     AVFilterBufferRef *picref = inlink->cur_buf;
 
     if (fade->factor > 0) {
-        fade->color.rgba[3] = lrint(fade->factor);
-        ff_draw_color(&fade->dc, &fade->color, fade->color.rgba);
-        ff_blend_rectangle(&fade->dc, &fade->color,
-                           picref->data, picref->linesize,
-                           picref->video->w, picref->video->h,
-                           0, y, picref->video->w, h);
+        if (fade->alpha) {
+            int plane;
+            // alpha only
+            plane = fade->is_packed_rgb ? 0 : ALPHA; // alpha is on plane 0 for packed formats
+                                                     // or plane 3 for planar formats
+            fade_alpha(y, h, inlink->w,
+                       fade->factor,
+                       fade->is_packed_rgb ? fade->rgba_map[ALPHA] : 0, // alpha offset
+                       fade->dc.pixelstep[plane],
+                       1, picref->data[plane], picref->linesize[plane]);
+        } else {
+            fade->color.rgba[3] = lrint(fade->factor);
+            ff_draw_color(&fade->dc, &fade->color, fade->color.rgba);
+            ff_blend_rectangle(&fade->dc, &fade->color,
+                               picref->data, picref->linesize,
+                               picref->video->w, picref->video->h,
+                               0, y, picref->video->w, h);
+        }
     }
 
     avfilter_draw_slice(inlink->dst->outputs[0], y, h, slice_dir);
