@@ -29,7 +29,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/samplefmt.h"
 
-#define MAX_CHANNELS 8
+#define MAX_CHANNELS 16
 
 struct AVResampleContext;
 
@@ -180,19 +180,29 @@ static void ac3_5p1_mux(short *output, short *input1, short *input2, int n)
     }
 }
 
-#define SUPPORT_RESAMPLE(ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8) \
-    ch8<<7 | ch7<<6 | ch6<<5 | ch5<<4 | ch4<<3 | ch3<<2 | ch2<<1 | ch1<<0
+#define SUPPORT_RESAMPLE(ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8, \
+                         ch9, ch10, ch11, ch12, ch13, ch14, ch15, ch16) \
+    ch16<<15 | ch15<<14 | ch14<<13 | ch13<<12 | ch12<<11 | ch11<<10 | ch10<<9 | ch9<<8 \
+  | ch8<<7   | ch7<<6   | ch6<<5   | ch5<<4   | ch4<<3   | ch3<<2   | ch2<<1  | ch1<<0
 
-static const uint8_t supported_resampling[MAX_CHANNELS] = {
+static const uint16_t supported_resampling[MAX_CHANNELS] = {
     //ouput channels:1  2  3  4  5  6  7  8
-    SUPPORT_RESAMPLE(1, 1, 0, 0, 0, 0, 0, 0), // 1 input channel
-    SUPPORT_RESAMPLE(1, 1, 0, 0, 0, 1, 0, 0), // 2 input channels
-    SUPPORT_RESAMPLE(0, 0, 1, 0, 0, 0, 0, 0), // 3 input channels
-    SUPPORT_RESAMPLE(0, 0, 0, 1, 0, 0, 0, 0), // 4 input channels
-    SUPPORT_RESAMPLE(0, 0, 0, 0, 1, 0, 0, 0), // 5 input channels
-    SUPPORT_RESAMPLE(0, 1, 0, 0, 0, 1, 0, 0), // 6 input channels
-    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 1, 0), // 7 input channels
-    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 1), // 8 input channels
+    SUPPORT_RESAMPLE(1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), // 1 input channel
+    SUPPORT_RESAMPLE(1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), // 2 input channels
+    SUPPORT_RESAMPLE(0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), // 3 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), // 4 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), // 5 input channels
+    SUPPORT_RESAMPLE(0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), // 6 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0), // 7 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0), // 8 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0), // 9 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0), // 10 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0), // 11 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0), // 12 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0), // 13 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0), // 14 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0), // 15 input channels
+    SUPPORT_RESAMPLE(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), // 16 input channels
 };
 
 ReSampleContext *av_audio_resample_init(int output_channels, int input_channels,
