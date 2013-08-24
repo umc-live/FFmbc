@@ -47,6 +47,13 @@
                      tag == AV_RL32("mx4p") || tag == AV_RL32("mx4n") || \
                      tag == AV_RL32("mx5p") || tag == AV_RL32("mx5n"))
 
+#define IS_AVCI(tag) (tag == AV_RL32("ai1p") || tag == AV_RL32("ai1q") || \
+                      tag == AV_RL32("ai16") || tag == AV_RL32("ai15") || \
+                      tag == AV_RL32("ai13") || tag == AV_RL32("ai12") || \
+                      tag == AV_RL32("ai5p") || tag == AV_RL32("ai5q") || \
+                      tag == AV_RL32("ai56") || tag == AV_RL32("ai55") || \
+                      tag == AV_RL32("ai53") || tag == AV_RL32("ai52"))
+
 #define FAST_START_OPTION \
     { "faststart", "Pre-allocate space for the header in front of the file: <size or 'auto' or 'no'>\n" \
       "Files are automatically rewritten if size is < 20MB unless 'no' is specified.\n", \
@@ -1013,9 +1020,11 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVTrack *tr
     } else if(track->enc->codec_id == CODEC_ID_DNXHD) {
         mov_write_avid_tag(pb, track);
     } else if(track->enc->codec_id == CODEC_ID_H264) {
-        mov_write_avcc_tag(pb, track);
-        if(track->mode == MODE_IPOD)
-            mov_write_uuid_tag_ipod(pb);
+        if (!IS_AVCI(track->tag)) {
+            mov_write_avcc_tag(pb, track);
+            if (track->mode == MODE_IPOD)
+                mov_write_uuid_tag_ipod(pb);
+        }
     } else if(track->enc->codec_id != CODEC_ID_MPEG2VIDEO &&
               track->vosLen > 0)
         mov_write_glbl_tag(pb, track);
@@ -2402,11 +2411,20 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
         memcpy(trk->vosData, enc->extradata, trk->vosLen);
     }
 
-    if (enc->codec_id == CODEC_ID_H264 &&
-        pkt->size > 4 && AV_RB32(pkt->data) == 0x00000001) {
-        /* from x264 or from bytestream h264 */
-        /* nal reformating needed */
-        size = ff_avc_parse_nal_units(enc, pb, pkt->data, pkt->size);
+    if (enc->codec_id == CODEC_ID_H264) {
+        if (IS_AVCI(trk->tag)) {
+            if (AV_RB32(pkt->data) != 0x00000001) {
+                av_log(s, AV_LOG_ERROR, "malformated avc intra bitstream\n");
+                return -1;
+            }
+            avio_write(pb, pkt->data, size);
+        } else if (pkt->size > 4 && AV_RB32(pkt->data) == 0x00000001) {
+            /* from x264 or from bytestream h264 */
+            /* nal reformating needed */
+            size = ff_avc_parse_nal_units(enc, pb, pkt->data, pkt->size);
+        } else {
+            avio_write(pb, pkt->data, size);
+        }
     } else if (enc->codec_id == CODEC_ID_AAC && pkt->size > 2 &&
                (AV_RB16(pkt->data) & 0xfff0) == 0xfff0) {
         av_log(s, AV_LOG_ERROR, "malformated aac bitstream, use -absf aac_adtstoasc\n");
@@ -2676,6 +2694,11 @@ static int mov_write_header(AVFormatContext *s)
                     goto error;
                 }
                 track->height = track->tag>>24 == 'n' ? 486 : 576;
+            } else if (IS_AVCI(track->tag)) {
+                if (st->codec->codec_id != CODEC_ID_H264) {
+                    av_log(s, AV_LOG_ERROR, "AVC Intra tag requires H.264 video codec\n");
+                    goto error;
+                }
             }
 
             track->dar.num = track->enc->width *track->enc->sample_aspect_ratio.num;

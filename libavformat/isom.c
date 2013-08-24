@@ -138,11 +138,18 @@ const AVCodecTag codec_movvideo_tags[] = {
     { CODEC_ID_RAWVIDEO, MKTAG('W', 'R', 'A', 'W') },
 
     { CODEC_ID_H264, MKTAG('a', 'v', 'c', '1') }, /* AVC-1/H.264 */
-    { CODEC_ID_H264, MKTAG('a', 'i', '5', '5') }, /* AVC Intra  50 / 1080 interlace */
-    { CODEC_ID_H264, MKTAG('a', 'i', '5', 'q') }, /* AVC Intra  50 /  720 */
-    { CODEC_ID_H264, MKTAG('a', 'i', '1', '5') }, /* AVC Intra 100 / 1080 interlace */
-    { CODEC_ID_H264, MKTAG('a', 'i', '1', 'q') }, /* AVC Intra 100 /  720 */
-    { CODEC_ID_H264, MKTAG('a', 'i', '1', '2') }, /* AVC Intra 100 / 1080 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '5', '6') }, /* AVC Intra  50 / 1080i60 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '5', '5') }, /* AVC Intra  50 / 1080i50 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '5', '3') }, /* AVC Intra  50 / 1080p24/p30 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '5', '2') }, /* AVC Intra  50 / 1080p25 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '5', 'q') }, /* AVC Intra  50 / 720p25/p50 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '5', 'p') }, /* AVC Intra  50 / 720p24/p30/p60 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '1', '6') }, /* AVC Intra 100 / 1080i60 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '1', '5') }, /* AVC Intra 100 / 1080i50 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '1', '3') }, /* AVC Intra 100 / 1080p24/p30 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '1', '2') }, /* AVC Intra 100 / 1080p25 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '1', 'q') }, /* AVC Intra 100 / 720p25/p50 */
+    { CODEC_ID_H264, MKTAG('a', 'i', '1', 'p') }, /* AVC Intra 100 / 720p24/p30/p60 */
 
     { CODEC_ID_MPEG1VIDEO, MKTAG('m', '1', 'v', '1') }, /* Apple MPEG-1 Camcorder */
     { CODEC_ID_MPEG2VIDEO, MKTAG('m', '2', 'v', '1') }, /* Apple MPEG-2 Camcorder */
@@ -516,4 +523,3 @@ void ff_mov_write_chan(AVIOContext *pb, int64_t channel_layout)
     }
     avio_wb32(pb, 0);              //< mNumberChannelDescriptions
 }
-
