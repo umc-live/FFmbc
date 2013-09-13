@@ -908,12 +908,11 @@ static int64_t mxf_write_cdci_common(AVFormatContext *s, AVStream *st, const UID
         f1 *= 2;
     }
 
-    mxf_write_local_tag(pb, 12+sc->interlaced*4, 0x320D);
-    avio_wb32(pb, sc->interlaced ? 2 : 1);
+    mxf_write_local_tag(pb, 16, 0x320D);
+    avio_wb32(pb, 2);
     avio_wb32(pb, 4);
     avio_wb32(pb, f1);
-    if (sc->interlaced)
-        avio_wb32(pb, f2);
+    avio_wb32(pb, f2);
 
     mxf_write_local_tag(pb, 8, 0x320E);
     avio_wb32(pb, sc->aspect_ratio.num);
