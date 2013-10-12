@@ -2489,6 +2489,44 @@ static void validate_video_target(AVFormatContext *s, OutputStream *ost)
                 }
             }
         }
+    } else if (!strcmp(ost->target, "avcintra100")) {
+        if ((norm == HD50P || norm == HD60P) &&
+            (ost->st->codec->width != 1280 || ost->st->codec->height != 720)) {
+            av_log(NULL, AV_LOG_ERROR, "Error, target %s only supports 1280x720 resolution with "
+                    "this frame rate\n", ost->target);
+            ffmpeg_exit(1);
+        }
+        if (!((ost->st->codec->width == 1920 && ost->st->codec->height == 1080) ||
+              (ost->st->codec->width == 1280 && ost->st->codec->height == 720))) {
+            av_log(NULL, AV_LOG_ERROR, "Error, target %s only supports 1920x1080 "
+                    "or 1280x720 resolutions\n", ost->target);
+            ffmpeg_exit(1);
+        }
+        if (!strcmp(s->oformat->name, "mov")) {
+            if (ost->st->codec->height == 1080) {
+                if (ost->st->codec->interlaced) {
+                    if (norm == PAL)
+                        ost->st->codec->codec_tag = AV_RL32("ai15");
+                    else
+                        ost->st->codec->codec_tag = AV_RL32("ai16");
+                } else {
+                    if (norm == PAL)
+                        ost->st->codec->codec_tag = AV_RL32("ai12");
+                    else
+                        ost->st->codec->codec_tag = AV_RL32("ai13");
+                }
+            } else {
+                if (norm == PAL || norm == HD50P)
+                    ost->st->codec->codec_tag = AV_RL32("ai1q");
+                else
+                    ost->st->codec->codec_tag = AV_RL32("ai1p");
+            }
+        }
+        if (ost->st->codec->pix_fmt != PIX_FMT_YUV422P10) {
+            av_log(NULL, AV_LOG_ERROR, "Error, target %s only supports yuv422p10 "
+                   "compile x264 with 10bit support\n", ost->target);
+            ffmpeg_exit(1);
+        }
     }
 }
 
@@ -5180,6 +5218,18 @@ static int opt_target(const char *opt, const char *arg)
         opt_default("color_matrix", "bt709");
 
         audio_sample_rate = 48000;
+    } else if(!strcmp(arg, "avcintra100")) {
+        opt_codec("vcodec", "libx264");
+        opt_codec("acodec", "pcm_s16le");
+        opt_frame_pix_fmt("pix_fmt", "yuv422p10");
+
+        opt_default("color_primaries", "bt709");
+        opt_default("color_transfer", "bt709");
+        opt_default("color_matrix", "bt709");
+
+        opt_default("avcintra_class", arg);
+
+        audio_sample_rate = 48000;
     } else {
         av_log(NULL, AV_LOG_ERROR, "Unknown target: %s\n", arg);
         return AVERROR(EINVAL);
@@ -5298,7 +5348,7 @@ static const OptionDef options[] = {
     { "loop_input", OPT_BOOL | OPT_EXPERT, {(void*)&loop_input}, "deprecated, use -loop" },
     { "loop_output", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&loop_output}, "deprecated, use -loop", "" },
     { "v", HAS_ARG, {(void*)opt_verbose}, "set ffmpeg verbosity level", "number" },
-    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dvcam\", \"dvcpro\", \"dvcpro50\", \"dvcprohd\", \"imx30\", \"imx50\", \"xdcamhd422\")", "type" },
+    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dvcam\", \"dvcpro\", \"dvcpro50\", \"dvcprohd\", \"imx30\", \"imx50\", \"xdcamhd422\", \"avcintra100\")", "type" },
     { "threads",  HAS_ARG | OPT_EXPERT, {(void*)opt_thread_count}, "thread count", "count" },
     { "vsync", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&video_sync_method}, "video sync method", "" },
     { "async", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&audio_sync_method}, "audio sync method", "" },

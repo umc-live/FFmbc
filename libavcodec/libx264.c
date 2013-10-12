@@ -87,6 +87,7 @@ typedef struct X264Context {
     unsigned vbv_maxrate;
     unsigned vbv_bufsize;
     char *vbv_init;
+    char *avcintra_class;
 } X264Context;
 
 static void X264_log(void *p, int level, const char *fmt, va_list args)
@@ -231,6 +232,12 @@ static av_cold int X264_init(AVCodecContext *avctx)
 
     x4->params.pf_log = X264_log;
     x4->params.p_log_private = avctx;
+
+#if X264_BUILD >= 142
+    OPT_STR("avcintra-class", x4->avcintra_class);
+    if (x4->params.i_avcintra_class)
+        avctx->flags &= ~CODEC_FLAG_GLOBAL_HEADER;
+#endif
 
     if (avctx->gop_size == 0)
         x4->params.i_keyint_max = 0;
@@ -395,6 +402,18 @@ static av_cold int X264_init(AVCodecContext *avctx)
     if (!x4->enc)
         return -1;
 
+    x264_encoder_parameters(x4->enc, &x4->params);
+
+    avctx->has_b_frames = x4->params.i_bframe ?
+        x4->params.i_bframe_pyramid ? 2 : 1 : 0;
+    avctx->bit_rate = x4->params.rc.i_bitrate*1000;
+    if (x4->params.rc.i_rc_method == X264_RC_CRF)
+        avctx->crf = x4->params.rc.f_rf_constant;
+    else if (x4->params.rc.i_rc_method == X264_RC_CQP)
+        avctx->cqp = x4->params.rc.i_qp_constant;
+    avctx->qmin = x4->params.rc.i_qp_min;
+    avctx->qmax = x4->params.rc.i_qp_max;
+
     avctx->coded_frame = &x4->out_pic;
 
     if (avctx->flags & CODEC_FLAG_GLOBAL_HEADER) {
@@ -473,6 +492,7 @@ static const AVOption options[] = {
     {"vbv_maxrate", "Max local bitrate (bit/s)", OFFSET(vbv_maxrate), FF_OPT_TYPE_INT, {.dbl = 0}, 0, INT_MAX, VE},
     {"vbv_bufsize", "Set size of the VBV buffer (bits)", OFFSET(vbv_bufsize), FF_OPT_TYPE_INT, {.dbl = 0}, 0, INT_MAX, VE},
     {"vbv_init", "Initial VBV buffer occupancy <float>", OFFSET(vbv_init), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
+    {"avcintra_class", "Use compatibility hacks for AVC-Intra class", OFFSET(avcintra_class), FF_OPT_TYPE_STRING, {.dbl = 0}, 0, 0, VE},
     { NULL },
 };
 
