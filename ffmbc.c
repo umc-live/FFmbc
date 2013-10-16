@@ -4487,6 +4487,7 @@ static void new_video_stream(AVFormatContext *oc, int file_idx)
     }
 
     /* reset some key parameters */
+    interlaced = 0;
     video_disable = 0;
     video_codec_tag = 0;
     av_freep(&forced_key_frames);
