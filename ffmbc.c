@@ -2141,6 +2141,8 @@ static int output_packet(InputStream *ist, int ist_index,
                                 av_log(NULL, AV_LOG_ERROR, "Video encoding failed\n");
                                 ffmpeg_exit(1);
                             }
+                            if (ret == 0)
+                                break;
                             video_size += ret;
                             if(enc->coded_frame && enc->coded_frame->key_frame)
                                 pkt.flags |= AV_PKT_FLAG_KEY;
