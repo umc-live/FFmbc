@@ -2033,6 +2033,8 @@ elif $cc -v 2>&1 | grep -q clang; then
     AS_DEPFLAGS='-MMD'
     speed_cflags='-O3'
     size_cflags='-Os'
+    add_cppflags -I/usr/local/include
+    add_ldflags -L/usr/local/lib
 elif $cc -V 2>&1 | grep -q Sun; then
     cc_type=suncc
     cc_version="AV_STRINGIFY(__SUNPRO_C)"
