@@ -73,13 +73,10 @@ typedef struct DNXHDEncContext {
 
     DECLARE_ALIGNED(16, DCTELEM, blocks)[8][64];
 
-    int      (*qmatrix_c)     [64];
-    int      (*qmatrix_l)     [64];
-    uint16_t (*qmatrix_l16)[2][64];
-    uint16_t (*qmatrix_c16)[2][64];
+    uint16_t (*qmatrix_l)[2][64];
+    uint16_t (*qmatrix_c)[2][64];
 
-    int (*cur_qmatrix)[64];
-    uint16_t (*cur_qmatrix16)[2][64];
+    uint16_t (*qmatrix)[2][64];
 
     int quant_bias; ///< bias for the quantizer
     ScanTable scantable;

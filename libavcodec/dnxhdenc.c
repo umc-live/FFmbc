@@ -40,15 +40,14 @@ static const AVOption options[]={
 static const AVClass class = { "dnxhd", av_default_item_name, options, LIBAVUTIL_VERSION_INT };
 
 #define QUANT_BIAS_SHIFT 8
-#define QMAT_SHIFT_MMX 16
-#define QMAT_SHIFT 18
+#define QMAT_SHIFT 16
 
 static int dnxhd_dct_quantize(DNXHDEncContext *ctx, DCTELEM *block, int qscale)
 {
     const uint8_t *scantable= ctx->scantable.scantable;
-    const int *qmat = ctx->cur_qmatrix[qscale];
+    const uint16_t *qmat = ctx->qmatrix[qscale][0];
     int last_non_zero = 0;
-    int bias = ctx->quant_bias << (QMAT_SHIFT - QUANT_BIAS_SHIFT);
+    const int bias = ctx->quant_bias << (QMAT_SHIFT - QUANT_BIAS_SHIFT);
     unsigned threshold1 = (1<<QMAT_SHIFT) - bias - 1;
     unsigned threshold2 = (threshold1<<1);
 
@@ -61,7 +60,7 @@ static int dnxhd_dct_quantize(DNXHDEncContext *ctx, DCTELEM *block, int qscale)
 
     for (int i = 1; i < 64; ++i) {
         int j = scantable[i];
-        int level = block[j] * qmat[ff_zigzag_direct[i]];
+        int level = block[j] * qmat[j];
         if ((unsigned)(level+threshold1) > threshold2) {
             if (level > 0) {
                 level = (bias + level)>>QMAT_SHIFT;
@@ -169,7 +168,7 @@ static int dnxhd_init_vlc(DNXHDEncContext *ctx)
     return -1;
 }
 
-static int dnxhd_init_qmat(DNXHDEncContext *ctx, int lbias, int cbias)
+static int dnxhd_init_qmat(DNXHDEncContext *ctx)
 {
     int64_t num = ctx->cid_table->bit_depth == 8 ? 4 : 2;
     int q, i;
@@ -177,21 +176,16 @@ static int dnxhd_init_qmat(DNXHDEncContext *ctx, int lbias, int cbias)
     if (!ctx->qmax)
         ctx->avctx->qmax = ctx->qmax = ctx->avctx->mb_decision == FF_MB_DECISION_RD ? 31 : 1024;
 
-    FF_ALLOCZ_OR_GOTO(ctx->avctx, ctx->qmatrix_l,   (ctx->qmax+1) * 64 *     sizeof(int),      fail);
-    FF_ALLOCZ_OR_GOTO(ctx->avctx, ctx->qmatrix_c,   (ctx->qmax+1) * 64 *     sizeof(int),      fail);
-    FF_ALLOCZ_OR_GOTO(ctx->avctx, ctx->qmatrix_l16, (ctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
-    FF_ALLOCZ_OR_GOTO(ctx->avctx, ctx->qmatrix_c16, (ctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
+    FF_ALLOCZ_OR_GOTO(ctx->avctx, ctx->qmatrix_l, (ctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
+    FF_ALLOCZ_OR_GOTO(ctx->avctx, ctx->qmatrix_c, (ctx->qmax+1) * 64 * 2 * sizeof(uint16_t), fail);
 
     for (q = 1; q <= ctx->qmax; q++) {
         for (i = 1; i < 64; i++) {
             const int bias = ctx->quant_bias;
-            ctx->qmatrix_l[q][i] = (num << QMAT_SHIFT) / (q * ctx->cid_table->luma_weight[i]);
-            ctx->qmatrix_c[q][i] = (num << QMAT_SHIFT) / (q * ctx->cid_table->chroma_weight[i]);
-
-            ctx->qmatrix_l16[q][0][i]= (num << QMAT_SHIFT_MMX) / (q * ctx->cid_table->luma_weight[i]);
-            ctx->qmatrix_l16[q][1][i] = ROUNDED_DIV(bias<<(16-QUANT_BIAS_SHIFT), ctx->qmatrix_l16[q][0][i]);
-            ctx->qmatrix_c16[q][0][i]= (num << QMAT_SHIFT_MMX) / (q * ctx->cid_table->chroma_weight[i]);
-            ctx->qmatrix_c16[q][1][i] = ROUNDED_DIV(bias<<(16-QUANT_BIAS_SHIFT), ctx->qmatrix_c16[q][0][i]);
+            ctx->qmatrix_l[q][0][i] = (num << QMAT_SHIFT) / (q * ctx->cid_table->luma_weight[i]);
+            ctx->qmatrix_l[q][1][i] = ROUNDED_DIV(bias<<(16-QUANT_BIAS_SHIFT), ctx->qmatrix_l[q][0][i]);
+            ctx->qmatrix_c[q][0][i] = (num << QMAT_SHIFT) / (q * ctx->cid_table->chroma_weight[i]);
+            ctx->qmatrix_c[q][1][i] = ROUNDED_DIV(bias<<(16-QUANT_BIAS_SHIFT), ctx->qmatrix_c[q][0][i]);
         }
     }
 
@@ -323,10 +317,10 @@ static int dnxhd_encode_init(AVCodecContext *avctx)
 
     ctx->mb_num = ctx->mb_height * ctx->mb_width;
 
-    ctx->quant_bias = 3<<(QUANT_BIAS_SHIFT-3); //(a + x*3/8)/x
+    ctx->quant_bias = 1;
     if (avctx->intra_quant_bias != FF_DEFAULT_QUANT_BIAS)
         ctx->quant_bias = avctx->intra_quant_bias;
-    if (dnxhd_init_qmat(ctx, ctx->quant_bias, 0) < 0) // XXX tune lbias/cbias
+    if (dnxhd_init_qmat(ctx) < 0)
         return -1;
 
     // Avid Nitris hardware decoder requires a minimum amount of padding in the coding unit payload
@@ -540,12 +534,10 @@ static av_always_inline void dnxhd_get_blocks(DNXHDEncContext *ctx, int mb_x, in
 static av_always_inline int dnxhd_switch_matrix(DNXHDEncContext *ctx, int i)
 {
     if (i&2) {
-        ctx->cur_qmatrix16 = ctx->qmatrix_c16;
-        ctx->cur_qmatrix   = ctx->qmatrix_c;
+        ctx->qmatrix = ctx->qmatrix_c;
         return 1 + (i&1);
     } else {
-        ctx->cur_qmatrix16 = ctx->qmatrix_l16;
-        ctx->cur_qmatrix   = ctx->qmatrix_l;
+        ctx->qmatrix = ctx->qmatrix_l;
         return 0;
     }
 }
@@ -1017,8 +1009,6 @@ static int dnxhd_encode_end(AVCodecContext *avctx)
 
     av_freep(&ctx->qmatrix_c);
     av_freep(&ctx->qmatrix_l);
-    av_freep(&ctx->qmatrix_c16);
-    av_freep(&ctx->qmatrix_l16);
 
     for (i = 1; i < avctx->thread_count; i++)
         av_freep(&ctx->thread[i]);

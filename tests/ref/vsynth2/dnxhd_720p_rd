@@ -1,4 +1,4 @@
-f123181cad83daf713efb530bdb32d38 *./tests/data/vsynth2/dnxhd-720p-rd.dnxhd
+046943b07c6be0dac6c0d42313bd9558 *./tests/data/vsynth2/dnxhd-720p-rd.dnxhd
 2293760 ./tests/data/vsynth2/dnxhd-720p-rd.dnxhd
-04c57a60da065fa71754928ed5855b1e *./tests/data/dnxhd_720p_rd.vsynth2.out.yuv
-stddev:    1.26 PSNR: 46.06 MAXDIFF:   22 bytes:   760320/  7603200
+b0f7a90c3fbd7bc63a742ce07170d68f *./tests/data/dnxhd_720p_rd.vsynth2.out.yuv
+stddev:    1.31 PSNR: 45.76 MAXDIFF:   22 bytes:   760320/  7603200
