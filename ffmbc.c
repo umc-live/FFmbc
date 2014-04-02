@@ -2491,8 +2491,8 @@ static void validate_video_target(AVFormatContext *s, OutputStream *ost)
                 }
             }
         }
-    } else if (!strcmp(ost->target, "avcintra100")) {
-        if ((norm == HD50P || norm == HD60P) &&
+    } else if (!strcmp(ost->target, "avcintra100") || !strcmp(ost->target, "avcintra200")) {
+        if ((norm == HD50P || norm == HD60P) && !strcmp(ost->target, "avcintra100") &&
             (ost->st->codec->width != 1280 || ost->st->codec->height != 720)) {
             av_log(NULL, AV_LOG_ERROR, "Error, target %s only supports 1280x720 resolution with "
                     "this frame rate\n", ost->target);
@@ -2505,6 +2505,11 @@ static void validate_video_target(AVFormatContext *s, OutputStream *ost)
             ffmpeg_exit(1);
         }
         if (!strcmp(s->oformat->name, "mov")) {
+            if (!strcmp(ost->target, "avcintra200")) {
+                av_log(NULL, AV_LOG_ERROR, "Error, target %s only supports MXF file format\n",
+                       ost->target);
+                ffmpeg_exit(1);
+            }
             if (ost->st->codec->height == 1080) {
                 if (ost->st->codec->interlaced) {
                     if (norm == PAL)
@@ -5221,7 +5226,7 @@ static int opt_target(const char *opt, const char *arg)
         opt_default("color_matrix", "bt709");
 
         audio_sample_rate = 48000;
-    } else if(!strcmp(arg, "avcintra100")) {
+    } else if(!strcmp(arg, "avcintra100") || !strcmp(arg, "avcintra200")) {
         opt_codec("vcodec", "libx264");
         opt_codec("acodec", "pcm_s16le");
         opt_frame_pix_fmt("pix_fmt", "yuv422p10");
@@ -5230,7 +5235,7 @@ static int opt_target(const char *opt, const char *arg)
         opt_default("color_transfer", "bt709");
         opt_default("color_matrix", "bt709");
 
-        opt_default("avcintra_class", arg);
+        opt_default("avcintra_class", arg+8);
 
         audio_sample_rate = 48000;
     } else {
@@ -5351,7 +5356,7 @@ static const OptionDef options[] = {
     { "loop_input", OPT_BOOL | OPT_EXPERT, {(void*)&loop_input}, "deprecated, use -loop" },
     { "loop_output", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&loop_output}, "deprecated, use -loop", "" },
     { "v", HAS_ARG, {(void*)opt_verbose}, "set ffmpeg verbosity level", "number" },
-    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dvcam\", \"dvcpro\", \"dvcpro50\", \"dvcprohd\", \"imx30\", \"imx50\", \"xdcamhd422\", \"avcintra100\")", "type" },
+    { "target", HAS_ARG, {(void*)opt_target}, "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dvcam\", \"dvcpro\", \"dvcpro50\", \"dvcprohd\", \"imx30\", \"imx50\", \"xdcamhd422\", \"avcintra100\", \"avcintra200\")", "type" },
     { "threads",  HAS_ARG | OPT_EXPERT, {(void*)opt_thread_count}, "thread count", "count" },
     { "vsync", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&video_sync_method}, "video sync method", "" },
     { "async", HAS_ARG | OPT_INT | OPT_EXPERT, {(void*)&audio_sync_method}, "audio sync method", "" },

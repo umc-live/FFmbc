@@ -1482,9 +1482,15 @@ static const UID mxf_h264_codec_uls[] = {
     { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x04 }, // AVC High 422 Intra RP2027 Class 100 1080/25p
     { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x08 }, // AVC High 422 Intra RP2027 Class 100 720/59.94p
     { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x31,0x09 }, // AVC High 422 Intra RP2027 Class 100 720/50p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x32,0x01 }, // AVC High 422 Intra RP2027 Class 200 1080/59.94i
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x32,0x02 }, // AVC High 422 Intra RP2027 Class 200 1080/50i
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x32,0x03 }, // AVC High 422 Intra RP2027 Class 200 1080/29.97p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x32,0x04 }, // AVC High 422 Intra RP2027 Class 200 1080/25p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x32,0x08 }, // AVC High 422 Intra RP2027 Class 200 720/59.94p
+    { 0x06,0x0E,0x2B,0x34,0x04,0x01,0x01,0x0a,0x04,0x01,0x02,0x02,0x01,0x32,0x32,0x09 }, // AVC High 422 Intra RP2027 Class 200 720/50p
 };
 
-static const UID *mxf_get_h264_codec_ul(MXFContext *mxf, AVCodecContext *avctx, SPS *sps)
+static const UID *mxf_get_h264_codec_ul(MXFContext *mxf, AVCodecContext *avctx, SPS *sps, int frame_size)
 {
     int long_gop = avctx->gop_size > 1 || avctx->has_b_frames;
 
@@ -1512,21 +1518,46 @@ static const UID *mxf_get_h264_codec_ul(MXFContext *mxf, AVCodecContext *avctx, 
         } else if (sps->profile_idc == 122) {
             if (avctx->height == 1080) {
                 if (!sps->frame_mbs_only_flag) { // interlaced
-                    if (mxf->time_base.den == 30000)
-                        return &mxf_h264_codec_uls[10];
-                    else if (mxf->time_base.den == 25)
-                        return &mxf_h264_codec_uls[11];
+                    if (frame_size <= 568832) { // class 100
+                        if (mxf->time_base.den == 30000)
+                            return &mxf_h264_codec_uls[10];
+                        else if (mxf->time_base.den == 25)
+                            return &mxf_h264_codec_uls[11];
+                    } else { // class 200
+                        if (mxf->time_base.den == 30000)
+                            return &mxf_h264_codec_uls[16];
+                        else if (mxf->time_base.den == 25)
+                            return &mxf_h264_codec_uls[17];
+                    }
                 } else {
-                    if (mxf->time_base.den == 30000)
-                        return &mxf_h264_codec_uls[12];
-                    else if (mxf->time_base.den == 25)
-                        return &mxf_h264_codec_uls[13];
+                    if (frame_size <= 568832) { // class 100
+                        if (mxf->time_base.den == 30000)
+                            return &mxf_h264_codec_uls[12];
+                        else if (mxf->time_base.den == 25)
+                            return &mxf_h264_codec_uls[13];
+                    } else { // class 200
+                        if (mxf->time_base.den == 30000)
+                            return &mxf_h264_codec_uls[18];
+                        else if (mxf->time_base.den == 25)
+                            return &mxf_h264_codec_uls[19];
+                        else if (mxf->time_base.den == 60000)
+                            return &mxf_h264_codec_uls[18];
+                        else if (mxf->time_base.den == 50)
+                            return &mxf_h264_codec_uls[19];
+                    }
                 }
             } else if (avctx->height == 720) {
-                if (mxf->time_base.den == 60000)
-                    return &mxf_h264_codec_uls[14];
-                else if (mxf->time_base.den == 50)
-                    return &mxf_h264_codec_uls[15];
+                if (frame_size <= 284672) { // class 100
+                    if (mxf->time_base.den == 60000)
+                        return &mxf_h264_codec_uls[14];
+                    else if (mxf->time_base.den == 50)
+                        return &mxf_h264_codec_uls[15];
+                } else {
+                    if (mxf->time_base.den == 60000)
+                        return &mxf_h264_codec_uls[20];
+                    else if (mxf->time_base.den == 50)
+                        return &mxf_h264_codec_uls[21];
+                }
             }
             return &mxf_h264_codec_uls[9];
         }
@@ -1595,7 +1626,7 @@ static int mxf_parse_h264_frame(AVFormatContext *s, AVStream *st,
             sc->interlaced = !h.sps.frame_mbs_only_flag;
             sc->component_depth = h.sps.bit_depth_luma;
 
-            sc->codec_ul = mxf_get_h264_codec_ul(s->priv_data, st->codec, &h.sps);
+            sc->codec_ul = mxf_get_h264_codec_ul(s->priv_data, st->codec, &h.sps, pkt->size);
             break;
         case NAL_PPS:
             if (e->flags & 0x40) // sequence header present
