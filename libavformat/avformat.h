@@ -390,8 +390,8 @@ typedef struct AVInputFormat {
      *              match is available.
      * @return >= 0 on success (but not necessarily the new offset)
      */
-    attribute_deprecated int (*read_seek)(struct AVFormatContext *,
-                                          int stream_index, int64_t timestamp, int flags);
+    int (*read_seek)(struct AVFormatContext *,
+                     int stream_index, int64_t timestamp, int flags);
 #endif
     /**
      * Gets the next timestamp in stream[stream_index].time_base units.
