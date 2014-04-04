@@ -30,7 +30,7 @@
 
 #include "libvo/video_out.h"
 
-static struct vf_priv_s {
+struct vf_priv_s {
         unsigned char *buf;
         int brightness;
         int contrast;

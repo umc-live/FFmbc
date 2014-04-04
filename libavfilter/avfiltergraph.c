@@ -251,7 +251,8 @@ int ff_avfilter_graph_config_formats(AVFilterGraph *graph)
     int ret;
 
     /* find supported formats from sub-filters, and merge along links */
-    if (query_formats(graph))
+    ret = query_formats(graph);
+    if (ret)
         return ret;
 
     /* Once everything is merged, it's possible that we'll still have

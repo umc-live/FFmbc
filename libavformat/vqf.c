@@ -186,7 +186,7 @@ static int vqf_read_header(AVFormatContext *s, AVFormatParameters *ap)
         size = 2048;
         break;
     default:
-        av_log(s, AV_LOG_ERROR, "Mode not suported: %d Hz, %d kb/s.\n",
+        av_log(s, AV_LOG_ERROR, "Mode not suported: %d Hz, %"PRId64" kb/s.\n",
                st->codec->sample_rate, st->codec->bit_rate);
         return -1;
     }
