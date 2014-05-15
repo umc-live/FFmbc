@@ -235,8 +235,13 @@ static av_cold int X264_init(AVCodecContext *avctx)
 
 #if X264_BUILD >= 142
     OPT_STR("avcintra-class", x4->avcintra_class);
-    if (x4->params.i_avcintra_class)
+    if (x4->params.i_avcintra_class) {
+        if (x4->bitrate > 0) {
+            av_log(avctx, AV_LOG_ERROR, "cannot set bitrate value when avcintra class is set\n");
+            return -1;
+        }
         avctx->flags &= ~CODEC_FLAG_GLOBAL_HEADER;
+    }
 #endif
 
     if (avctx->gop_size == 0)
