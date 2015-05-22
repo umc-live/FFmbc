@@ -341,6 +341,7 @@ static void mxf_write_refs_count(AVIOContext *pb, int ref_count)
     avio_wb32(pb, 16);
 }
 
+#if 0
 static int klv_ber_length(uint64_t len)
 {
     if (len < 128)
@@ -349,7 +350,6 @@ static int klv_ber_length(uint64_t len)
         return (av_log2(len) >> 3) + 2;
 }
 
-#if 0
 static int klv_encode_ber_length(AVIOContext *pb, uint64_t len)
 {
     // Determine the best BER size
@@ -1301,7 +1301,7 @@ static void mxf_write_partition(AVFormatContext *s, int bodysid,
 
     if (index_byte_count) {
         // add encoded ber length
-        index_byte_count += 16 + klv_ber_length(index_byte_count);
+        index_byte_count += 16 + 4;
         index_byte_count += klv_fill_size(index_byte_count);
     }
 
