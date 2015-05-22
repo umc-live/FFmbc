@@ -2269,6 +2269,7 @@ static int mxf_write_footer(AVFormatContext *s)
 {
     MXFContext *mxf = s->priv_data;
     AVIOContext *pb = s->pb;
+    int i;
 
     mxf->duration = mxf->last_indexed_edit_unit + mxf->edit_units_count;
 
@@ -2278,7 +2279,6 @@ static int mxf_write_footer(AVFormatContext *s)
         mxf_write_partition(s, 0, 0, footer_partition_key, 0);
     } else {
         mxf_write_partition(s, 0, 2, footer_partition_key, 0);
-
         mxf_write_klv_fill(s);
         mxf_write_index_table_segment(s);
     }
@@ -2294,6 +2294,11 @@ static int mxf_write_footer(AVFormatContext *s)
             mxf_write_index_table_segment(s);
         } else {
             mxf_write_partition(s, 0, 0, header_closed_partition_key, 1);
+        }
+        // update footer partition offset
+        for (i = 0; i < mxf->body_partitions_count; i++) {
+            avio_seek(pb, mxf->body_partition_offset[i]+44, SEEK_SET);
+            avio_wb64(pb, mxf->footer_partition_offset);
         }
     }
 
