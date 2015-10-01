@@ -256,8 +256,9 @@ static av_always_inline void dnxhd_decode_dct_block(DNXHDContext *ctx,
         //av_log(ctx->avctx, AV_LOG_DEBUG, "j %d\n", j);
         //av_log(ctx->avctx, AV_LOG_DEBUG, "level %d, weight %d\n", level, weight_matrix[i]);
         level *= scale[j];
+        level += scale[i] >> 1;
         if (level_bias < 32 || weight_matrix[j] != level_bias)
-            level += level_bias;
+            level += level_bias; // 1<<(level_shift-1)
         level >>= level_shift;
 
         //av_log(NULL, AV_LOG_DEBUG, "i %d, j %d, end level %d\n", i, j, level);
