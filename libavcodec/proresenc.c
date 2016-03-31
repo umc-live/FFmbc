@@ -891,8 +891,8 @@ static int prores_encode_frame(AVCodecContext *avctx, unsigned char *buf, int bu
         goto encode_picture;
     }
 
-    frame_size = p - buf;
-    AV_WB32(buf, frame_size); // frame size
+    frame_size = FFALIGN(p - buf, 8); // frame size including stuffing
+    AV_WB32(buf, frame_size);
 
     ctx->left_size += ctx->frame_size - frame_size;
     ctx->coded_frame.quality = qp*FF_QP2LAMBDA/ctx->slice_count;
