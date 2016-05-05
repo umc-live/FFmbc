@@ -693,7 +693,7 @@ int opt_pix_fmts(const char *opt, const char *arg)
     return 0;
 }
 
-int read_yesno(void)
+int ff_read_yesno(void)
 {
     int c = getchar();
     int yesno = (toupper(c) == 'Y');
@@ -704,7 +704,7 @@ int read_yesno(void)
     return yesno;
 }
 
-int read_file(const char *filename, char **bufptr, size_t *size)
+int ff_read_file(const char *filename, char **bufptr, size_t *size)
 {
     FILE *f = fopen(filename, "rb");
 

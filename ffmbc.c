@@ -3077,7 +3077,7 @@ static int transcode(AVFormatContext **output_files,
                 } else {
                     char  *logbuffer;
                     size_t logbuffer_size;
-                    if (read_file(logfilename, &logbuffer, &logbuffer_size) < 0) {
+                    if (ff_read_file(logfilename, &logbuffer, &logbuffer_size) < 0) {
                         av_log(NULL, AV_LOG_ERROR, "Error reading log file '%s' for pass-2 encoding\n", logfilename);
                         ffmpeg_exit(1);
                     }
@@ -4804,7 +4804,7 @@ static int opt_output_file(const char *opt, const char *filename)
                 if (!using_stdin) {
                     av_log(NULL, AV_LOG_INFO, "File '%s' already exists. Overwrite ? [y/N] ", filename);
                     fflush(stderr);
-                    if (!read_yesno()) {
+                    if (!ff_read_yesno()) {
                         av_log(NULL, AV_LOG_INFO, "Not overwriting - exiting\n");
                         ffmpeg_exit(1);
                     }

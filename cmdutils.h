@@ -250,7 +250,7 @@ int opt_metadata_tags(const char *opt, const char *arg);
  * Return a positive value if a line read from standard input
  * starts with [yY], otherwise return 0.
  */
-int read_yesno(void);
+int ff_read_yesno(void);
 
 /**
  * Read the file with name filename, and put its content in a newly
@@ -261,7 +261,7 @@ int read_yesno(void);
  * @return 0 in case of success, a negative value corresponding to an
  * AVERROR error code in case of failure.
  */
-int read_file(const char *filename, char **bufptr, size_t *size);
+int ff_read_file(const char *filename, char **bufptr, size_t *size);
 
 /**
  * Get a file corresponding to a preset file.
