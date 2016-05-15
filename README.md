@@ -1,3 +1,6 @@
+
+[![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=YZXVPDXN68FDG)
+
 # What you can do with FFmbc #
 
 - Import your files in Final Cut Pro, AVID Media Composer, Adobe Premiere
