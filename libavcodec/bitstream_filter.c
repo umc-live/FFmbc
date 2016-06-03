@@ -41,8 +41,8 @@ AVBitStreamFilterContext *av_bitstream_filter_init(const char *name, const char 
             bsfc->filter= bsf;
             bsfc->priv_data= av_mallocz(bsf->priv_data_size);
             if (bsf->init && bsf->init(bsfc, args) < 0) {
-                av_freep(&bsfc);
                 av_freep(&bsfc->priv_data);
+                av_freep(&bsfc);
                 return NULL;
             }
             return bsfc;

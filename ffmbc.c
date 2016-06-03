@@ -4686,7 +4686,7 @@ static int opt_bsf(const char *opt, const char *arg)
 {
     AVBitStreamFilterContext *bsfc;
     AVBitStreamFilterContext **bsfp;
-    char *name = av_strdup(arg);
+    const char *name = arg;
     char *args = strchr(name, '=');
 
     if (args) {
@@ -4695,9 +4695,6 @@ static int opt_bsf(const char *opt, const char *arg)
     }
 
     bsfc = av_bitstream_filter_init(name, args);
-
-    av_free(name);
-
     if(!bsfc){
         av_log(NULL, AV_LOG_ERROR, "Error opening bitstream filter %s\n", name);
         ffmpeg_exit(1);

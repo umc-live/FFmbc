@@ -40,6 +40,9 @@ static int init(AVBitStreamFilterContext *bsfc, const char *args)
     char *end;
     int i, num = 0, den = 0;
 
+    if (!args)
+        goto error;
+
     ctx->aspect = -1;
 
     p = strpbrk(args, ":x/");
@@ -49,6 +52,7 @@ static int init(AVBitStreamFilterContext *bsfc, const char *args)
             den = strtol(end+1, &end, 10);
     }
     if (!p) {
+    error:
         av_log(NULL, AV_LOG_ERROR, "Incorrect aspect ratio, usage: <num>/<den>\n");
         return -1;
     }
