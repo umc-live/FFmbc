@@ -353,6 +353,9 @@ static int h264_parse(AVCodecParserContext *s,
         s->flags &= PARSER_FLAG_COMPLETE_FRAMES;
     }
 
+    if (s->flags & PARSER_FLAG_COMPLETE_FRAMES)
+        goto out;
+
     if (ret == 2) { // first field
         uint8_t *nbuf;
         nbuf = av_fast_realloc(c->buf, &c->buf_size, buf_size);
@@ -388,6 +391,7 @@ static int h264_parse(AVCodecParserContext *s,
         s->key_frame = c->key_frame;
     }
 
+ out:
     *poutbuf = buf;
     *poutbuf_size = buf_size;
     return next;
