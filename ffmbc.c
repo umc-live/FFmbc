@@ -2064,6 +2064,7 @@ static int output_packet(InputStream *ist, int ist_index,
                         if (av_vsink_buffer_get_video_buffer_ref(ost->output_video_filter, &ost->picref, 0) < 0)
                             goto cont;
                         if (ost->picref) {
+                            avcodec_get_frame_defaults(&frame);
                             avfilter_fill_frame_from_video_buffer_ref(&frame, ost->picref);
                             ist->pts = av_rescale_q(ost->picref->pts, ist_pts_tb, AV_TIME_BASE_Q);
                             do_video_out(os, ost, ist, &frame, same_quality ?
