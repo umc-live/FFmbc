@@ -683,6 +683,10 @@ void ff_mlp_init_x86(DSPContext* c, AVCodecContext *avctx);
 
 #define STRIDE_ALIGN 16
 
+#elif HAVE_AVX
+
+#define STRIDE_ALIGN 32
+
 #endif
 
 #ifndef STRIDE_ALIGN
