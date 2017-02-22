@@ -1670,8 +1670,8 @@ static av_always_inline void dctcoef_set(DCTELEM *mb, int high_bit_depth, int in
         AV_WN16A(mb + index, value);
 }
 
-static av_always_inline void hl_decode_mb_predict_luma(H264Context *h, int mb_type, int is_h264, int simple, int transform_bypass,
-                                                       int pixel_shift, int *block_offset, int linesize, uint8_t *dest_y, int p)
+static void hl_decode_mb_predict_luma(H264Context *h, int mb_type, int is_h264, int simple, int transform_bypass,
+                                      int pixel_shift, int *block_offset, int linesize, uint8_t *dest_y, int p)
 {
     MpegEncContext * const s = &h->s;
     void (*idct_add)(uint8_t *dst, DCTELEM *block, int stride);
