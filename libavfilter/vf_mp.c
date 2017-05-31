@@ -619,7 +619,7 @@ int vf_next_put_image(struct vf_instance *vf,mp_image_t *mpi, double pts){
         goto fail;
 
     picref->buf = pic;
-    picref->buf->please_use_av_free= av_free;
+    picref->buf->free= av_free;
     if (!(picref->video = av_mallocz(sizeof(AVFilterBufferRefVideoProps))))
         goto fail;
 
