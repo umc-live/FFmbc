@@ -715,7 +715,7 @@ static inline void prefetch_motion(H264Context *h, int list, int pixel_shift, in
     }
 }
 
-static av_always_inline void hl_motion(H264Context *h, uint8_t *dest_y, uint8_t *dest_cb, uint8_t *dest_cr,
+static void hl_motion(H264Context *h, uint8_t *dest_y, uint8_t *dest_cb, uint8_t *dest_cr,
                       qpel_mc_func (*qpix_put)[16], h264_chroma_mc_func (*chroma_put),
                       qpel_mc_func (*qpix_avg)[16], h264_chroma_mc_func (*chroma_avg),
                       h264_weight_func *weight_op, h264_biweight_func *weight_avg,
@@ -1773,7 +1773,7 @@ static void hl_decode_mb_predict_luma(H264Context *h, int mb_type, int is_h264, 
     }
 }
 
-static av_always_inline void hl_decode_mb_idct_luma(H264Context *h, int mb_type, int is_h264, int simple, int transform_bypass,
+static void hl_decode_mb_idct_luma(H264Context *h, int mb_type, int is_h264, int simple, int transform_bypass,
                                                     int pixel_shift, int *block_offset, int linesize, uint8_t *dest_y, int p)
 {
     MpegEncContext * const s = &h->s;
