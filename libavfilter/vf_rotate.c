@@ -176,6 +176,8 @@ static void start_frame(AVFilterLink *link, AVFilterBufferRef *picref)
     avfilter_start_frame(out, avfilter_ref_buffer(out->out_buf, ~0));
 }
 
+static void null_draw_slice(AVFilterLink *link, int y, int h, int slice_dir) {}
+
 AVFilter avfilter_vf_rotate =
 {
     .name      = "rotate",
@@ -189,6 +191,7 @@ AVFilter avfilter_vf_rotate =
     .inputs    = (AVFilterPad[]) {{ .name            = "default",
                                     .type            = AVMEDIA_TYPE_VIDEO,
                                     .start_frame     = start_frame,
+                                    .draw_slice      = null_draw_slice,
                                     .end_frame       = end_frame,
                                     .config_props    = config_props_input,
                                     .min_perms       = AV_PERM_READ, },
@@ -198,4 +201,3 @@ AVFilter avfilter_vf_rotate =
                                     .type            = AVMEDIA_TYPE_VIDEO, },
                                   { .name = NULL}},
 };
-
