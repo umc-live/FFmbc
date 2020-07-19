@@ -63,6 +63,17 @@ typedef int socklen_t;
 #if !HAVE_POLL_H
 typedef unsigned long nfds_t;
 
+#if HAVE_WINSOCK2_H
+#include <winsock2.h>
+#define HAVE_STRUCT_POLLFD 1
+#else
+#include <poll.h>
+#define HAVE_STRUCT_POLLFD 0
+#endif
+
+
+#if !HAVE_STRUCT_POLLFD
+
 struct pollfd {
     int fd;
     short events;  /* events to look for */
@@ -84,7 +95,10 @@ struct pollfd {
 #define POLLNVAL   0x1000  /* invalid file descriptor */
 
 
-int poll(struct pollfd *fds, nfds_t numfds, int timeout);
+#endif
+
+int ff_poll(struct pollfd *fds, nfds_t numfds, int timeout);
+#define poll ff_poll
 #endif /* HAVE_POLL_H */
 #endif /* CONFIG_NETWORK */
 
